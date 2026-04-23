@@ -1975,6 +1975,8 @@ function runBootSequence() {
     const marketApiStatus = document.getElementById('marketApiStatus');
     const marketSelectedTitle = document.getElementById('marketSelectedTitle');
     const marketSelectedMeta = document.getElementById('marketSelectedMeta');
+    const marketOrdersUpdated = document.getElementById('marketOrdersUpdated');
+    const marketRefreshOrdersBtn = document.getElementById('marketRefreshOrdersBtn');
     const marketStats = document.getElementById('marketStats');
     const marketSellOrders = document.getElementById('marketSellOrders');
     const marketBuyOrders = document.getElementById('marketBuyOrders');
@@ -2011,6 +2013,8 @@ function runBootSequence() {
       failed: false,
       error: null,
       activeSource: 'direct',
+      ordersUpdatedAt: null,
+      ordersUpdatedSource: '',
       suggestions: [],
       suggestionIndex: -1,
       selectedItem: null,
@@ -2031,6 +2035,30 @@ function runBootSequence() {
 
     function setMarketStatus(text) {
       if (marketApiStatus) marketApiStatus.textContent = text;
+    }
+
+    function formatLocalTimestamp(date) {
+      try {
+        return new Intl.DateTimeFormat(undefined, {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }).format(date);
+      } catch {
+        return date.toLocaleTimeString();
+      }
+    }
+
+    function setMarketOrdersUpdated(date, source = '') {
+      marketState.ordersUpdatedAt = date || null;
+      marketState.ordersUpdatedSource = source || '';
+      if (!marketOrdersUpdated) return;
+      if (!marketState.ordersUpdatedAt) {
+        marketOrdersUpdated.textContent = 'Last updated: -';
+        return;
+      }
+      const time = formatLocalTimestamp(marketState.ordersUpdatedAt);
+      marketOrdersUpdated.textContent = `Last updated: ${time}${source ? ` (${source})` : ''}`;
     }
 
     function marketNorm(text) {
@@ -2557,7 +2585,7 @@ function runBootSequence() {
       ].join('');
     }
 
-    async function loadMarketItem(item) {
+    async function loadMarketItem(item, { reason = 'select' } = {}) {
       if (!item) return;
       marketState.selectedItem = item;
       marketState.sellOrders = [];
@@ -2568,14 +2596,19 @@ function runBootSequence() {
       renderOrderBook(marketSellOrders, [], 'Loading sell orders...');
       renderOrderBook(marketBuyOrders, [], 'Loading buy orders...');
       renderMarketStats(null);
+      setMarketOrdersUpdated(null);
       try {
-        const ordersData = await fetchMarketJson(`/orders/${encodeURIComponent(item.url_name)}`);
+        // Always fetch fresh orders on selection/refresh.
+        const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const ordersData = await fetchMarketJson(`/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
         const sellOrders = (ordersData?.data?.data?.sell || ordersData?.data?.sell || [])
           .filter(order => order.visible !== false);
         const buyOrders = (ordersData?.data?.data?.buy || ordersData?.data?.buy || [])
           .filter(order => order.visible !== false);
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
+        const fetchedAt = ordersData?.fetchedAt ? new Date(ordersData.fetchedAt) : new Date();
+        setMarketOrdersUpdated(fetchedAt, ordersData?.source || marketState.activeSource);
         const bestSell = applyPriceSort(sellOrders, 'price_asc', 'price_asc')[0]?.platinum;
         const bestBuy = applyPriceSort(buyOrders, 'price_desc', 'price_desc')[0]?.platinum;
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
@@ -2594,6 +2627,7 @@ function runBootSequence() {
         renderOrderBook(marketSellOrders, [], 'Order fetch failed.');
         renderOrderBook(marketBuyOrders, [], 'Order fetch failed.');
         renderMarketStats(null);
+        setMarketOrdersUpdated(null);
         setMarketStatus(`Item failed: ${reason}`);
         logClientError('market item load', error, { item: item?.url_name || '' });
       }
@@ -2706,6 +2740,16 @@ function runBootSequence() {
     if (marketTabBuy) marketTabBuy.addEventListener('click', () => setMarketActiveSide('buy'));
     if (marketViewSellBtn) marketViewSellBtn.addEventListener('click', () => openMarketModal('sell'));
     if (marketViewBuyBtn) marketViewBuyBtn.addEventListener('click', () => openMarketModal('buy'));
+    if (marketRefreshOrdersBtn) {
+      marketRefreshOrdersBtn.addEventListener('click', () => {
+        if (!marketState.selectedItem) {
+          setMarketStatus('Refresh failed: no item selected');
+          return;
+        }
+        setMarketStatus('Refreshing orders...');
+        loadMarketItem(marketState.selectedItem, { reason: 'refresh' }).catch(error => logClientError('market refresh orders', error));
+      });
+    }
     if (marketModalClose) marketModalClose.addEventListener('click', closeMarketModal);
     if (marketModalTabSell) marketModalTabSell.addEventListener('click', () => { setMarketModalSide('sell'); syncMarketModalControlsFromPanel(); renderMarketModalList(); });
     if (marketModalTabBuy) marketModalTabBuy.addEventListener('click', () => { setMarketModalSide('buy'); syncMarketModalControlsFromPanel(); renderMarketModalList(); });

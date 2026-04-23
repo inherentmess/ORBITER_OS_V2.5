@@ -17,11 +17,11 @@ const types = {
   ".json": "application/json; charset=utf-8"
 };
 
-function send(res, status, body, type = "application/json; charset=utf-8") {
+function send(res, status, body, type = "application/json; charset=utf-8", cacheControl = null) {
   res.writeHead(status, {
     "content-type": type,
     "access-control-allow-origin": "*",
-    "cache-control": status === 200 ? "public, max-age=60" : "no-store"
+    "cache-control": cacheControl || (status === 200 ? "public, max-age=60" : "no-store")
   });
   res.end(body);
 }
@@ -45,6 +45,17 @@ async function fetchJsonCached(key, url) {
   }
 
   return { source: "warframe-market", data };
+}
+
+async function fetchJsonFresh(url) {
+  const response = await fetch(url, {
+    headers: { accept: "application/json", "cache-control": "no-store" }
+  });
+  if (!response.ok) {
+    throw new Error(`Warframe Market HTTP ${response.status} for ${url}`);
+  }
+  const data = await response.json();
+  return { source: "warframe-market", fetchedAt: new Date().toISOString(), data };
 }
 
 async function fetchTextCached(key, url, ttl = 120000) {
@@ -106,12 +117,13 @@ async function handleApi(req, res, url) {
       // Some deployments may still only support /top; fall back if needed.
       let result;
       try {
-        result = await fetchJsonCached(`orders:${slug}`, `${MARKET_API}/orders/item/${slug}`);
+        result = await fetchJsonFresh(`${MARKET_API}/orders/item/${slug}`);
       } catch (error) {
         console.warn('[market-proxy] full orders failed, falling back to /top', error?.message || error);
-        result = await fetchJsonCached(`orders:${slug}:top`, `${MARKET_API}/orders/item/${slug}/top`);
+        result = await fetchJsonFresh(`${MARKET_API}/orders/item/${slug}/top`);
       }
-      send(res, 200, JSON.stringify(result));
+      // Orders should always be treated as fresh data.
+      send(res, 200, JSON.stringify(result), "application/json; charset=utf-8", "no-store");
       return;
     }
 

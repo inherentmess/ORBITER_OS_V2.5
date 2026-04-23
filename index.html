@@ -506,6 +506,10 @@
                   <button id="marketViewSellBtn" class="border border-terminal px-4 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">View Sell Orders</button>
                   <button id="marketViewBuyBtn" class="border border-terminal px-4 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">View Buy Orders</button>
                 </div>
+                <div class="flex items-center justify-between gap-3 mb-2">
+                  <div id="marketOrdersUpdated" class="text-[10px] uppercase tracking-[0.2em] text-terminal/60">Last updated: -</div>
+                  <button id="marketRefreshOrdersBtn" class="border border-terminal/60 px-3 py-2 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black">refresh orders</button>
+                </div>
 
                 <div id="marketOrderPanels" class="grid md:grid-cols-2 gap-3">
                   <div id="marketSellPanel" class="market-order-panel border border-terminal/25 p-3 bg-black/40" data-side="sell" data-active="1">
