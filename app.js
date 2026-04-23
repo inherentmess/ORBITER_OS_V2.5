@@ -1907,10 +1907,18 @@ function runBootSequence() {
     const marketStats = document.getElementById('marketStats');
     const marketSellOrders = document.getElementById('marketSellOrders');
     const marketBuyOrders = document.getElementById('marketBuyOrders');
+    const marketTabSell = document.getElementById('marketTabSell');
+    const marketTabBuy = document.getElementById('marketTabBuy');
+    const marketSellPanel = document.getElementById('marketSellPanel');
+    const marketBuyPanel = document.getElementById('marketBuyPanel');
     const marketBuyMin = document.getElementById('marketBuyMin');
     const marketBuyMax = document.getElementById('marketBuyMax');
     const marketSellMin = document.getElementById('marketSellMin');
     const marketSellMax = document.getElementById('marketSellMax');
+    const marketSellStatus = document.getElementById('marketSellStatus');
+    const marketSellSort = document.getElementById('marketSellSort');
+    const marketBuyStatus = document.getElementById('marketBuyStatus');
+    const marketBuySort = document.getElementById('marketBuySort');
 
     const marketState = {
       catalog: [],
@@ -1923,8 +1931,13 @@ function runBootSequence() {
       suggestions: [],
       suggestionIndex: -1,
       selectedItem: null,
+      // Raw orders are stored once per item selection; filters/sorts are applied locally.
       sellOrders: [],
       buyOrders: []
+    };
+
+    const marketUi = {
+      activeSide: 'sell'
     };
 
     function setMarketStatus(text) {
@@ -2204,11 +2217,59 @@ function runBootSequence() {
       });
     }
 
+    function orderStatus(order) {
+      const raw = order?.user?.status || order?.status || 'unknown';
+      return String(raw).toLowerCase();
+    }
+
+    function applyStatusFilter(orders, statusValue) {
+      const value = String(statusValue || 'all').toLowerCase();
+      if (value === 'all') return orders;
+      return orders.filter(order => orderStatus(order) === value);
+    }
+
+    function applyPriceSort(orders, sortValue, defaultValue) {
+      const value = String(sortValue || defaultValue || '').toLowerCase();
+      const dir = value === 'price_desc' ? -1 : 1;
+      return [...orders].sort((a, b) => {
+        const ap = Number(a.platinum);
+        const bp = Number(b.platinum);
+        if (!Number.isFinite(ap) && !Number.isFinite(bp)) return 0;
+        if (!Number.isFinite(ap)) return 1;
+        if (!Number.isFinite(bp)) return -1;
+        return (ap - bp) * dir;
+      });
+    }
+
+    function setMarketActiveSide(side) {
+      marketUi.activeSide = side === 'buy' ? 'buy' : 'sell';
+      if (marketTabSell) marketTabSell.classList.toggle('subtab-active', marketUi.activeSide === 'sell');
+      if (marketTabBuy) marketTabBuy.classList.toggle('subtab-active', marketUi.activeSide === 'buy');
+
+      const mobile = sectionAccordionState.enabled;
+      if (marketSellPanel) marketSellPanel.dataset.active = mobile ? (marketUi.activeSide === 'sell' ? '1' : '0') : '1';
+      if (marketBuyPanel) marketBuyPanel.dataset.active = mobile ? (marketUi.activeSide === 'buy' ? '1' : '0') : '1';
+    }
+
     function renderFilteredMarketOrders() {
-      const filteredSell = applyPlatFilter(marketState.sellOrders, marketSellMin, marketSellMax);
-      const filteredBuy = applyPlatFilter(marketState.buyOrders, marketBuyMin, marketBuyMax);
-      renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match this filter.', 'buy');
-      renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match this filter.', 'sell');
+      const sellStatus = marketSellStatus?.value || 'all';
+      const buyStatus = marketBuyStatus?.value || 'all';
+      const sellSort = marketSellSort?.value || 'price_asc';
+      const buySort = marketBuySort?.value || 'price_desc';
+
+      const filteredSell = applyPriceSort(
+        applyPlatFilter(applyStatusFilter(marketState.sellOrders, sellStatus), marketSellMin, marketSellMax),
+        sellSort,
+        'price_asc'
+      );
+      const filteredBuy = applyPriceSort(
+        applyPlatFilter(applyStatusFilter(marketState.buyOrders, buyStatus), marketBuyMin, marketBuyMax),
+        buySort,
+        'price_desc'
+      );
+
+      renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match these filters.', 'buy');
+      renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match these filters.', 'sell');
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
     }
 
@@ -2258,17 +2319,13 @@ function runBootSequence() {
       try {
         const ordersData = await fetchMarketJson(`/orders/${encodeURIComponent(item.url_name)}`);
         const sellOrders = (ordersData?.data?.data?.sell || ordersData?.data?.sell || [])
-          .filter(order => order.visible !== false)
-          .sort((a, b) => a.platinum - b.platinum)
-          .slice(0, 12);
+          .filter(order => order.visible !== false);
         const buyOrders = (ordersData?.data?.data?.buy || ordersData?.data?.buy || [])
-          .filter(order => order.visible !== false)
-          .sort((a, b) => b.platinum - a.platinum)
-          .slice(0, 12);
+          .filter(order => order.visible !== false);
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
-        const bestSell = sellOrders[0]?.platinum;
-        const bestBuy = buyOrders[0]?.platinum;
+        const bestSell = applyPriceSort(sellOrders, 'price_asc', 'price_asc')[0]?.platinum;
+        const bestBuy = applyPriceSort(buyOrders, 'price_desc', 'price_desc')[0]?.platinum;
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
         marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p • Best buy ${bestBuy ?? '-'}p${spread !== null ? ` • Spread ${spread}p` : ''} • ${marketState.activeSource}`;
         renderFilteredMarketOrders();
@@ -2388,6 +2445,19 @@ function runBootSequence() {
     [marketBuyMin, marketBuyMax, marketSellMin, marketSellMax].forEach(input => {
       if (input) input.addEventListener('input', renderFilteredMarketOrders);
     });
+
+    [marketSellStatus, marketSellSort, marketBuyStatus, marketBuySort].forEach(control => {
+      if (control) control.addEventListener('change', renderFilteredMarketOrders);
+    });
+
+    if (marketTabSell) marketTabSell.addEventListener('click', () => setMarketActiveSide('sell'));
+    if (marketTabBuy) marketTabBuy.addEventListener('click', () => setMarketActiveSide('buy'));
+    if (accordionMql) {
+      const syncMarketUiToViewport = () => setMarketActiveSide(marketUi.activeSide);
+      if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncMarketUiToViewport);
+      else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncMarketUiToViewport);
+    }
+    setMarketActiveSide(marketUi.activeSide);
 
     const codexSearchInput = document.getElementById('codexSearchInput');
     const codexSuggestions = document.getElementById('codexSuggestions');

@@ -59,6 +59,12 @@
     .boot-topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
     .boot-title { font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
     .boot-cursor { display: inline-block; width: 10px; height: 18px; background: #4ade80; vertical-align: -3px; margin-left: 6px; }
+
+    /* Market order tabs (mobile shows one panel at a time). */
+    .market-tab-btn { touch-action: manipulation; }
+    @media (max-width: 900px) {
+      .market-order-panel[data-active="0"] { display: none; }
+    }
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
@@ -368,25 +374,61 @@
                   <div class="border border-terminal/25 p-2">Max: -</div>
                 </div>
               </div>
-              <div class="grid md:grid-cols-2 gap-3">
-                <div class="border border-terminal/25 p-3 bg-black/40">
-                  <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Sell Orders</div>
-                  <div class="grid grid-cols-2 gap-2 mb-3">
-                    <input id="marketSellMin" type="number" min="0" placeholder="min plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
-                    <input id="marketSellMax" type="number" min="0" placeholder="max plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
-                  </div>
-                  <div id="marketSellOrders" class="space-y-2 text-sm text-green-200/90 max-h-60 overflow-y-auto">
-                    <div class="border border-terminal/25 p-2 text-xs">No data yet.</div>
+
+              <div class="border border-terminal/25 p-4 bg-black/40">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                  <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Order Book</div>
+                  <div class="flex gap-2">
+                    <button id="marketTabSell" class="market-tab-btn subtab-active border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest">Sell</button>
+                    <button id="marketTabBuy" class="market-tab-btn border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest">Buy</button>
                   </div>
                 </div>
-                <div class="border border-terminal/25 p-3 bg-black/40">
-                  <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Buy Orders</div>
-                  <div class="grid grid-cols-2 gap-2 mb-3">
-                    <input id="marketBuyMin" type="number" min="0" placeholder="min plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
-                    <input id="marketBuyMax" type="number" min="0" placeholder="max plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+
+                <div id="marketOrderPanels" class="grid md:grid-cols-2 gap-3">
+                  <div id="marketSellPanel" class="market-order-panel border border-terminal/25 p-3 bg-black/40" data-side="sell" data-active="1">
+                    <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Sell Orders</div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                      <select id="marketSellStatus" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal focus:outline-none focus:ring-0">
+                        <option value="all">status: all</option>
+                        <option value="ingame">ingame</option>
+                        <option value="online">online</option>
+                        <option value="offline">offline</option>
+                      </select>
+                      <select id="marketSellSort" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal focus:outline-none focus:ring-0">
+                        <option value="price_asc">price: low-high</option>
+                        <option value="price_desc">price: high-low</option>
+                      </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                      <input id="marketSellMin" type="number" min="0" placeholder="min plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                      <input id="marketSellMax" type="number" min="0" placeholder="max plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                    </div>
+                    <div id="marketSellOrders" class="space-y-2 text-sm text-green-200/90 max-h-60 overflow-y-auto">
+                      <div class="border border-terminal/25 p-2 text-xs">No data yet.</div>
+                    </div>
                   </div>
-                  <div id="marketBuyOrders" class="space-y-2 text-sm text-green-200/90 max-h-60 overflow-y-auto">
-                    <div class="border border-terminal/25 p-2 text-xs">No data yet.</div>
+
+                  <div id="marketBuyPanel" class="market-order-panel border border-terminal/25 p-3 bg-black/40" data-side="buy" data-active="1">
+                    <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Buy Orders</div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                      <select id="marketBuyStatus" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal focus:outline-none focus:ring-0">
+                        <option value="all">status: all</option>
+                        <option value="ingame">ingame</option>
+                        <option value="online">online</option>
+                        <option value="offline">offline</option>
+                      </select>
+                      <select id="marketBuySort" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal focus:outline-none focus:ring-0">
+                        <option value="price_desc">price: high-low</option>
+                        <option value="price_asc">price: low-high</option>
+                      </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                      <input id="marketBuyMin" type="number" min="0" placeholder="min plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                      <input id="marketBuyMax" type="number" min="0" placeholder="max plat" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                    </div>
+                    <div id="marketBuyOrders" class="space-y-2 text-sm text-green-200/90 max-h-60 overflow-y-auto">
+                      <div class="border border-terminal/25 p-2 text-xs">No data yet.</div>
+                    </div>
                   </div>
                 </div>
               </div>
