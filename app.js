@@ -1,2090 +1,2445 @@
-const TASKS_STORAGE_KEY = "orbit-companion-tasks";
-const GOALS_STORAGE_KEY = "orbit-companion-goals";
-const FOUNDRY_STORAGE_KEY = "orbit-companion-foundry";
-const NIGHTWAVE_STORAGE_KEY = "orbit-companion-nightwave";
-const CYCLE_ORDER_STORAGE_KEY = "orbit-companion-cycle-order";
-const MARKET_SEARCH_STORAGE_KEY = "orbit-companion-market-searches";
-const BOUNTY_AREA_STORAGE_KEY = "orbit-companion-bounty-area";
-const DAILY_RESET_HOUR_UTC = 0;
-const BARO_FIRST_KNOWN_ARRIVAL = "2024-11-01T13:00:00Z";
-const BARO_VISIT_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
-const BARO_VISIT_DURATION_MS = 48 * 60 * 60 * 1000;
-const BROWSE_ORACLE_WORLDSTATE_URL = "https://oracle.browse.wf/worldState.json";
-const TENNO_TOOLS_FISSURES_URL = "https://api.tenno.tools/worldstate/pc/fissures";
-const TENNO_TOOLS_BOUNTIES_URL = "https://api.tenno.tools/worldstate/pc/bounties";
+const navButtons = document.querySelectorAll('.nav-btn');
+const sections = document.querySelectorAll('.content-section');
+const searchInput = document.getElementById('searchInput');
+const refreshBtn = document.getElementById('refreshBtn');
 
-const worldState = {
-  syncedAt: "2026-04-22T15:00:00-07:00",
-  staticCycles: [
-    {
-      label: "Earth",
-      title: "Cetus / Plains of Eidolon",
-      state: "Day",
-      expiresAt: "2026-04-22T16:08:00-07:00",
-      detail: "Good window for bounties, conservation, and fishing runs."
-    },
-    {
-      label: "Venus",
-      title: "Fortuna / Orb Vallis",
-      state: "Warm",
-      expiresAt: "2026-04-22T15:37:00-07:00",
-      detail: "Shorter cycle. Catch mining loops or Toroid routes between alerts."
-    },
-    {
-      label: "Deimos",
-      title: "Cambion Drift",
-      state: "Vome",
-      expiresAt: "2026-04-22T16:22:00-07:00",
-      detail: "Check isolation vault timing before committing a squad."
+const MOBILE_ACCORDION_QUERY = '(max-width: 900px)';
+const sectionAccordionState = {
+  enabled: typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_ACCORDION_QUERY).matches,
+  bodies: new Map(),
+  toggles: new Map()
+};
+
+    function logClientError(action, error, extra = {}) {
+      console.error(`[orbiter] ${action} failed`, {
+        message: error?.message || String(error),
+        ...extra
+      });
     }
-  ],
-  alerts: [
-    {
-      title: "Steel Path Incursions ready",
-      copy: "Five missions are available now. Knock them out early for steady Steel Essence.",
-      tag: "High value"
-    },
-    {
-      title: "Nightwave catch-up is open",
-      copy: "You still have enough room to clear two elite acts before the weekly rollover.",
-      tag: "Weekly"
-    },
-    {
-      title: "Sortie modifier favors status builds",
-      copy: "Bring viral or heat for faster clears and keep your archon shard slot flexible.",
-      tag: "Build tip"
+
+    function logRequest(label, url) {
+      console.log(`[orbiter] ${label} request URL`, url);
     }
-  ],
-  operations: [
-    {
-      label: "Sortie",
-      title: "Three-stage daily sortie",
-      status: "Ready",
-      expiresAt: "2026-04-23T12:00:00-07:00",
-      summary: "Eximus Stronghold, Radiation Hazard, and an assassination finisher are the current rotation.",
-      detail: "Bring a durable all-rounder and one status-heavy weapon so you do not need to rebuild between stages."
-    },
-    {
-      label: "Void Fissures",
-      title: "Active fissure sweep",
-      status: "Hot",
-      expiresAt: "2026-04-24T16:05:00-07:00",
-      summary: "Regular and Steel Path fissures are both surfaced here so you can pick between speed clears and higher-pressure relic runs.",
-      detail: "The Steel Path Axi and Neo entries are the premium picks if you want tougher missions with better endgame pacing than the base-board speed options.",
-      entries: [
-        {
-          title: "Lith Capture",
-          meta: "Void | Hepit | Ends in 22m",
-          copy: "Fastest option for cracking low-tier relics when you want quick openings.",
-          tag: "Quick"
-        },
-        {
-          title: "Meso Survival",
-          meta: "Jupiter | Amalthea | Ends in 41m",
-          copy: "Good if you want a steadier relic pace and to stack resources while opening relics.",
-          tag: "Sustain"
-        },
-        {
-          title: "Neo Defense",
-          meta: "Sedna | Hydron | Ends in 36m",
-          copy: "Best if you want fissures plus affinity leveling in the same run.",
-          tag: "Leveling"
-        },
-        {
-          title: "Axi Disruption",
-          meta: "Lua | Apollo | Ends in 53m",
-          copy: "Highest-value board slot in this sample set and the one worth planning around.",
-          tag: "Top pick"
-        },
-        {
-          title: "Steel Path Neo Survival",
-          meta: "Sedna | Selkie | Ends in 34m",
-          copy: "A stronger Neo option if you want relic openings plus Steel Essence progress in the same session.",
-          tag: "Steel Path"
-        },
-        {
-          title: "Steel Path Axi Exterminate",
-          meta: "Veil Proxima | Ends in 46m",
-          copy: "Best burst-value Steel Path fissure in this sample board if your squad can clear quickly and stay efficient.",
-          tag: "Steel Path"
+
+    function logResponse(label, response) {
+      console.log(`[orbiter] ${label} response status`, response.status, response.statusText);
+    }
+
+    function logJson(label, json) {
+      console.log(`[orbiter] ${label} parsed JSON`, json);
+    }
+
+    function setSectionOpen(sectionName, open, { scrollIntoView = false } = {}) {
+      const section = document.getElementById(`section-${sectionName}`);
+      const body = sectionAccordionState.bodies.get(sectionName);
+      const toggle = sectionAccordionState.toggles.get(sectionName);
+      if (!section || !body || !toggle) return;
+
+      body.dataset.open = open ? '1' : '0';
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.textContent = open ? 'collapse' : 'expand';
+
+      if (open) {
+        body.style.opacity = '1';
+        body.style.maxHeight = `${body.scrollHeight}px`;
+        window.setTimeout(() => {
+          if (body.dataset.open === '1') body.style.maxHeight = 'none';
+        }, 260);
+        if (scrollIntoView) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-      ]
-    },
-    {
-      label: "Nightwave",
-      title: "Nora's weekly board",
-      status: "27,500 standing left",
-      expiresAt: "2026-04-27T00:00:00-07:00",
-      summary: "Two elite acts and three dailies remain open in this prototype snapshot.",
-      detail: "Clearing the elite acts should comfortably finish your next reward tier without grinding filler challenges.",
-      entries: [
-        {
-          id: "nightwave-sortie",
-          title: "Elite Weekly: Complete 3 Sortie missions",
-          meta: "7,000 standing",
-          copy: "You can clear this naturally by finishing the daily sortie before reset.",
-          tag: "Elite"
-        },
-        {
-          id: "nightwave-kills",
-          title: "Elite Weekly: Kill 1,500 enemies",
-          meta: "7,000 standing",
-          copy: "Pair this with Survival, Sanctuary Onslaught, or an Archon Hunt chain to finish passively.",
-          tag: "Elite"
-        },
-        {
-          id: "nightwave-relics",
-          title: "Weekly: Open 10 relics",
-          meta: "4,500 standing",
-          copy: "This overlaps perfectly with the fissure board, especially if you chain Capture and Disruption.",
-          tag: "Weekly"
-        },
-        {
-          id: "nightwave-capture",
-          title: "Daily: Complete 1 Capture mission",
-          meta: "1,000 standing",
-          copy: "A one-minute Hepit run is the cleanest way to clear this.",
-          tag: "Daily"
-        },
-        {
-          id: "nightwave-melee",
-          title: "Daily: Kill 20 enemies with melee",
-          meta: "1,000 standing",
-          copy: "This is effectively free in any normal run, so it should not shape your route.",
-          tag: "Daily"
-        }
-      ]
-    },
-    {
-      label: "Archon Hunt",
-      title: "Weekly archon target",
-      status: "Available",
-      expiresAt: "2026-04-26T23:59:00-07:00",
-      summary: "Three missions remain, ending in a shard reward with the final confrontation.",
-      detail: "Save one of your strongest single-target loadouts here and leave the easier utility clears for later in the week."
-    }
-  ]
-};
+        return;
+      }
 
-const starChartMissions = [
-  {
-    title: "Capture on Hepit, Void",
-    description: "Fast relic farming run. Great if you want a quick objective with low setup time.",
-    tag: "Star chart"
-  },
-  {
-    title: "Survival on Gabii, Ceres",
-    description: "Solid Orokin Cell farming and a dependable place to stretch a resource booster.",
-    tag: "Resources"
-  },
-  {
-    title: "Defense on Hydron, Sedna",
-    description: "Classic affinity grinding if you want to level gear while still making mission progress.",
-    tag: "Leveling"
-  },
-  {
-    title: "Disruption on Apollo, Lua",
-    description: "A strong Axi relic target when you want a mission with a little more payoff.",
-    tag: "Relics"
-  },
-  {
-    title: "Survival on Ophelia, Uranus",
-    description: "Good if you need polymer bundles and want a mission that scales well with time.",
-    tag: "Farm route"
-  },
-  {
-    title: "Excavation on Hieracon, Pluto",
-    description: "A steady cryotic mission that also works well for focused farming sessions.",
-    tag: "Cryotic"
-  },
-  {
-    title: "Exterminate on Adaro, Sedna",
-    description: "A stealth-friendly solo option if you want a calmer run with affinity value.",
-    tag: "Solo"
-  },
-  {
-    title: "Dark Sector Defense on Seimeni, Ceres",
-    description: "A credit-friendly fallback when you want something simple and dependable.",
-    tag: "Credits"
-  }
-];
-
-const defaultTasks = [
-  { id: crypto.randomUUID(), text: "Claim login reward and check Nightwave acts", done: true },
-  { id: crypto.randomUUID(), text: "Run Steel Path incursions before reset", done: false },
-  { id: crypto.randomUUID(), text: "Refine relics for next Prime farm session", done: false }
-];
-
-const defaultGoals = [
-  {
-    id: crypto.randomUUID(),
-    eyebrow: "Farm plan",
-    title: "Build a Duviri circuit route",
-    copy: "Lock in one frame, one weapon, and one decree preference so your next weekly push starts with less friction.",
-    tag: "Preparation"
-  },
-  {
-    id: crypto.randomUUID(),
-    eyebrow: "Relic target",
-    title: "Chase vaulted parts efficiently",
-    copy: "Group relic cracking around fissure tiers you can clear quickly and keep one radiant relic for squad sharing.",
-    tag: "Relics"
-  },
-  {
-    id: crypto.randomUUID(),
-    eyebrow: "Resource sweep",
-    title: "Do a fifteen-minute standing run",
-    copy: "A compact route through bounties, syndicate pickups, and one reputation dump keeps daily caps from piling up.",
-    tag: "Routine"
-  }
-];
-
-const foundryCatalog = window.ORBIT_FOUNDRY_CATALOG ?? {
-  forma: {
-    name: "Forma",
-    buildHours: 23,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Forma"
-  },
-  "orokin catalyst": {
-    name: "Orokin Catalyst",
-    buildHours: 23,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Orokin_Catalyst"
-  },
-  "orokin reactor": {
-    name: "Orokin Reactor",
-    buildHours: 23,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Orokin_Reactor"
-  },
-  excalibur: {
-    name: "Excalibur",
-    buildHours: 72,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Excalibur"
-  },
-  "excalibur neuroptics": {
-    name: "Excalibur Neuroptics",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Excalibur"
-  },
-  "excalibur chassis": {
-    name: "Excalibur Chassis",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Excalibur"
-  },
-  "excalibur systems": {
-    name: "Excalibur Systems",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Excalibur"
-  },
-  rhino: {
-    name: "Rhino",
-    buildHours: 24,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Rhino"
-  },
-  "rhino neuroptics": {
-    name: "Rhino Neuroptics",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Rhino"
-  },
-  "rhino chassis": {
-    name: "Rhino Chassis",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Rhino"
-  },
-  "rhino systems": {
-    name: "Rhino Systems",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Rhino"
-  },
-  volt: {
-    name: "Volt",
-    buildHours: 72,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Volt/Main"
-  },
-  "volt neuroptics": {
-    name: "Volt Neuroptics",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Volt/Main"
-  },
-  "volt chassis": {
-    name: "Volt Chassis",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Volt/Main"
-  },
-  "volt systems": {
-    name: "Volt Systems",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Volt/Main"
-  },
-  wukong: {
-    name: "Wukong",
-    buildHours: 72,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Wukong"
-  },
-  "wukong neuroptics": {
-    name: "Wukong Neuroptics",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Wukong"
-  },
-  "wukong chassis": {
-    name: "Wukong Chassis",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Wukong"
-  },
-  "wukong systems": {
-    name: "Wukong Systems",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Wukong"
-  },
-  paris: {
-    name: "Paris",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Paris"
-  },
-  hek: {
-    name: "Hek",
-    buildHours: 24,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Hek"
-  },
-  nikana: {
-    name: "Nikana",
-    buildHours: 12,
-    sourceLabel: "Warframe Wiki",
-    sourceUrl: "https://warframe.fandom.com/wiki/Nikana"
-  }
-};
-
-const validWarframeNames = window.ORBIT_VALID_FOUNDRY_NAMES ?? [
-  "Ash",
-  "Atlas",
-  "Banshee",
-  "Baruuk",
-  "Caliban",
-  "Chroma",
-  "Citrine",
-  "Cyte-09",
-  "Dagath",
-  "Dante",
-  "Ember",
-  "Equinox",
-  "Excalibur",
-  "Frost",
-  "Gara",
-  "Garuda",
-  "Gauss",
-  "Grendel",
-  "Gyre",
-  "Harrow",
-  "Hildryn",
-  "Hydroid",
-  "Inaros",
-  "Ivara",
-  "Jade",
-  "Khora",
-  "Koumei",
-  "Kullervo",
-  "Lavos",
-  "Limbo",
-  "Loki",
-  "Mag",
-  "Mesa",
-  "Mirage",
-  "Nekros",
-  "Nezha",
-  "Nidus",
-  "Nova",
-  "Nyx",
-  "Oberon",
-  "Octavia",
-  "Oraxia",
-  "Protea",
-  "Qorvex",
-  "Revenant",
-  "Rhino",
-  "Saryn",
-  "Sevagoth",
-  "Styanax",
-  "Temple",
-  "Titania",
-  "Trinity",
-  "Valkyr",
-  "Vauban",
-  "Volt",
-  "Voruna",
-  "Wisp",
-  "Wukong",
-  "Xaku",
-  "Yareli",
-  "Zephyr"
-];
-
-const verifiedSuggestionNames = [...new Set(Object.values(foundryCatalog).map((entry) => entry.name))];
-
-const foundrySuggestionNames = [...new Set([...verifiedSuggestionNames, ...validWarframeNames])].sort((a, b) =>
-  a.localeCompare(b)
-);
-
-const marketSuggestions = [
-  ...Object.values(foundryCatalog).flatMap((entry) => {
-    if (/^\S(?:.*\S)? Prime$/u.test(entry.name)) {
-      const setLabel = `${entry.name} Set`;
-      return [{
-        label: setLabel,
-        slug: normalizeMarketSlug(setLabel)
-      }];
+      body.style.maxHeight = `${body.scrollHeight}px`;
+      body.getBoundingClientRect();
+      body.style.maxHeight = '0px';
+      body.style.opacity = '0';
     }
 
-    const primePartMatch = entry.name.match(/^(.* Prime) (Neuroptics|Chassis|Systems)$/u);
-    if (primePartMatch) {
-      const partLabel = `${entry.name} Blueprint`;
-      return [{
-        label: partLabel,
-        slug: normalizeMarketSlug(partLabel)
-      }];
-    }
-
-    return [];
-  }),
-  ...[
-    "Arcane Energize",
-    "Arcane Grace",
-    "Arcane Guardian",
-    "Arcane Avenger",
-    "Arcane Velocity",
-    "Adaptation",
-    "Blind Rage",
-    "Transient Fortitude",
-    "Primed Continuity",
-    "Primed Flow",
-    "Primed Sure Footed",
-    "Rolling Guard",
-    "Galvanized Chamber",
-    "Galvanized Aptitude",
-    "Galvanized Diffusion",
-    "Legendary Core",
-    "Ayatan Anasa Sculpture",
-    "Riven Mod",
-    "Aya",
-    "Regal Aya",
-    "Kuva"
-  ].map((label) => ({
-    label,
-    slug: normalizeMarketSlug(label)
-  }))
-]
-  .filter((suggestion, index, array) =>
-    array.findIndex((entry) => entry.label.toLowerCase() === suggestion.label.toLowerCase()) === index
-  )
-  .sort((a, b) => a.label.localeCompare(b.label));
-
-const guideArchive = {
-  warframes: [
-    {
-      eyebrow: "Starter frame",
-      title: "Rhino safety route",
-      tag: "Durable",
-      copy: "A forgiving path for clearing new nodes, sorties, and early Steel Path prep without fragile builds.",
-      steps: ["Farm Jackal on Venus for parts", "Build Iron Skin strength first", "Pair Roar with any reliable weapon"]
-    },
-    {
-      eyebrow: "Support frame",
-      title: "Wisp squad value",
-      tag: "Utility",
-      copy: "Great when you want one frame that improves speed, survivability, and objective defense.",
-      steps: ["Drop motes before objectives", "Use Breach Surge for crowd control", "Bring duration for smoother rotations"]
-    },
-    {
-      eyebrow: "Farming frame",
-      title: "Nekros resource loop",
-      tag: "Farm",
-      copy: "A simple resource plan for survival missions, Orokin Cell routes, and long booster sessions.",
-      steps: ["Keep Desecrate active", "Favor slash-heavy weapons", "Run dark sectors when resources matter"]
-    }
-  ],
-  weapons: [
-    {
-      eyebrow: "Primary",
-      title: "Hek progression plan",
-      tag: "Reliable",
-      copy: "A clean early-to-mid game shotgun path that carries star-chart clears with minimal complexity.",
-      steps: ["Prioritize damage and multishot", "Add elemental mods for faction needs", "Upgrade to Vaykor Hek later"]
-    },
-    {
-      eyebrow: "Melee",
-      title: "Nikana crit setup",
-      tag: "Blade",
-      copy: "A focused melee route for players who want smooth single-target and hallway-clearing pressure.",
-      steps: ["Build crit chance and crit damage", "Add viral or corrosive as needed", "Use stance polarity to save capacity"]
-    },
-    {
-      eyebrow: "Market target",
-      title: "Prime set shopping",
-      tag: "Trade",
-      copy: "Use the market card below to price-check sets before you spend relic time or platinum.",
-      steps: ["Search exact set names", "Compare full set vs individual parts", "Check recent listing volume"]
-    }
-  ],
-  missions: [
-    {
-      eyebrow: "Relics",
-      title: "Capture fissure sprint",
-      tag: "Fast",
-      copy: "The simplest relic-opening loop when speed matters more than extra resource side value.",
-      steps: ["Favor Capture or Exterminate", "Equip the exact relic tier", "Extract as soon as reactant hits ten"]
-    },
-    {
-      eyebrow: "Resources",
-      title: "Survival booster block",
-      tag: "Sustain",
-      copy: "A practical fifteen-minute route for stacking resources, affinity, and Nightwave kills together.",
-      steps: ["Bring Nekros or Khora if available", "Stay near life support", "Leave after C rotation if rewards stall"]
-    },
-    {
-      eyebrow: "Standing",
-      title: "Bounty board scan",
-      tag: "Daily",
-      copy: "Use the live bounty section to choose the standing area that overlaps with your current goals.",
-      steps: ["Pick a standing area", "Check reward pools before queueing", "Stop when daily cap is near"]
-    }
-  ]
-};
-
-const defaultFoundryItems = [
-  createFoundryItemFromName("Forma"),
-  createFoundryItemFromName("Orokin Catalyst"),
-  createFoundryItem("Nautilus Prime Systems", 12)
-];
-
-const state = {
-  tasks: loadStoredList(TASKS_STORAGE_KEY, defaultTasks),
-  goals: loadStoredList(GOALS_STORAGE_KEY, defaultGoals),
-  foundry: loadStoredList(FOUNDRY_STORAGE_KEY, defaultFoundryItems),
-  nightwaveCompleted: loadStoredSet(NIGHTWAVE_STORAGE_KEY),
-  cycleOrder: loadStoredList(CYCLE_ORDER_STORAGE_KEY, []),
-  draggingCycleLabel: null,
-  marketSearches: loadStoredList(MARKET_SEARCH_STORAGE_KEY, []),
-  marketLookup: null,
-  marketAutocomplete: [],
-  marketAutocompleteIndex: -1,
-  activeGuideCategory: "warframes",
-  openWorldCyclesFetchedAt: 0,
-  fissuresFetchedAt: 0,
-  bounties: [],
-  bountyArea: loadStoredValue(BOUNTY_AREA_STORAGE_KEY, "all"),
-  manualSuggestion: null,
-  detailView: null
-};
-
-const refs = {
-  cycleGrid: document.querySelector("#cycleGrid"),
-  cycleFeedStatus: document.querySelector("#cycleFeedStatus"),
-  cycleFeedMeta: document.querySelector("#cycleFeedMeta"),
-  alertsList: document.querySelector("#alertsList"),
-  guideGrid: document.querySelector("#guideGrid"),
-  guideTabs: document.querySelectorAll(".guide-tab"),
-  goalsGrid: document.querySelector("#goalsGrid"),
-  foundryList: document.querySelector("#foundryList"),
-  operationsGrid: document.querySelector("#operationsGrid"),
-  detailOverlay: document.querySelector("#detailOverlay"),
-  detailEyebrow: document.querySelector("#detailEyebrow"),
-  detailTitle: document.querySelector("#detailTitle"),
-  detailSummary: document.querySelector("#detailSummary"),
-  detailMeta: document.querySelector("#detailMeta"),
-  detailList: document.querySelector("#detailList"),
-  detailCloseButton: document.querySelector("#detailCloseButton"),
-  focusTitle: document.querySelector("#focusTitle"),
-  focusDescription: document.querySelector("#focusDescription"),
-  focusTag: document.querySelector("#focusTag"),
-  lastUpdated: document.querySelector("#lastUpdated"),
-  refreshButton: document.querySelector("#refreshButton"),
-  focusButton: document.querySelector("#focusButton"),
-  taskForm: document.querySelector("#taskForm"),
-  taskInput: document.querySelector("#taskInput"),
-  taskList: document.querySelector("#taskList"),
-  goalForm: document.querySelector("#goalForm"),
-  goalTitleInput: document.querySelector("#goalTitleInput"),
-  goalDetailInput: document.querySelector("#goalDetailInput"),
-  goalTagInput: document.querySelector("#goalTagInput"),
-  foundryForm: document.querySelector("#foundryForm"),
-  foundryNameInput: document.querySelector("#foundryNameInput"),
-  foundryHoursInput: document.querySelector("#foundryHoursInput"),
-  foundrySuggestions: document.querySelector("#foundrySuggestions"),
-  foundryStatus: document.querySelector("#foundryStatus"),
-  marketForm: document.querySelector("#marketForm"),
-  marketInput: document.querySelector("#marketInput"),
-  marketAutocomplete: document.querySelector("#marketAutocomplete"),
-  marketStatus: document.querySelector("#marketStatus"),
-  marketResult: document.querySelector("#marketResult"),
-  marketResultTitle: document.querySelector(".market-result__title"),
-  marketResultMeta: document.querySelector(".market-result__meta"),
-  marketOpenLink: document.querySelector("#marketOpenLink"),
-  marketHistory: document.querySelector("#marketHistory"),
-  bountyAreaSelect: document.querySelector("#bountyAreaSelect"),
-  bountyStatus: document.querySelector("#bountyStatus"),
-  bountyGrid: document.querySelector("#bountyGrid"),
-  templates: {
-    cycle: document.querySelector("#cycleCardTemplate"),
-    alert: document.querySelector("#alertItemTemplate"),
-    task: document.querySelector("#taskItemTemplate"),
-    goal: document.querySelector("#goalCardTemplate"),
-    guide: document.querySelector("#guideCardTemplate"),
-    operation: document.querySelector("#operationCardTemplate"),
-    foundryItem: document.querySelector("#foundryItemTemplate"),
-    detailItem: document.querySelector("#detailItemTemplate")
-  }
-};
-
-function loadStoredList(key, fallback) {
-  try {
-    const saved = window.localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadStoredValue(key, fallback) {
-  try {
-    const saved = window.localStorage.getItem(key);
-    return saved ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadStoredSet(key) {
-  try {
-    const saved = window.localStorage.getItem(key);
-    return new Set(saved ? JSON.parse(saved) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveTasks() {
-  window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(state.tasks));
-}
-
-function saveGoals() {
-  window.localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(state.goals));
-}
-
-function saveFoundry() {
-  window.localStorage.setItem(FOUNDRY_STORAGE_KEY, JSON.stringify(state.foundry));
-}
-
-function saveNightwave() {
-  window.localStorage.setItem(NIGHTWAVE_STORAGE_KEY, JSON.stringify([...state.nightwaveCompleted]));
-}
-
-function saveCycleOrder() {
-  window.localStorage.setItem(CYCLE_ORDER_STORAGE_KEY, JSON.stringify(state.cycleOrder));
-}
-
-function saveMarketSearches() {
-  window.localStorage.setItem(MARKET_SEARCH_STORAGE_KEY, JSON.stringify(state.marketSearches));
-}
-
-function saveBountyArea() {
-  window.localStorage.setItem(BOUNTY_AREA_STORAGE_KEY, state.bountyArea);
-}
-
-function lookupFoundryItem(name) {
-  const normalizedName = name
-    .trim()
-    .toLowerCase()
-    .replace(/\s+blueprint$/u, "")
-    .replace(/\s+/gu, " ");
-
-  return foundryCatalog[normalizedName] ?? null;
-}
-
-function isOfficiallyKnownFoundryName(name) {
-  const normalizedName = name
-    .trim()
-    .toLowerCase()
-    .replace(/\s+blueprint$/u, "")
-    .replace(/\s+/gu, " ");
-
-  return validWarframeNames.some((entry) => entry.toLowerCase() === normalizedName)
-    || Object.prototype.hasOwnProperty.call(foundryCatalog, normalizedName);
-}
-
-function renderFoundrySuggestions() {
-  refs.foundrySuggestions.replaceChildren();
-
-  foundrySuggestionNames.forEach((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    refs.foundrySuggestions.append(option);
-  });
-}
-
-function updateFoundryStatus() {
-  const name = refs.foundryNameInput.value.trim();
-  if (!name) {
-    refs.foundryHoursInput.value = "";
-    refs.foundryStatus.textContent = "Type or pick a name. Verified matches auto-fill from the official Warframe Wiki catalog in this app.";
-    return;
-  }
-
-  const matchedItem = lookupFoundryItem(name);
-  if (matchedItem) {
-    refs.foundryHoursInput.value = String(matchedItem.buildHours);
-    refs.foundryStatus.textContent = `${matchedItem.name} is verified in the official wiki-backed catalog. Craft time will auto-fill to ${formatBuildLength(matchedItem.buildHours)}.`;
-    return;
-  }
-
-  if (isOfficiallyKnownFoundryName(name)) {
-    refs.foundryHoursInput.value = "";
-    refs.foundryStatus.textContent = `${name} is a recognized official name from the Warframe Wiki list, but this local build does not yet have a verified craft time stored for it. Add hours manually to track it.`;
-    return;
-  }
-
-  refs.foundryHoursInput.value = "";
-  refs.foundryStatus.textContent = `${name} is not in the current official-name catalog loaded into this prototype. You can still track it by entering custom hours.`;
-}
-
-function createFoundryItem(name, buildHours) {
-  const completeAt = new Date(Date.now() + buildHours * 60 * 60 * 1000).toISOString();
-  return {
-    id: crypto.randomUUID(),
-    name,
-    buildHours,
-    done: false,
-    startedAt: new Date().toISOString(),
-    completeAt,
-    sourceLabel: "Custom time",
-    sourceUrl: ""
-  };
-}
-
-function createFoundryItemFromName(name, fallbackHours = 0) {
-  const match = lookupFoundryItem(name);
-  const buildHours = match?.buildHours ?? fallbackHours;
-  const completeAt = new Date(Date.now() + buildHours * 60 * 60 * 1000).toISOString();
-
-  return {
-    id: crypto.randomUUID(),
-    name: match?.name ?? name,
-    buildHours,
-    done: false,
-    startedAt: new Date().toISOString(),
-    completeAt,
-    sourceLabel: match?.sourceLabel ?? "Custom time",
-    sourceUrl: match?.sourceUrl ?? ""
-  };
-}
-
-function getNextDailyResetIso(now = new Date()) {
-  const nextReset = new Date(now);
-  nextReset.setUTCHours(DAILY_RESET_HOUR_UTC, 0, 0, 0);
-
-  if (nextReset.getTime() <= now.getTime()) {
-    nextReset.setUTCDate(nextReset.getUTCDate() + 1);
-  }
-
-  return nextReset.toISOString();
-}
-
-function getBaroCycle(now = new Date()) {
-  const currentTime = now.getTime();
-  const anchorTime = new Date(BARO_FIRST_KNOWN_ARRIVAL).getTime();
-
-  if (currentTime < anchorTime) {
-    return {
-      state: "Arrives soon",
-      expiresAt: new Date(anchorTime).toISOString(),
-      detail: "Baro Ki'Teer appears every two weeks for a 48-hour trading window. Stock Ducats before he docks."
-    };
-  }
-
-  const completedCycles = Math.floor((currentTime - anchorTime) / BARO_VISIT_INTERVAL_MS);
-  const activeCycleStart = anchorTime + completedCycles * BARO_VISIT_INTERVAL_MS;
-  const activeCycleEnd = activeCycleStart + BARO_VISIT_DURATION_MS;
-
-  if (currentTime < activeCycleEnd) {
-    return {
-      state: "Here now",
-      expiresAt: new Date(activeCycleEnd).toISOString(),
-      detail: "Baro Ki'Teer is currently active. Use the timer as the remaining shop window before he leaves the relay."
-    };
-  }
-
-  return {
-    state: "Arrives soon",
-    expiresAt: new Date(activeCycleStart + BARO_VISIT_INTERVAL_MS).toISOString(),
-    detail: "Baro Ki'Teer returns on his two-week cadence and stays for 48 hours once he arrives."
-  };
-}
-
-function toTitleCase(value) {
-  return value.replace(/\b\w/gu, (character) => character.toUpperCase());
-}
-
-function normalizeCycleState(label, payload) {
-  if (label === "Earth") {
-    return payload.isDay ? "Day" : "Night";
-  }
-
-  if (label === "Venus") {
-    if (typeof payload.isWarm === "boolean") {
-      return payload.isWarm ? "Warm" : "Cold";
-    }
-
-    return toTitleCase(payload.state ?? "Warm");
-  }
-
-  if (label === "Deimos") {
-    return toTitleCase(payload.active ?? payload.state ?? "Vome");
-  }
-
-  return toTitleCase(payload.state ?? "Unknown");
-}
-
-function updateStaticCycle(label, payload) {
-  const targetCycle = worldState.staticCycles.find((cycle) => cycle.label === label);
-  if (!targetCycle || !payload?.expiry) {
-    return;
-  }
-
-  targetCycle.state = normalizeCycleState(label, payload);
-  targetCycle.expiresAt = new Date(payload.expiry).toISOString();
-}
-
-async function fetchOpenWorldCycles() {
-  try {
-    const response = await fetch(BROWSE_ORACLE_WORLDSTATE_URL);
-    if (!response.ok) {
-      throw new Error(`browse.wf oracle returned ${response.status}`);
-    }
-    await response.json();
-  } catch (error) {
-    console.error("Failed to fetch browse.wf oracle cycle source", error);
-    renderCycleFeedStatus();
-    return;
-  }
-
-  state.openWorldCyclesFetchedAt = Date.now();
-  renderCycles();
-  renderFocus();
-}
-
-function getCycles() {
-  const baroCycle = getBaroCycle();
-
-  const cycles = [
-    ...worldState.staticCycles,
-    {
-      label: "Reset",
-      title: "Daily Reset",
-      state: "00:00 UTC",
-      expiresAt: getNextDailyResetIso(),
-      detail: "Tracks the next Warframe daily server reset for tribute, Steel Path incursions, standing caps, and other daily refreshes."
-    },
-    {
-      label: "Trader",
-      title: "Baro Ki'Teer / Void Trader",
-      state: baroCycle.state,
-      expiresAt: baroCycle.expiresAt,
-      detail: baroCycle.detail
-    }
-  ];
-
-  return sortCycles(cycles);
-}
-
-function sortCycles(cycles) {
-  const knownLabels = cycles.map((cycle) => cycle.label);
-  const savedOrder = state.cycleOrder.filter((label) => knownLabels.includes(label));
-  const missingLabels = knownLabels.filter((label) => !savedOrder.includes(label));
-  const orderedLabels = [...savedOrder, ...missingLabels];
-
-  if (orderedLabels.length !== state.cycleOrder.length || missingLabels.length > 0) {
-    state.cycleOrder = orderedLabels;
-    saveCycleOrder();
-  }
-
-  const orderMap = new Map(orderedLabels.map((label, index) => [label, index]));
-  return [...cycles].sort((a, b) => (orderMap.get(a.label) ?? 0) - (orderMap.get(b.label) ?? 0));
-}
-
-function moveCycleBefore(draggedLabel, targetLabel) {
-  if (!draggedLabel || !targetLabel || draggedLabel === targetLabel) {
-    return;
-  }
-
-  const nextOrder = [...state.cycleOrder];
-  const draggedIndex = nextOrder.indexOf(draggedLabel);
-  const targetIndex = nextOrder.indexOf(targetLabel);
-
-  if (draggedIndex === -1 || targetIndex === -1) {
-    return;
-  }
-
-  nextOrder.splice(draggedIndex, 1);
-  const insertIndex = nextOrder.indexOf(targetLabel);
-  nextOrder.splice(insertIndex, 0, draggedLabel);
-
-  state.cycleOrder = nextOrder;
-  saveCycleOrder();
-}
-
-function getNightwaveOperation() {
-  return worldState.operations.find((operation) => operation.label === "Nightwave") ?? null;
-}
-
-function normalizeMarketSlug(value) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/['’.]/gu, "")
-    .replace(/\+/gu, " plus ")
-    .replace(/&/gu, " and ")
-    .replace(/[^a-z0-9\s-]/gu, " ")
-    .replace(/\s+/gu, "_")
-    .replace(/_+/gu, "_")
-    .replace(/^_+|_+$/gu, "");
-}
-
-function buildMarketLookup(name) {
-  const cleanName = name.trim();
-  const slug = normalizeMarketSlug(cleanName);
-  if (!slug) {
-    return null;
-  }
-
-  return {
-    name: cleanName,
-    slug,
-    url: `https://warframe.market/items/${slug}`
-  };
-}
-
-function buildMarketLookupFromSuggestion(suggestion) {
-  if (!suggestion?.label || !suggestion?.slug) {
-    return null;
-  }
-
-  return {
-    name: suggestion.label,
-    slug: suggestion.slug,
-    url: `https://warframe.market/items/${suggestion.slug}`
-  };
-}
-
-function getBountyAreaLabel(syndicate) {
-  const areaLabels = {
-    Ostron: "Cetus / Plains of Eidolon",
-    "Solaris United": "Fortuna / Orb Vallis",
-    Entrati: "Necralisk / Cambion Drift",
-    Holdfasts: "Zariman",
-    Cavia: "Sanctum Anatomica"
-  };
-
-  return areaLabels[syndicate] ?? syndicate;
-}
-
-function getSortedBountyBoards() {
-  return [...state.bounties].sort((a, b) => {
-    const labelCompare = getBountyAreaLabel(a.syndicate).localeCompare(getBountyAreaLabel(b.syndicate));
-    if (labelCompare !== 0) {
-      return labelCompare;
-    }
-
-    return new Date(a.end) - new Date(b.end);
-  });
-}
-
-function getSelectedBountyBoards() {
-  if (state.bountyArea === "all") {
-    return getSortedBountyBoards();
-  }
-
-  return getSortedBountyBoards().filter((board) => board.syndicate === state.bountyArea);
-}
-
-function formatRewardChance(chance) {
-  return `${(chance * 100).toFixed(chance >= 0.1 ? 1 : 2)}%`;
-}
-
-function renderBountyAreaOptions() {
-  refs.bountyAreaSelect.replaceChildren();
-
-  const allOption = document.createElement("option");
-  allOption.value = "all";
-  allOption.textContent = "All standing areas";
-  refs.bountyAreaSelect.append(allOption);
-
-  getSortedBountyBoards().forEach((board) => {
-    const option = document.createElement("option");
-    option.value = board.syndicate;
-    option.textContent = getBountyAreaLabel(board.syndicate);
-    refs.bountyAreaSelect.append(option);
-  });
-
-  const currentValues = new Set(["all", ...state.bounties.map((board) => board.syndicate)]);
-  if (!currentValues.has(state.bountyArea)) {
-    state.bountyArea = "all";
-    saveBountyArea();
-  }
-
-  refs.bountyAreaSelect.value = state.bountyArea;
-}
-
-function renderBounties() {
-  refs.bountyGrid.replaceChildren();
-
-  if (!state.bounties.length) {
-    refs.bountyStatus.textContent = "Loading bounty board from Tenno Tools...";
-    return;
-  }
-
-  const boards = getSelectedBountyBoards();
-  if (!boards.length) {
-    refs.bountyStatus.textContent = "No live bounty board matched that standing area.";
-    return;
-  }
-
-  const totalJobs = boards.reduce((sum, board) => sum + board.jobs.length, 0);
-  refs.bountyStatus.textContent = `${totalJobs} live bounty job${totalJobs === 1 ? "" : "s"} across ${boards.length} standing area${boards.length === 1 ? "" : "s"}. Reward chances are pulled from Tenno Tools.`;
-
-  boards.forEach((board) => {
-    const boardNode = document.createElement("article");
-    boardNode.className = "bounty-board";
-
-    const header = document.createElement("div");
-    header.className = "bounty-board__header";
-
-    const headingGroup = document.createElement("div");
-    const eyebrow = document.createElement("p");
-    eyebrow.className = "cycle-card__label";
-    eyebrow.textContent = board.syndicate;
-    const title = document.createElement("h3");
-    title.textContent = getBountyAreaLabel(board.syndicate);
-    headingGroup.append(eyebrow, title);
-
-    const expires = document.createElement("span");
-    expires.className = "pill";
-    expires.textContent = `Refresh ${formatTimeRemaining(board.end)}`;
-    header.append(headingGroup, expires);
-    boardNode.append(header);
-
-    const jobsGrid = document.createElement("div");
-    jobsGrid.className = "bounty-board__jobs";
-
-    board.jobs.forEach((job) => {
-      const jobNode = document.createElement("article");
-      jobNode.className = "bounty-job";
-
-      const jobTop = document.createElement("div");
-      jobTop.className = "bounty-job__top";
-
-      const jobHeading = document.createElement("div");
-      const jobTitle = document.createElement("h4");
-      jobTitle.className = "bounty-job__title";
-      jobTitle.textContent = job.title;
-      const jobMeta = document.createElement("p");
-      jobMeta.className = "bounty-job__meta";
-      jobMeta.textContent = `Levels ${job.minLevel}-${job.maxLevel} | Rotation ${job.rotation ?? "?"} | Standing ${job.xpAmounts?.join(", ") ?? "Unknown"}`;
-      jobHeading.append(jobTitle, jobMeta);
-
-      const stagePill = document.createElement("span");
-      stagePill.className = "pill";
-      stagePill.textContent = `${job.rewards.length} reward group${job.rewards.length === 1 ? "" : "s"}`;
-
-      jobTop.append(jobHeading, stagePill);
-      jobNode.append(jobTop);
-
-      const rewardsList = document.createElement("div");
-      rewardsList.className = "reward-list";
-
-      job.rewards.forEach((rewardGroup, rewardGroupIndex) => {
-        const rewardGroupNode = document.createElement("section");
-        rewardGroupNode.className = "reward-group";
-
-        const rewardGroupTitle = document.createElement("p");
-        rewardGroupTitle.className = "reward-group__title";
-        rewardGroupTitle.textContent = `Reward group ${rewardGroupIndex + 1}`;
-        rewardGroupNode.append(rewardGroupTitle);
-
-        const rewardGroupItems = document.createElement("div");
-        rewardGroupItems.className = "reward-group__items";
-
-        rewardGroup.forEach((reward) => {
-          const rewardNode = document.createElement("div");
-          rewardNode.className = "reward-pill";
-
-          const rewardName = document.createElement("span");
-          rewardName.className = "reward-pill__name";
-          rewardName.textContent = reward.name;
-
-          const rewardChance = document.createElement("span");
-          rewardChance.className = "reward-pill__chance";
-          rewardChance.textContent = formatRewardChance(reward.chance);
-
-          rewardNode.append(rewardName, rewardChance);
-          rewardGroupItems.append(rewardNode);
-        });
-
-        rewardGroupNode.append(rewardGroupItems);
-        rewardsList.append(rewardGroupNode);
+    function setupSectionAccordion() {
+      if (!sectionAccordionState.enabled) return;
+
+      sections.forEach(section => {
+        section.classList.remove('hidden-panel');
       });
 
-      jobNode.append(rewardsList);
-      jobsGrid.append(jobNode);
-    });
-
-    boardNode.append(jobsGrid);
-    refs.bountyGrid.append(boardNode);
-  });
-}
-
-function getVoidFissuresOperation() {
-  return worldState.operations.find((operation) => operation.label === "Void Fissures") ?? null;
-}
-
-function isVoidStormFissure(fissure) {
-  return /proxima/iu.test(fissure.location ?? "");
-}
-
-function isSteelPathFissure(fissure) {
-  return Boolean(
-    fissure.steelPath
-      ?? fissure.steelpath
-      ?? fissure.isSteelPath
-      ?? fissure.isHard
-      ?? fissure.hard
-      ?? fissure.hardMode
-  );
-}
-
-function formatFissureLocation(location) {
-  return location.replace(/\//gu, " | ");
-}
-
-function buildFissureEntry(fissure) {
-  const expiresAt = new Date(fissure.end * 1000).toISOString();
-  const voidStorm = isVoidStormFissure(fissure);
-  const steelPath = isSteelPathFissure(fissure);
-  const tier = fissure.tier ?? "Relic";
-  const missionType = fissure.missionType ?? "Mission";
-  const location = fissure.location ?? "Unknown node";
-
-  let title = `${tier} ${missionType}`;
-  if (voidStorm) {
-    title = `${tier} Void Storm`;
-  }
-  if (steelPath) {
-    title = `Steel Path ${title}`;
-  }
-
-  const tag = steelPath && voidStorm
-    ? "SP Storm"
-    : steelPath
-      ? "Steel Path"
-      : voidStorm
-        ? "Void Storm"
-        : tier;
-
-  const copy = voidStorm
-    ? steelPath
-      ? "Railjack relic opening with Steel Path pressure and a tougher pace than the standard fissure board."
-      : "Railjack relic opening that lets you work Void Storm rewards into your relic route."
-    : steelPath
-      ? "Steel Path fissure that layers relic cracking with tougher enemies and Steel Essence progress."
-      : "Standard fissure slot for quick relic openings without the Railjack or Steel Path overhead.";
-
-  return {
-    id: fissure.id,
-    title,
-    meta: `${formatFissureLocation(location)} | Ends ${formatTimeRemaining(expiresAt)}`,
-    copy,
-    tag,
-    expiresAt
-  };
-}
-
-function updateVoidFissuresOperation(entries) {
-  const voidFissuresOperation = getVoidFissuresOperation();
-  if (!voidFissuresOperation || !entries.length) {
-    return;
-  }
-
-  const sortedEntries = [...entries].sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
-  const steelPathCount = sortedEntries.filter((entry) => entry.tag === "Steel Path" || entry.tag === "SP Storm").length;
-  const voidStormCount = sortedEntries.filter((entry) => entry.tag === "Void Storm" || entry.tag === "SP Storm").length;
-
-  voidFissuresOperation.status = `${sortedEntries.length} live`;
-  voidFissuresOperation.expiresAt = sortedEntries[0].expiresAt;
-  voidFissuresOperation.summary = `${sortedEntries.length} fissures live from Tenno Tools, including ${steelPathCount} Steel Path mission${steelPathCount === 1 ? "" : "s"} and ${voidStormCount} Void Storm${voidStormCount === 1 ? "" : "s"}.`;
-  voidFissuresOperation.detail = "This board now comes from Tenno Tools live worldstate data and mixes standard fissures, Steel Path fissures, and Railjack Void Storms into one relay-style view.";
-  voidFissuresOperation.entries = sortedEntries.map((entry) => ({
-    title: entry.title,
-    meta: entry.meta,
-    copy: entry.copy,
-    tag: entry.tag
-  }));
-}
-
-async function fetchVoidFissures() {
-  try {
-    const response = await fetch(TENNO_TOOLS_FISSURES_URL);
-    if (!response.ok) {
-      throw new Error(`Tenno Tools returned ${response.status}`);
-    }
-
-    const payload = await response.json();
-    const fissures = payload?.fissures?.data ?? [];
-    const entries = fissures.map(buildFissureEntry);
-
-    if (!entries.length) {
-      return;
-    }
-
-    updateVoidFissuresOperation(entries);
-    state.fissuresFetchedAt = Date.now();
-    renderOperations();
-    renderActiveDetailView();
-  } catch (error) {
-    console.error("Failed to fetch Tenno Tools fissures", error);
-  }
-}
-
-async function fetchBounties() {
-  try {
-    const response = await fetch(TENNO_TOOLS_BOUNTIES_URL);
-    if (!response.ok) {
-      throw new Error(`Tenno Tools returned ${response.status}`);
-    }
-
-    const payload = await response.json();
-    state.bounties = (payload?.bounties?.data ?? []).map((board) => ({
-      ...board,
-      end: new Date(board.end * 1000).toISOString()
-    }));
-
-    renderBountyAreaOptions();
-    renderBounties();
-  } catch (error) {
-    console.error("Failed to fetch Tenno Tools bounties", error);
-    refs.bountyStatus.textContent = "Unable to load Tenno Tools bounty data right now.";
-  }
-}
-
-function rememberMarketSearch(name) {
-  const cleanName = name.trim();
-  if (!cleanName) {
-    return;
-  }
-
-  state.marketSearches = [
-    cleanName,
-    ...state.marketSearches.filter((entry) => entry.toLowerCase() !== cleanName.toLowerCase())
-  ].slice(0, 8);
-  saveMarketSearches();
-}
-
-function getMarketAutocompleteMatches(query) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return [];
-  }
-
-  const startsWithMatches = marketSuggestions.filter((suggestion) =>
-    suggestion.label.toLowerCase().startsWith(normalizedQuery)
-  );
-  const includesMatches = marketSuggestions.filter((suggestion) =>
-    !suggestion.label.toLowerCase().startsWith(normalizedQuery)
-      && suggestion.label.toLowerCase().includes(normalizedQuery)
-  );
-
-  return [...startsWithMatches, ...includesMatches].slice(0, 8);
-}
-
-function hideMarketAutocomplete() {
-  state.marketAutocomplete = [];
-  state.marketAutocompleteIndex = -1;
-  refs.marketAutocomplete.hidden = true;
-  refs.marketAutocomplete.replaceChildren();
-}
-
-function renderMarketAutocomplete() {
-  refs.marketAutocomplete.replaceChildren();
-
-  if (!state.marketAutocomplete.length) {
-    refs.marketAutocomplete.hidden = true;
-    return;
-  }
-
-  state.marketAutocomplete.forEach((suggestion, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "autocomplete-option";
-
-    if (index === state.marketAutocompleteIndex) {
-      button.classList.add("autocomplete-option--active");
-    }
-
-    button.textContent = suggestion.label;
-    button.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      selectMarketSuggestion(suggestion);
-    });
-    refs.marketAutocomplete.append(button);
-  });
-
-  refs.marketAutocomplete.hidden = false;
-}
-
-function updateMarketAutocomplete(query) {
-  state.marketAutocomplete = getMarketAutocompleteMatches(query);
-  state.marketAutocompleteIndex = state.marketAutocomplete.length ? 0 : -1;
-  renderMarketAutocomplete();
-}
-
-function selectMarketSuggestion(selection, { submit = false } = {}) {
-  const suggestion = typeof selection === "string"
-    ? { label: selection, slug: normalizeMarketSlug(selection) }
-    : selection;
-
-  refs.marketInput.value = suggestion.label;
-  state.marketLookup = buildMarketLookupFromSuggestion(suggestion);
-  renderMarketLookup();
-  hideMarketAutocomplete();
-
-  if (submit) {
-    rememberMarketSearch(suggestion.label);
-    renderMarketHistory();
-  }
-}
-
-function parseStandingValue(meta) {
-  const match = meta.match(/([\d,]+)/u);
-  return match ? Number.parseInt(match[1].replace(/,/gu, ""), 10) : 0;
-}
-
-function getNightwaveProgress(operation = getNightwaveOperation()) {
-  const entries = operation?.entries ?? [];
-  const completedEntries = entries.filter((entry) => state.nightwaveCompleted.has(entry.id));
-  const earnedStanding = completedEntries.reduce((total, entry) => total + parseStandingValue(entry.meta), 0);
-
-  return {
-    total: entries.length,
-    completed: completedEntries.length,
-    remaining: Math.max(entries.length - completedEntries.length, 0),
-    earnedStanding
-  };
-}
-
-function getOperationStatus(operation) {
-  if (operation.label !== "Nightwave") {
-    return operation.status;
-  }
-
-  const progress = getNightwaveProgress(operation);
-  return `${progress.remaining} act${progress.remaining === 1 ? "" : "s"} left`;
-}
-
-function getCycleTimerLabel(cycle) {
-  const timedCycleLabels = new Set(["Earth", "Venus", "Deimos"]);
-
-  if (!timedCycleLabels.has(cycle.label)) {
-    return formatTimeRemaining(cycle.expiresAt);
-  }
-
-  return `${cycle.state} ends in ${formatTimeRemaining(cycle.expiresAt)}`;
-}
-
-function formatTimeRemaining(expiresAt) {
-  const diffMs = new Date(expiresAt).getTime() - Date.now();
-  if (diffMs <= 0) {
-    return "Ready now";
-  }
-
-  const totalSeconds = Math.floor(diffMs / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (days > 0) {
-    if (hours > 0) {
-      return `${days}d ${hours}h ${minutes}m left`;
-    }
-
-    return `${days}d ${minutes}m ${seconds}s left`;
-  }
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s left`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s left`;
-  }
-
-  return `${seconds}s left`;
-}
-
-function formatBuildLength(hours) {
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-
-  if (days > 0 && remainingHours > 0) {
-    return `${days}d ${remainingHours}h build`;
-  }
-
-  if (days > 0) {
-    return `${days}d build`;
-  }
-
-  return `${hours}h build`;
-}
-
-function formatSyncTime(isoString) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(new Date(isoString));
-}
-
-function formatRelativeSyncAge(timestamp) {
-  if (!timestamp) {
-    return "Waiting for browse.wf cycle data...";
-  }
-
-  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (diffSeconds < 10) {
-    return "Live cycle data synced just now";
-  }
-
-  if (diffSeconds < 60) {
-    return `Live cycle data synced ${diffSeconds}s ago`;
-  }
-
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  return `Live cycle data synced ${diffMinutes}m ago`;
-}
-
-function renderCycleFeedStatus() {
-  const lastFetch = state.openWorldCyclesFetchedAt;
-  const ageMs = lastFetch ? Date.now() - lastFetch : Number.POSITIVE_INFINITY;
-
-  refs.cycleFeedStatus.classList.remove("pill--ok", "pill--warn", "pill--muted");
-
-  if (!lastFetch) {
-    refs.cycleFeedStatus.textContent = "Syncing";
-    refs.cycleFeedStatus.classList.add("pill--muted");
-    refs.cycleFeedMeta.textContent = "Waiting for browse.wf cycle data...";
-    return;
-  }
-
-  if (ageMs < 120000) {
-    refs.cycleFeedStatus.textContent = "Live";
-    refs.cycleFeedStatus.classList.add("pill--ok");
-  } else {
-    refs.cycleFeedStatus.textContent = "Stale";
-    refs.cycleFeedStatus.classList.add("pill--warn");
-  }
-
-  refs.cycleFeedMeta.textContent = formatRelativeSyncAge(lastFetch);
-}
-
-function formatAbsoluteTime(isoString) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(new Date(isoString));
-}
-
-function pickFocus() {
-  if (state.manualSuggestion) {
-    return state.manualSuggestion;
-  }
-
-  const urgentCycle = [...getCycles()]
-    .sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt))[0];
-
-  const pendingTask = state.tasks.find((task) => !task.done);
-
-  if (pendingTask) {
-    return {
-      title: pendingTask.text,
-      description: `This is your cleanest next action. Pair it with ${urgentCycle.title} while the current ${urgentCycle.state.toLowerCase()} state is live.`,
-      tag: "Suggested run"
-    };
-  }
-
-  return {
-    title: `Check ${urgentCycle.title}`,
-    description: `The ${urgentCycle.state.toLowerCase()} window closes soon, so this is the best moment to capitalize on it.`,
-    tag: "Cycle priority"
-  };
-}
-
-function renderCycles() {
-  if (state.draggingCycleLabel) {
-    return;
-  }
-
-  renderCycleFeedStatus();
-  refs.cycleGrid.replaceChildren();
-
-  getCycles().forEach((cycle) => {
-    const node = refs.templates.cycle.content.firstElementChild.cloneNode(true);
-    node.draggable = true;
-    node.dataset.cycleLabel = cycle.label;
-    node.querySelector(".cycle-card__label").textContent = cycle.label;
-    node.querySelector(".cycle-card__title").textContent = cycle.title;
-    node.querySelector(".pill").textContent = cycle.state;
-    node.querySelector(".cycle-card__timer").textContent = getCycleTimerLabel(cycle);
-    node.querySelector(".cycle-card__detail").textContent = cycle.detail;
-
-    node.addEventListener("dragstart", (event) => {
-      state.draggingCycleLabel = cycle.label;
-      node.classList.add("cycle-card--dragging");
-      if (event.dataTransfer) {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", cycle.label);
-      }
-    });
-
-    node.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (state.draggingCycleLabel && state.draggingCycleLabel !== cycle.label) {
-        node.classList.add("cycle-card--drop-target");
-      }
-    });
-
-    node.addEventListener("dragleave", () => {
-      node.classList.remove("cycle-card--drop-target");
-    });
-
-    node.addEventListener("drop", (event) => {
-      event.preventDefault();
-      node.classList.remove("cycle-card--drop-target");
-      moveCycleBefore(state.draggingCycleLabel, cycle.label);
-      state.draggingCycleLabel = null;
-      renderCycles();
-      renderFocus();
-    });
-
-    node.addEventListener("dragend", () => {
-      state.draggingCycleLabel = null;
-      renderCycles();
-    });
-
-    refs.cycleGrid.append(node);
-  });
-}
-
-function renderAlerts() {
-  refs.alertsList.replaceChildren();
-
-  worldState.alerts.forEach((alert) => {
-    const node = refs.templates.alert.content.firstElementChild.cloneNode(true);
-    node.querySelector(".list-item__title").textContent = alert.title;
-    node.querySelector(".list-item__copy").textContent = alert.copy;
-    node.querySelector(".pill").textContent = alert.tag;
-    refs.alertsList.append(node);
-  });
-}
-
-function renderGoals() {
-  refs.goalsGrid.replaceChildren();
-
-  state.goals.forEach((goal) => {
-    const node = refs.templates.goal.content.firstElementChild.cloneNode(true);
-    node.querySelector(".goal-card__eyebrow").textContent = goal.eyebrow;
-    node.querySelector(".goal-card__title").textContent = goal.title;
-    node.querySelector(".goal-card__copy").textContent = goal.copy;
-    node.querySelector(".pill").textContent = goal.tag;
-    node.querySelector(".goal-card__delete").addEventListener("click", () => {
-      state.goals = state.goals.filter((item) => item.id !== goal.id);
-      saveGoals();
-      renderGoals();
-    });
-    refs.goalsGrid.append(node);
-  });
-}
-
-function renderGuides() {
-  refs.guideTabs.forEach((tab) => {
-    const isActive = tab.dataset.guideCategory === state.activeGuideCategory;
-    tab.classList.toggle("guide-tab--active", isActive);
-    tab.setAttribute("aria-selected", String(isActive));
-  });
-
-  refs.guideGrid.replaceChildren();
-
-  guideArchive[state.activeGuideCategory].forEach((guide) => {
-    const node = refs.templates.guide.content.firstElementChild.cloneNode(true);
-    node.querySelector(".guide-card__eyebrow").textContent = guide.eyebrow;
-    node.querySelector(".guide-card__title").textContent = guide.title;
-    node.querySelector(".pill").textContent = guide.tag;
-    node.querySelector(".guide-card__copy").textContent = guide.copy;
-
-    const steps = node.querySelector(".guide-card__steps");
-    guide.steps.forEach((step) => {
-      const item = document.createElement("li");
-      item.textContent = step;
-      steps.append(item);
-    });
-
-    refs.guideGrid.append(node);
-  });
-}
-
-function renderFoundry() {
-  refs.foundryList.replaceChildren();
-
-  state.foundry.forEach((item) => {
-    const node = refs.templates.foundryItem.content.firstElementChild.cloneNode(true);
-    const checkbox = node.querySelector(".foundry-item__checkbox");
-    node.querySelector(".list-item__title").textContent = item.name;
-    node.querySelector(".foundry-item__meta").textContent = `${formatBuildLength(item.buildHours)} | ${item.sourceLabel}`;
-    node.querySelector(".list-item__copy").textContent = item.done
-      ? `Checked off. Built item was expected to finish ${formatAbsoluteTime(item.completeAt)}.`
-      : `Time remaining: ${formatTimeRemaining(item.completeAt)} | Finishes ${formatAbsoluteTime(item.completeAt)}`;
-    node.querySelector(".pill").textContent = item.done ? "Complete" : formatTimeRemaining(item.completeAt);
-    checkbox.checked = Boolean(item.done);
-    if (item.done) {
-      node.classList.add("foundry-item--done");
-    }
-    checkbox.addEventListener("change", () => {
-      item.done = checkbox.checked;
-      saveFoundry();
-      renderFoundry();
-    });
-    node.querySelector(".foundry-item__delete").addEventListener("click", () => {
-      state.foundry = state.foundry.filter((foundryItem) => foundryItem.id !== item.id);
-      saveFoundry();
-      renderFoundry();
-    });
-    refs.foundryList.append(node);
-  });
-}
-
-function renderOperations() {
-  refs.operationsGrid.replaceChildren();
-
-  worldState.operations.forEach((operation) => {
-    const node = refs.templates.operation.content.firstElementChild.cloneNode(true);
-    node.querySelector(".cycle-card__label").textContent = operation.label;
-    node.querySelector(".operation-card__title").textContent = operation.title;
-    node.querySelector(".pill").textContent = getOperationStatus(operation);
-    node.querySelector(".operation-card__timer").textContent = formatTimeRemaining(operation.expiresAt);
-    node.querySelector(".operation-card__copy").textContent = operation.summary;
-    node.querySelector(".operation-card__detail").textContent = operation.detail;
-
-    const button = node.querySelector(".operation-card__button");
-    if (operation.entries?.length) {
-      button.hidden = false;
-      button.textContent = operation.label === "Nightwave" ? "Open missions" : "Open board";
-      button.addEventListener("click", () => openDetailPanel(operation));
-    }
-
-    refs.operationsGrid.append(node);
-  });
-}
-
-function renderMarketLookup() {
-  if (!state.marketLookup) {
-    refs.marketResult.hidden = true;
-    refs.marketStatus.textContent = "Type an item name like Rhino Prime Set, Arcane Energize, or Primed Flow to build a market-ready link.";
-    return;
-  }
-
-  refs.marketResult.hidden = false;
-  refs.marketResultTitle.textContent = state.marketLookup.name;
-  refs.marketResultMeta.textContent = `Market path: ${state.marketLookup.slug}`;
-  refs.marketOpenLink.href = state.marketLookup.url;
-  refs.marketStatus.textContent = `Built a direct warframe.market link for ${state.marketLookup.name}.`;
-}
-
-function renderMarketHistory() {
-  refs.marketHistory.replaceChildren();
-
-  state.marketSearches.forEach((search) => {
-    const button = document.createElement("button");
-    button.className = "pill pill--interactive";
-    button.type = "button";
-    button.textContent = search;
-    button.addEventListener("click", () => {
-      selectMarketSuggestion(search);
-    });
-    refs.marketHistory.append(button);
-  });
-}
-
-function renderTasks() {
-  refs.taskList.replaceChildren();
-
-  state.tasks.forEach((task) => {
-    const node = refs.templates.task.content.firstElementChild.cloneNode(true);
-    const checkbox = node.querySelector(".task-item__checkbox");
-    const text = node.querySelector(".task-item__text");
-    const removeButton = node.querySelector(".task-item__delete");
-
-    checkbox.checked = task.done;
-    checkbox.addEventListener("change", () => {
-      task.done = checkbox.checked;
-      state.manualSuggestion = null;
-      saveTasks();
-      renderTasks();
-      renderFocus();
-    });
-
-    text.textContent = task.text;
-
-    removeButton.addEventListener("click", () => {
-      state.tasks = state.tasks.filter((item) => item.id !== task.id);
-      state.manualSuggestion = null;
-      saveTasks();
-      renderTasks();
-      renderFocus();
-    });
-
-    refs.taskList.append(node);
-  });
-}
-
-function renderFocus() {
-  const focus = pickFocus();
-  refs.focusTitle.textContent = focus.title;
-  refs.focusDescription.textContent = focus.description;
-  refs.focusTag.textContent = focus.tag;
-  refs.lastUpdated.textContent = `Synced ${formatSyncTime(worldState.syncedAt)}`;
-}
-
-function suggestRandomMission() {
-  const mission = starChartMissions[Math.floor(Math.random() * starChartMissions.length)];
-  state.manualSuggestion = {
-    title: mission.title,
-    description: mission.description,
-    tag: mission.tag
-  };
-  renderFocus();
-}
-
-function openDetailPanel(operation) {
-  state.detailView = operation.label;
-  refs.detailEyebrow.textContent = operation.label;
-  refs.detailTitle.textContent = operation.title;
-  refs.detailSummary.textContent = operation.summary;
-  refs.detailMeta.replaceChildren();
-
-  const status = document.createElement("span");
-  status.className = "pill";
-  status.textContent = getOperationStatus(operation);
-
-  const timer = document.createElement("span");
-  timer.className = "pill";
-  timer.textContent = formatTimeRemaining(operation.expiresAt);
-
-  refs.detailMeta.append(status, timer);
-
-  if (operation.label === "Nightwave") {
-    const progress = getNightwaveProgress(operation);
-    const progressPill = document.createElement("span");
-    progressPill.className = "pill";
-    progressPill.textContent = `${progress.completed}/${progress.total} complete`;
-    refs.detailMeta.append(progressPill);
-  }
-
-  refs.detailList.replaceChildren();
-
-  operation.entries.forEach((entry) => {
-    const node = refs.templates.detailItem.content.firstElementChild.cloneNode(true);
-    const title = node.querySelector(".list-item__title");
-    const isNightwave = operation.label === "Nightwave" && entry.id;
-
-    if (isNightwave) {
-      const label = document.createElement("label");
-      label.className = "detail-item__label";
-
-      const checkbox = document.createElement("input");
-      checkbox.className = "detail-item__checkbox";
-      checkbox.type = "checkbox";
-      checkbox.checked = state.nightwaveCompleted.has(entry.id);
-
-      const text = document.createElement("span");
-      text.className = "detail-item__text";
-      text.textContent = entry.title;
-
-      label.append(checkbox, text);
-      title.replaceWith(label);
-
-      if (checkbox.checked) {
-        node.classList.add("detail-item--done");
-      }
-
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) {
-          state.nightwaveCompleted.add(entry.id);
-        } else {
-          state.nightwaveCompleted.delete(entry.id);
+      sections.forEach(section => {
+        const sectionName = String(section.id || '').replace(/^section-/, '');
+        if (!sectionName) return;
+        if (sectionAccordionState.bodies.has(sectionName)) return;
+
+        const headerBlock = section.firstElementChild;
+        if (!headerBlock) return;
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'section-toggle-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.dataset.sectionToggle = sectionName;
+        toggle.textContent = 'expand';
+        headerBlock.insertAdjacentElement('afterend', toggle);
+
+        const body = document.createElement('div');
+        body.className = 'section-body space-y-6';
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+        toggle.insertAdjacentElement('afterend', body);
+
+        let cursor = body.nextSibling;
+        while (cursor) {
+          const next = cursor.nextSibling;
+          body.appendChild(cursor);
+          cursor = next;
         }
 
-        saveNightwave();
-        renderOperations();
-        openDetailPanel(operation);
+        sectionAccordionState.bodies.set(sectionName, body);
+        sectionAccordionState.toggles.set(sectionName, toggle);
+
+        toggle.addEventListener('click', () => {
+          const isOpen = body.dataset.open === '1';
+          setSectionOpen(sectionName, !isOpen);
+        });
+      });
+
+      setSectionOpen('dashboard', true);
+      ['arsenal', 'market', 'codex'].forEach(name => setSectionOpen(name, false));
+    }
+
+    function showSection(sectionName) {
+      navButtons.forEach(btn => btn.classList.toggle('nav-active', btn.dataset.section === sectionName));
+
+      if (sectionAccordionState.enabled) {
+        const body = sectionAccordionState.bodies.get(sectionName);
+        const isOpen = body?.dataset.open === '1';
+        setSectionOpen(sectionName, !isOpen, { scrollIntoView: true });
+      } else {
+        sections.forEach(section => section.classList.toggle('hidden-panel', section.id !== `section-${sectionName}`));
+      }
+
+      if (searchInput) searchInput.value = '';
+      clearHighlights();
+      if (sectionName === 'market') {
+        ensureMarketCatalog().catch(error => logClientError('market catalog preload', error));
+      }
+      if (sectionName === 'codex') {
+        const codexGroup = document.querySelector('[data-subtabs="codex"]');
+        const codexTab = codexGroup?.querySelector('.subtab-btn.subtab-active') || codexGroup?.querySelector('.subtab-btn');
+        if (codexTab) codexTab.click();
+      }
+    }
+
+    function setupSubtabs() {
+      document.querySelectorAll('[data-subtabs]').forEach(group => {
+        const buttons = group.querySelectorAll('.subtab-btn');
+        buttons.forEach(button => {
+          button.addEventListener('click', () => {
+            const parentSection = group.closest('.content-section');
+            if (!parentSection) {
+              logClientError('subtab parent lookup', new Error('Missing parent section'), { group: group.dataset.subtabs || 'unknown' });
+              return;
+            }
+            parentSection.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('subtab-active'));
+            button.classList.add('subtab-active');
+            parentSection.querySelectorAll('.subpanel').forEach(panel => panel.classList.add('hidden-panel'));
+            const target = parentSection.querySelector(`#${button.dataset.target}`);
+            if (!target) {
+              logClientError('subtab target lookup', new Error('Missing subpanel target'), { target: button.dataset.target || 'missing' });
+              return;
+            }
+            target.classList.remove('hidden-panel');
+          });
+        });
+      });
+    }
+
+    function clearHighlights() {
+      document.querySelectorAll('[data-searchable]').forEach(el => el.classList.remove('ring-1','ring-terminal'));
+    }
+
+    setupSectionAccordion();
+    navButtons.forEach(btn => btn.addEventListener('click', () => showSection(btn.dataset.section)));
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        showSection('dashboard');
+        refreshDashboardTrackers();
+        document.querySelectorAll('.subtab-btn').forEach(btn => {
+          btn.classList.remove('subtab-active');
+        });
+        document.querySelectorAll('[data-subtabs]').forEach(group => {
+          const firstBtn = group.querySelector('.subtab-btn');
+          if (firstBtn) firstBtn.click();
+        });
       });
     } else {
-      title.textContent = entry.title;
+      logClientError('refresh button binding', new Error('refreshBtn not found'));
     }
 
-    node.querySelector(".pill").textContent = entry.tag;
-    node.querySelector(".detail-item__meta").textContent = entry.meta;
-    node.querySelector(".list-item__copy").textContent = entry.copy;
-    refs.detailList.append(node);
-  });
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        const activeSections = sectionAccordionState.enabled
+          ? Array.from(sections)
+          : [document.querySelector('.content-section:not(.hidden-panel)')].filter(Boolean);
 
-  refs.detailOverlay.hidden = false;
-  document.body.style.overflow = "hidden";
-}
+        activeSections.forEach(activeSection => {
+          activeSection.querySelectorAll('.panel-card, a, li, p, h1, h2, h3, div').forEach(el => {
+            if (!q) return el.classList.remove('ring-1', 'ring-terminal');
+            const text = (el.innerText || '').toLowerCase();
+            if (text.includes(q) && text.length < 500) {
+              el.classList.add('ring-1', 'ring-terminal');
+            } else {
+              el.classList.remove('ring-1', 'ring-terminal');
+            }
+          });
+        });
+      });
+    } else {
+      logClientError('global search binding', new Error('searchInput not found'));
+    }
 
-function renderActiveDetailView() {
-  if (!state.detailView) {
-    return;
-  }
+    const dashboardTrackerGrid = document.getElementById('dashboardTrackerGrid');
+    const dashboardTrackerStatus = document.getElementById('dashboardTrackerStatus');
+    const dashboardTrackerState = {
+      categories: [],
+      selectedDetailCategoryId: '',
+      selectedDetailId: '',
+      source: '',
+      syncedAt: null,
+      lastData: null
+    };
 
-  const activeOperation = worldState.operations.find((operation) => operation.label === state.detailView);
-  if (activeOperation) {
-    openDetailPanel(activeOperation);
-  }
-}
+    const SOLNODE_LOOKUP_URL = 'https://raw.githubusercontent.com/WFCD/warframe-worldstate-data/master/data/solNodes.json';
+    const dashboardNodeLookupState = {
+      loaded: false,
+      loading: false,
+      error: null,
+      map: null,
+      promise: null
+    };
 
-function closeDetailPanel() {
-  state.detailView = null;
-  refs.detailOverlay.hidden = true;
-  document.body.style.overflow = "";
-}
+    function setDashboardTrackerStatus(text) {
+      if (dashboardTrackerStatus) dashboardTrackerStatus.textContent = text;
+    }
 
-function refreshIntel() {
-  worldState.syncedAt = new Date().toISOString();
-  state.manualSuggestion = null;
-  renderCycles();
-  renderOperations();
-  renderFoundry();
-  renderActiveDetailView();
-  renderFocus();
-  fetchOpenWorldCycles();
-  fetchVoidFissures();
-  fetchBounties();
-}
+    function ensureDashboardNodeLookup() {
+      if (dashboardNodeLookupState.loaded) return Promise.resolve(dashboardNodeLookupState.map);
+      if (dashboardNodeLookupState.promise) return dashboardNodeLookupState.promise;
+      dashboardNodeLookupState.loading = true;
+      dashboardNodeLookupState.error = null;
+      dashboardNodeLookupState.promise = (async () => {
+        try {
+          logRequest('dashboard node lookup', SOLNODE_LOOKUP_URL);
+          const response = await fetch(SOLNODE_LOOKUP_URL, { cache: 'force-cache' });
+          logResponse('dashboard node lookup', response);
+          if (!response.ok) throw new Error(`node lookup HTTP ${response.status}`);
+          const json = await response.json();
+          logJson('dashboard node lookup', { keys: Object.keys(json || {}).slice(0, 10), total: Object.keys(json || {}).length });
+          if (!json || typeof json !== 'object') throw new Error('node lookup JSON was not an object map');
+          dashboardNodeLookupState.map = json;
+          dashboardNodeLookupState.loaded = true;
+          return json;
+        } catch (error) {
+          dashboardNodeLookupState.error = error;
+          console.warn('[orbiter] dashboard node lookup failed', error);
+          return null;
+        } finally {
+          dashboardNodeLookupState.loading = false;
+        }
+      })();
+      return dashboardNodeLookupState.promise;
+    }
 
-refs.refreshButton.addEventListener("click", refreshIntel);
-refs.focusButton.addEventListener("click", suggestRandomMission);
-refs.detailCloseButton.addEventListener("click", closeDetailPanel);
-refs.detailOverlay.addEventListener("click", (event) => {
-  if (event.target === refs.detailOverlay) {
-    closeDetailPanel();
-  }
-});
+    const LOCAL_NODE_FALLBACK = {
+      // Minimal fallback samples in case the external node map is blocked.
+      // Keep this small; prefer the WFCD solNodes.json lookup for full coverage.
+      SettlementNode11: { value: 'Cetus (Earth)', type: 'Hub' },
+      ClanNode10: { value: 'Dojo', type: 'Hub' }
+    };
 
-refs.guideTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    state.activeGuideCategory = tab.dataset.guideCategory;
-    renderGuides();
-  });
-});
+    function resolveReadableNode(nodeId) {
+      const map = dashboardNodeLookupState.map;
+      const entry = (map && nodeId && map[nodeId]) ? map[nodeId] : (LOCAL_NODE_FALLBACK[nodeId] || null);
+      const location = entry?.value ? String(entry.value) : '';
+      const missionType = entry?.type ? String(entry.type) : '';
+      const enemy = entry?.enemy ? String(entry.enemy) : '';
+      return {
+        nodeId: String(nodeId || ''),
+        location,
+        missionType,
+        enemy
+      };
+    }
 
-window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !refs.detailOverlay.hidden) {
-    closeDetailPanel();
-  }
-});
+    function dashboardWorldstateProxyUrls() {
+      const urls = [];
+      if (location.protocol === 'http:' || location.protocol === 'https:') {
+        urls.push({ source: 'same-origin-proxy', url: '/api/worldstate' });
+      }
+      urls.push({ source: 'localhost-proxy', url: 'http://localhost:8787/api/worldstate' });
+      return urls;
+    }
 
-refs.taskForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const value = refs.taskInput.value.trim();
-  if (!value) {
-    return;
-  }
+    async function fetchDashboardText(label, url, options = {}) {
+      logRequest(label, url);
+      const response = await fetch(url, options);
+      logResponse(label, response);
+      if (!response.ok) throw new Error(`${label} HTTP ${response.status}`);
+      const text = await response.text();
+      if (!text.trim()) throw new Error(`${label} returned an empty body`);
+      return text;
+    }
 
-  state.tasks = [{ id: crypto.randomUUID(), text: value, done: false }, ...state.tasks];
-  state.manualSuggestion = null;
-  refs.taskInput.value = "";
-  saveTasks();
-  renderTasks();
-  renderFocus();
-});
+    async function fetchDashboardWorldstateJson() {
+      let lastError = null;
+      for (const candidate of dashboardWorldstateProxyUrls()) {
+        try {
+          const text = await fetchDashboardText(`dashboard ${candidate.source}`, candidate.url, { cache: 'no-store' });
+          const json = JSON.parse(text);
+          logJson(`dashboard ${candidate.source}`, json);
+          if (!json?.data?.worldState) throw new Error('proxy response missing data.worldState');
+          return {
+            source: json?.source || candidate.source,
+            data: json.data
+          };
+        } catch (error) {
+          console.warn(`[orbiter] dashboard world-state candidate failed: ${candidate.source}`, error);
+          lastError = error;
+        }
+      }
 
-refs.foundryNameInput.addEventListener("input", updateFoundryStatus);
+      try {
+        const worldText = await fetchDashboardText('dashboard direct oracle.browse.wf', 'https://oracle.browse.wf/worldState.json', { cache: 'no-store' });
+        const spIncursionsText = await fetchDashboardText('dashboard direct browse.wf sp-incursions', 'https://browse.wf/sp-incursions.txt', { cache: 'no-store' });
+        const arbysText = await fetchDashboardText('dashboard direct browse.wf arbys', 'https://browse.wf/arbys.txt', { cache: 'no-store' });
+        const bountyCycleText = await fetchDashboardText('dashboard direct oracle.browse.wf bounty-cycle', 'https://oracle.browse.wf/bounty-cycle', { cache: 'no-store' });
+        const locationBountiesText = await fetchDashboardText('dashboard direct oracle.browse.wf location-bounties', 'https://oracle.browse.wf/location-bounties', { cache: 'no-store' });
+        const worldState = JSON.parse(worldText);
+        const data = {
+          worldState,
+          spIncursionsText,
+          arbysText,
+          bountyCycle: JSON.parse(bountyCycleText),
+          locationBounties: JSON.parse(locationBountiesText)
+        };
+        logJson('dashboard direct browse.wf bundle', data);
+        return { source: 'direct browse.wf', data };
+      } catch (error) {
+        console.warn('[orbiter] dashboard direct browse.wf fallback failed', error);
+        throw error || lastError || new Error('browse.wf world-state unavailable');
+      }
+    }
 
-refs.goalForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const title = refs.goalTitleInput.value.trim();
-  const copy = refs.goalDetailInput.value.trim();
-  const tag = refs.goalTagInput.value.trim();
+    const dashboardCategoryDefs = [
+      { id: 'environments', title: 'Environments', source: 'oracle.browse.wf/worldState.json' },
+      { id: 'missions', title: 'Missions & Rotations', source: 'oracle.browse.wf/worldState.json + browse.wf/sp-incursions.txt' },
+      { id: 'bounties', title: 'Bounties', source: 'oracle.browse.wf/location-bounties + worldState SyndicateMissions' },
+      { id: 'syndicate-missions', title: 'Syndicate Missions', source: 'oracle.browse.wf/bounty-cycle + worldState SyndicateMissions' },
+      { id: 'endgame', title: 'Special / Endgame', source: 'oracle.browse.wf/worldState.json Conquests + Descents' },
+      { id: 'utility', title: 'Utility / Info', source: 'oracle.browse.wf/worldState.json Events + DailyDeals + Traders' }
+    ];
 
-  if (!title || !copy) {
-    return;
-  }
+    function browseDate(value) {
+      if (!value) return '';
+      if (typeof value === 'string' || typeof value === 'number') {
+        const numeric = Number(value);
+        const date = new Date(Number.isFinite(numeric) ? numeric : value);
+        return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+      }
+      const raw = value?.$date?.$numberLong || value?.$date;
+      if (!raw) return '';
+      const date = new Date(Number(raw));
+      return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+    }
 
-  state.goals = [
-    {
-      id: crypto.randomUUID(),
-      eyebrow: "Custom goal",
-      title,
-      copy,
-      tag: tag || "Personal"
-    },
-    ...state.goals
-  ];
+    function worldstateExpiry(entry, preferActivation = false) {
+      if (!entry) return '';
+      if (preferActivation) return browseDate(entry.Activation || entry.activation);
+      return browseDate(entry.Expiry || entry.expiry || entry.Expiration || entry.expiration || entry.Activation || entry.activation);
+    }
 
-  refs.goalTitleInput.value = "";
-  refs.goalDetailInput.value = "";
-  refs.goalTagInput.value = "";
-  saveGoals();
-  renderGoals();
-});
+    function soonestExpiry(items = []) {
+      return items
+        .map(item => worldstateExpiry(item))
+        .filter(Boolean)
+        .sort((a, b) => new Date(a) - new Date(b))[0] || '';
+    }
 
-refs.foundryForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const name = refs.foundryNameInput.value.trim();
-  const buildHours = Number.parseInt(refs.foundryHoursInput.value, 10);
+    function activeBrowseItems(items = []) {
+      return items.filter(item => {
+        const expiry = worldstateExpiry(item);
+        return !expiry || new Date(expiry).getTime() > Date.now();
+      });
+    }
 
-  const matchedItem = lookupFoundryItem(name);
-  const canUseCustomHours = !Number.isNaN(buildHours) && buildHours >= 1;
+    function firstActive(items = []) {
+      return activeBrowseItems(items)[0] || items[0] || null;
+    }
 
-  if (!name || (!matchedItem && !canUseCustomHours)) {
-    return;
-  }
+    function trackerCard(id, label, title, state, expiresAt, detail, meta = {}) {
+      return { id, label, title, state: state || 'Unknown', expiresAt: expiresAt || '', detail: detail || 'No live detail returned.', ...meta };
+    }
 
-  state.foundry = [
-    matchedItem ? createFoundryItemFromName(name) : createFoundryItem(name, buildHours),
-    ...state.foundry
-  ];
-  refs.foundryNameInput.value = "";
-  refs.foundryHoursInput.value = "";
-  saveFoundry();
-  renderFoundry();
-});
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, match => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[match]));
+    }
 
-refs.marketForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const query = refs.marketInput.value.trim();
-  if (!query) {
-    return;
-  }
+    function dashboardToken(value) {
+      return String(value || '')
+        .split('/')
+        .pop()
+        .replace(/^(SORTIE_BOSS_|MT_|FC_|Void|CT_|CD_|DT_)/, '')
+        .replace(/_/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .trim() || 'Unknown';
+    }
 
-  const selectedSuggestion = state.marketAutocomplete[state.marketAutocompleteIndex];
-  selectMarketSuggestion(selectedSuggestion ?? query, { submit: true });
-});
+    function dashboardNowMs(worldstate) {
+      const seconds = Number(worldstate?.Time);
+      return Number.isFinite(seconds) ? seconds * 1000 : Date.now();
+    }
 
-refs.marketInput.addEventListener("input", () => {
-  const query = refs.marketInput.value.trim();
+    function cycleTrackerCard(id, title, states, totalSeconds, offsetSeconds, nowMs, detail, label = 'Environment') {
+      const elapsed = ((Math.floor(nowMs / 1000) - offsetSeconds) % totalSeconds + totalSeconds) % totalSeconds;
+      let cursor = 0;
+      let current = states[0];
+      for (const state of states) {
+        cursor += state.seconds;
+        if (elapsed < cursor) {
+          current = state;
+          break;
+        }
+      }
+      const remainingSeconds = Math.max(1, cursor - elapsed);
+      return trackerCard(id, label, title, current.name, new Date(Date.now() + remainingSeconds * 1000).toISOString(), detail);
+    }
 
-  if (!query) {
-    state.marketLookup = null;
-    renderMarketLookup();
-    hideMarketAutocomplete();
-    return;
-  }
+    function parseSpIncursions(text, nowMs) {
+      const entries = String(text || '').split(/\r?\n/).map(line => {
+        const [epoch, nodes] = line.split(';');
+        const start = Number(epoch);
+        return {
+          start,
+          nodes: (nodes || '').split(',').map(item => item.trim()).filter(Boolean)
+        };
+      }).filter(entry => Number.isFinite(entry.start) && entry.nodes.length);
+      const nowSeconds = Math.floor(nowMs / 1000);
+      const active = entries.find(entry => entry.start <= nowSeconds && nowSeconds < entry.start + 86400)
+        || [...entries].reverse().find(entry => entry.start <= nowSeconds)
+        || entries[0];
+      if (!active) return null;
+      return {
+        nodes: active.nodes,
+        expiresAt: new Date((active.start + 86400) * 1000).toISOString()
+      };
+    }
 
-  state.marketLookup = buildMarketLookup(query);
-  renderMarketLookup();
-  updateMarketAutocomplete(query);
-});
+    function parseArbitrationFromArbys(text, nowMs) {
+      const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const rows = lines.map(line => {
+        const [epochRaw, node] = line.split(',');
+        const start = Number(epochRaw);
+        return { start, nodeId: (node || '').trim() };
+      }).filter(row => Number.isFinite(row.start) && row.nodeId);
+      if (!rows.length) return null;
+      const nowSec = Math.floor(nowMs / 1000);
+      let currentIndex = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].start <= nowSec) currentIndex = i;
+        else break;
+      }
+      if (currentIndex < 0) return null;
+      const current = rows[currentIndex];
+      const next = rows[currentIndex + 1] || null;
+      const resolved = resolveReadableNode(current.nodeId);
+      return {
+        nodeId: current.nodeId,
+        location: resolved.location,
+        missionType: resolved.missionType,
+        enemy: resolved.enemy,
+        activation: new Date(current.start * 1000).toISOString(),
+        expiresAt: next ? new Date(next.start * 1000).toISOString() : ''
+      };
+    }
 
-refs.marketInput.addEventListener("keydown", (event) => {
-  if (!state.marketAutocomplete.length) {
-    return;
-  }
+    function parseArbitrationDetail(text, nowMs) {
+      const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const rows = lines.map(line => {
+        const [epochRaw, node] = line.split(',');
+        const start = Number(epochRaw);
+        return { start, nodeId: (node || '').trim() };
+      }).filter(row => Number.isFinite(row.start) && row.nodeId);
+      if (!rows.length) return {
+        id: 'arbitration',
+        type: 'arbitration',
+        title: 'Arbitration',
+        source: 'browse.wf/arbys.txt',
+        expiresAt: '',
+        row: null
+      };
+      const nowSec = Math.floor(nowMs / 1000);
+      let currentIndex = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].start <= nowSec) currentIndex = i;
+        else break;
+      }
+      const current = currentIndex >= 0 ? rows[currentIndex] : rows[0];
+      const next = rows[currentIndex + 1] || null;
+      const resolved = resolveReadableNode(current.nodeId);
+      const expiresAt = next ? new Date(next.start * 1000).toISOString() : '';
+      return {
+        id: 'arbitration',
+        type: 'arbitration',
+        title: 'Arbitration',
+        source: 'browse.wf/arbys.txt + solNodes lookup',
+        expiresAt,
+        row: {
+          id: 'arby-current',
+          nodeId: current.nodeId,
+          location: resolved.location,
+          missionType: resolved.missionType,
+          enemy: resolved.enemy,
+          startsAt: new Date(current.start * 1000).toISOString(),
+          expiresAt
+        }
+      };
+    }
 
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    state.marketAutocompleteIndex = (state.marketAutocompleteIndex + 1) % state.marketAutocomplete.length;
-    renderMarketAutocomplete();
-    return;
-  }
+    function parseAlertsDetail(alerts = []) {
+      return {
+        id: 'alerts',
+        type: 'alerts',
+        title: 'Alerts',
+        source: 'worldState Alerts',
+        expiresAt: soonestExpiry(alerts),
+        rows: alerts.map((row, index) => ({
+          id: `alert-${index}`,
+          node: row.MissionInfo?.location || row.Node || 'Unknown node',
+          missionType: dashboardToken(row.MissionInfo?.missionType || ''),
+          faction: dashboardToken(row.MissionInfo?.faction || ''),
+          expiresAt: worldstateExpiry(row),
+          rawKeys: Object.keys(row || {}).join(', ')
+        }))
+      };
+    }
 
-  if (event.key === "ArrowUp") {
-    event.preventDefault();
-    state.marketAutocompleteIndex =
-      (state.marketAutocompleteIndex - 1 + state.marketAutocomplete.length) % state.marketAutocomplete.length;
-    renderMarketAutocomplete();
-    return;
-  }
+    function parseEventsDetail(goals = []) {
+      return {
+        id: 'events',
+        type: 'events',
+        title: 'Events',
+        source: 'worldState Goals',
+        expiresAt: soonestExpiry(goals),
+        rows: goals.map((row, index) => ({
+          id: `event-${index}`,
+          tag: dashboardToken(row.Tag || row.Desc || ''),
+          node: row.Node || 'Unknown node',
+          count: `${row.Count ?? 0} / ${row.Goal ?? '?'}`,
+          health: row.HealthPct !== undefined ? `${Math.round(row.HealthPct * 100)}%` : '',
+          expiresAt: worldstateExpiry(row),
+          rawKeys: Object.keys(row || {}).join(', ')
+        }))
+      };
+    }
 
-  if (event.key === "Escape") {
-    hideMarketAutocomplete();
-    return;
-  }
+    function parseSortieDetail(sortie = {}) {
+      const variants = Array.isArray(sortie.Variants) ? sortie.Variants : [];
+      return {
+        id: 'sortie',
+        type: 'sortie',
+        title: 'Sortie',
+        source: 'worldState Sorties[0]',
+        expiresAt: worldstateExpiry(sortie),
+        rows: variants.map((variant, index) => ({
+          id: `sortie-${index}`,
+          node: variant.node || 'Unknown node',
+          missionType: dashboardToken(variant.missionType || ''),
+          modifier: dashboardToken(variant.modifierType || ''),
+          tileset: dashboardToken(variant.tileset || ''),
+          expiresAt: worldstateExpiry(sortie)
+        })),
+        rawSummary: {
+          boss: dashboardToken(sortie.Boss || ''),
+          reward: dashboardToken(sortie.Reward || '')
+        }
+      };
+    }
 
-  if (event.key === "Enter" && state.marketAutocompleteIndex >= 0) {
-    event.preventDefault();
-    selectMarketSuggestion(state.marketAutocomplete[state.marketAutocompleteIndex], { submit: true });
-  }
-});
+    function parseArchonDetail(archon = {}) {
+      const missions = Array.isArray(archon.Missions) ? archon.Missions : [];
+      return {
+        id: 'archon',
+        type: 'archon',
+        title: 'Archon Hunt',
+        source: 'worldState LiteSorties[0]',
+        expiresAt: worldstateExpiry(archon),
+        rows: missions.map((mission, index) => ({
+          id: `archon-${index}`,
+          node: mission.node || 'Unknown node',
+          missionType: dashboardToken(mission.missionType || ''),
+          expiresAt: worldstateExpiry(archon)
+        })),
+        rawSummary: {
+          boss: dashboardToken(archon.Boss || ''),
+          reward: dashboardToken(archon.Reward || '')
+        }
+      };
+    }
 
-refs.marketInput.addEventListener("blur", () => {
-  window.setTimeout(() => {
-    hideMarketAutocomplete();
-  }, 120);
-});
+    function parseSpIncursionsDetail(text, nowMs) {
+      const parsed = parseSpIncursions(text, nowMs);
+      return {
+        id: 'sp-incursions',
+        type: 'sp-incursions',
+        title: 'Steel Path Incursions',
+        source: 'browse.wf/sp-incursions.txt',
+        expiresAt: parsed?.expiresAt || '',
+        rows: (parsed?.nodes || []).map((node, index) => ({
+          id: `sp-${index}`,
+          node,
+          expiresAt: parsed?.expiresAt || ''
+        }))
+      };
+    }
 
-refs.bountyAreaSelect.addEventListener("change", () => {
-  state.bountyArea = refs.bountyAreaSelect.value;
-  saveBountyArea();
-  renderBounties();
-});
+    function parseWeeklyMissionsDetail(seasonInfo = {}) {
+      const acts = Array.isArray(seasonInfo.ActiveChallenges) ? seasonInfo.ActiveChallenges : [];
+      return {
+        id: 'weekly-missions',
+        type: 'weekly',
+        title: 'Weekly Missions',
+        source: 'worldState SeasonInfo',
+        expiresAt: worldstateExpiry(seasonInfo),
+        rows: acts.map((act, index) => ({
+          id: `act-${index}`,
+          name: dashboardToken(act.Challenge || ''),
+          daily: Boolean(act.Daily),
+          activation: worldstateExpiry({ Activation: act.Activation }, true),
+          expiresAt: worldstateExpiry(act),
+          rawKeys: Object.keys(act || {}).join(', ')
+        })),
+        rawSummary: {
+          season: seasonInfo.Season ?? '',
+          phase: seasonInfo.Phase ?? '',
+          affiliation: dashboardToken(seasonInfo.AffiliationTag || '')
+        }
+      };
+    }
 
-renderCycles();
-renderAlerts();
-renderGuides();
-renderGoals();
-renderFoundry();
-renderOperations();
-renderTasks();
-renderFocus();
-renderFoundrySuggestions();
-updateFoundryStatus();
-renderMarketLookup();
-renderMarketHistory();
-fetchOpenWorldCycles();
-fetchVoidFissures();
-fetchBounties();
+    function parseBaroDetail(baro = {}) {
+      return {
+        id: 'baro',
+        type: 'baro',
+        title: "Baro Ki'Teer",
+        source: 'worldState VoidTraders[0]',
+        expiresAt: worldstateExpiry(baro),
+        rows: [{
+          id: 'baro-row',
+          character: dashboardToken(baro.Character || ''),
+          node: baro.Node || 'Unknown node',
+          activation: worldstateExpiry(baro, true),
+          expiresAt: worldstateExpiry(baro),
+          rawKeys: Object.keys(baro || {}).join(', ')
+        }]
+      };
+    }
 
-window.setInterval(() => {
-  renderCycles();
-  renderOperations();
-  renderFoundry();
-  renderActiveDetailView();
-  renderBounties();
-}, 1000);
+    function findSyndicate(worldstate, tag) {
+      return (Array.isArray(worldstate.SyndicateMissions) ? worldstate.SyndicateMissions : [])
+        .find(item => item.Tag === tag) || {};
+    }
 
-window.setInterval(() => {
-  fetchVoidFissures();
-  fetchBounties();
-}, 300000);
+    function findSyndicates(worldstate, tags) {
+      return (Array.isArray(worldstate.SyndicateMissions) ? worldstate.SyndicateMissions : [])
+        .filter(item => tags.includes(item.Tag));
+    }
 
-window.setInterval(() => {
-  fetchOpenWorldCycles();
-}, 60000);
+    function firstActiveGoal(worldstate) {
+      return firstActive(Array.isArray(worldstate.Goals) ? worldstate.Goals : []);
+    }
 
+    function isBaroActive(baro) {
+      const activation = new Date(worldstateExpiry(baro, true)).getTime();
+      const expiry = new Date(worldstateExpiry(baro)).getTime();
+      const now = Date.now();
+      return Number.isFinite(activation) && Number.isFinite(expiry) && activation <= now && now < expiry;
+    }
+
+    function trackerCategory(id, cards, error = '', meta = {}) {
+      const def = dashboardCategoryDefs.find(item => item.id === id) || { id, title: id, source: 'browse.wf' };
+      return { ...def, cards, error, ...meta };
+    }
+
+    function mapEnvironmentTrackers(data) {
+      const worldstate = data?.worldState || {};
+      const nowMs = dashboardNowMs(worldstate);
+      const zariman = findSyndicate(worldstate, 'ZarimanSyndicate');
+      return trackerCategory('environments', [
+        cycleTrackerCard('cetus', 'Plains of Eidolon / Earth', [{ name: 'Day', seconds: 6000 }, { name: 'Night', seconds: 3000 }], 9000, 0, nowMs, 'Earth open-world cycle computed from browse.wf oracle time.'),
+        cycleTrackerCard('vallis', 'Orb Vallis', [{ name: 'Warm', seconds: 400 }, { name: 'Cold', seconds: 1200 }], 1600, 0, nowMs, 'Vallis warm/cold cycle computed from browse.wf oracle time.'),
+        cycleTrackerCard('cambion', 'Cambion Drift', [{ name: 'Fass', seconds: 4500 }, { name: 'Vome', seconds: 4500 }], 9000, 0, nowMs, 'Cambion cycle computed from browse.wf oracle time.'),
+        cycleTrackerCard('duviri', 'Duviri', [{ name: 'Joy', seconds: 8640 }, { name: 'Anger', seconds: 8640 }, { name: 'Envy', seconds: 8640 }, { name: 'Sorrow', seconds: 8640 }, { name: 'Fear', seconds: 8640 }], 43200, 0, nowMs, 'Duviri spiral computed from browse.wf oracle time.'),
+        trackerCard('zariman', 'Environment', 'Zariman', zariman.Tag ? 'Bounties available' : 'Unavailable', worldstateExpiry(zariman), zariman.Tag ? `${zariman.Nodes?.length || 0} bounty nodes from ZarimanSyndicate.` : 'No ZarimanSyndicate entry returned.')
+      ]);
+    }
+
+    function mapMissionRotationTrackers(data) {
+      const worldstate = data?.worldState || {};
+      const nowMs = dashboardNowMs(worldstate);
+      const alerts = activeBrowseItems(Array.isArray(worldstate.Alerts) ? worldstate.Alerts : []);
+      const activeMissions = activeBrowseItems(Array.isArray(worldstate.ActiveMissions) ? worldstate.ActiveMissions : []);
+      const normalFissures = activeMissions.filter(item => !item.Hard);
+      const hardFissures = activeMissions.filter(item => item.Hard);
+      const voidStorms = activeBrowseItems(Array.isArray(worldstate.VoidStorms) ? worldstate.VoidStorms : []);
+      const invasions = (Array.isArray(worldstate.Invasions) ? worldstate.Invasions : []).filter(item => !item.Completed);
+      const alert = firstActive(alerts);
+      const normalFissure = firstActive(normalFissures);
+      const hardFissure = firstActive(hardFissures);
+      const voidStorm = firstActive(voidStorms);
+      const invasion = firstActive(invasions);
+      const baro = Array.isArray(worldstate.VoidTraders) ? worldstate.VoidTraders[0] || {} : {};
+      const sortie = Array.isArray(worldstate.Sorties) ? worldstate.Sorties[0] || {} : {};
+      const archon = Array.isArray(worldstate.LiteSorties) ? worldstate.LiteSorties[0] || {} : {};
+      const arbitration = parseArbitrationFromArbys(data?.arbysText, nowMs) || {};
+      if (!arbitration.nodeId) {
+        console.warn('[orbiter] arbitration unavailable: arbys.txt missing or no current row', {
+          hasArbysText: Boolean((data?.arbysText || '').trim()),
+          sample: String(data?.arbysText || '').split(/\r?\n/).slice(0, 3)
+        });
+      } else {
+        console.info('[orbiter] arbitration parsed', arbitration);
+      }
+      const spIncursions = parseSpIncursions(data?.spIncursionsText, nowMs);
+      const baroActive = isBaroActive(baro);
+      const event = firstActiveGoal(worldstate);
+      const weekly = worldstate.SeasonInfo || {};
+      const detailNormalFissures = parseFissureDetail('fissures-normal', 'Void Fissures (Normal)', normalFissures, 'worldState ActiveMissions');
+      const detailHardFissures = parseFissureDetail('fissures-hard', 'Void Fissures (Steel Path)', hardFissures, 'worldState ActiveMissions');
+      const detailInvasions = parseInvasionDetail(invasions);
+      const detailVoidStorms = parseVoidStormDetail(voidStorms);
+      const detailArbitration = parseArbitrationDetail(data?.arbysText, nowMs);
+      const detailAlerts = parseAlertsDetail(alerts);
+      const detailEvents = parseEventsDetail(Array.isArray(worldstate.Goals) ? worldstate.Goals : []);
+      const detailSortie = parseSortieDetail(sortie);
+      const detailArchon = parseArchonDetail(archon);
+      const detailSpIncursions = parseSpIncursionsDetail(data?.spIncursionsText, nowMs);
+      const detailWeekly = parseWeeklyMissionsDetail(weekly);
+      const detailBaro = parseBaroDetail(baro);
+
+      return trackerCategory('missions', [
+        trackerCard('arbitration', 'Activity', 'Arbitration', arbitration.nodeId ? 'Active' : 'Unavailable', arbitration.expiresAt || '', arbitration.nodeId ? [
+          arbitration.location || 'Location unknown',
+          arbitration.missionType ? dashboardToken(arbitration.missionType) : 'Type unknown',
+          arbitration.activation ? `Started ${arbitration.activation}` : '',
+          'Source browse.wf/arbys.txt'
+        ].filter(Boolean).join(' // ') : 'No arbitration schedule row available from browse.wf/arbys.txt.', { selectable: true }),
+        trackerCard('alerts', 'Activity', 'Alerts', `${alerts.length} active`, soonestExpiry(alerts), alert ? [alert.MissionInfo?.location || alert.Node, dashboardToken(alert.MissionInfo?.missionType), dashboardToken(alert.MissionInfo?.faction)].filter(Boolean).join(' // ') : 'No active alerts returned by oracle.browse.wf.', { selectable: true }),
+        trackerCard('events', 'Events', 'Events', event ? dashboardToken(event.Tag || event.Desc || 'Active') : 'None active', worldstateExpiry(event), event ? [event.Node, `${event.Count ?? 0}/${event.Goal ?? '?'}`].filter(Boolean).join(' // ') : 'No active Goals entries returned.', { selectable: true }),
+        trackerCard('sortie', 'Daily', 'Sortie', dashboardToken(sortie.Boss || sortie.Faction || 'Active'), worldstateExpiry(sortie), `${sortie.Variants?.length || 0} missions // ${dashboardToken(sortie.Reward || 'Reward table unknown')}`, { selectable: true }),
+        trackerCard('archon', 'Weekly', 'Archon Hunt', dashboardToken(archon.Boss || 'Active'), worldstateExpiry(archon), `${archon.Missions?.length || 0} missions // ${dashboardToken(archon.Reward || 'Reward table unknown')}`, { selectable: true }),
+        trackerCard('sp-incursions', 'Steel Path', 'Steel Path Incursions', spIncursions ? `${spIncursions.nodes.length} missions` : 'Unavailable', spIncursions?.expiresAt, spIncursions ? spIncursions.nodes.join(' // ') : 'sp-incursions.txt did not contain a usable current row.', { selectable: true }),
+        trackerCard('weekly-missions', 'Weekly', 'Weekly Missions', weekly.Season ? `Nightwave season ${weekly.Season}` : 'Unavailable', worldstateExpiry(weekly), `${weekly.ActiveChallenges?.length || 0} active weekly/daily acts.`, { selectable: true }),
+        trackerCard('baro', 'Vendor', "Baro Ki'Teer", baroActive ? 'Active' : 'Arrives', worldstateExpiry(baro, !baroActive), [dashboardToken(baro.Character), baro.Node || 'Location pending'].filter(Boolean).join(' // '), { selectable: true }),
+        trackerCard('fissures-normal', 'Relics', 'Void Fissures (Normal)', `${normalFissures.length} active`, soonestExpiry(normalFissures), normalFissure ? [dashboardToken(normalFissure.Modifier), dashboardToken(normalFissure.MissionType), normalFissure.Node].filter(Boolean).join(' // ') : 'No normal fissures returned.', { selectable: true }),
+        trackerCard('fissures-hard', 'Steel Path', 'Void Fissures (Steel Path)', `${hardFissures.length} active`, soonestExpiry(hardFissures), hardFissure ? [dashboardToken(hardFissure.Modifier), dashboardToken(hardFissure.MissionType), hardFissure.Node].filter(Boolean).join(' // ') : 'No Steel Path fissures returned.', { selectable: true }),
+        trackerCard('void-storms', 'Railjack', 'Void Storms (Railjack)', `${voidStorms.length} active`, soonestExpiry(voidStorms), voidStorm ? [dashboardToken(voidStorm.ActiveMissionTier), voidStorm.Node].filter(Boolean).join(' // ') : 'No active Void Storms returned.', { selectable: true }),
+        trackerCard('invasions', 'Star Chart', 'Invasions', `${invasions.length} active`, '', invasion ? [invasion.Node, dashboardToken(invasion.Faction), 'vs', dashboardToken(invasion.DefenderFaction)].filter(Boolean).join(' ') : 'No active invasions returned by oracle.browse.wf.', { selectable: true, hideTimer: true })
+      ], '', { details: [detailArbitration, detailAlerts, detailEvents, detailSortie, detailArchon, detailSpIncursions, detailWeekly, detailBaro, detailNormalFissures, detailHardFissures, detailInvasions, detailVoidStorms] });
+    }
+
+    function mergeUniqueEntries(entries = []) {
+      const seen = new Set();
+      return entries.filter(entry => {
+        const key = `${entry.name}|${entry.factionLocation}|${entry.tier}|${entry.rewards}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function buildDetailEntry(id, source) {
+      return {
+        id,
+        name: source.name || 'Unknown mission',
+        tier: source.tier || 'Tier unavailable',
+        rewards: source.rewards || 'Reward band unavailable',
+        factionLocation: source.factionLocation || 'Location unavailable',
+        expiresAt: source.expiresAt || '',
+        detail: source.detail || ''
+      };
+    }
+
+    function parseFissureDetail(id, title, fissures = [], sourceLabel) {
+      const rows = fissures.map((row, index) => ({
+        id: `${id}-${index}`,
+        node: row.Node || row.node || 'Unknown node',
+        missionType: dashboardToken(row.MissionType || row.missionType || ''),
+        tier: dashboardToken(row.Modifier || row.modifier || ''),
+        modifier: dashboardToken(row.Modifier || row.modifier || ''),
+        hard: Boolean(row.Hard),
+        seed: row.Seed ?? row.seed ?? 'n/a',
+        region: row.Region ?? row.region ?? 'n/a',
+        activation: worldstateExpiry({ Activation: row.Activation || row.activation }, true),
+        expiresAt: worldstateExpiry(row)
+      }));
+      const fallbackRaw = fissures[0] ? Object.keys(fissures[0]).join(', ') : '';
+      return {
+        id,
+        type: 'fissures',
+        title,
+        source: sourceLabel,
+        expiresAt: soonestExpiry(fissures),
+        rows: rows.length ? rows : (fallbackRaw ? [{
+          id: `${id}-fallback`,
+          node: 'No fissure rows parsed',
+          missionType: 'Raw schema only',
+          tier: 'Raw schema only',
+          modifier: fallbackRaw,
+          hard: false,
+          seed: 'n/a',
+          region: 'n/a',
+          activation: '',
+          expiresAt: soonestExpiry(fissures)
+        }] : [])
+      };
+    }
+
+    function parseInvasionDetail(invasions = []) {
+      const rows = invasions.map((row, index) => ({
+          id: `invasion-${index}`,
+          node: row.Node || 'Unknown node',
+          attacker: dashboardToken(row.Faction || ''),
+          defender: dashboardToken(row.DefenderFaction || ''),
+          progress: `${row.Count ?? '?'} / ${row.Goal ?? '?'}`,
+          locTag: row.LocTag || '',
+          activation: worldstateExpiry({ Activation: row.Activation }, true),
+          rewardA: dashboardToken(row.AttackerReward?.countedItems?.[0]?.ItemType || ''),
+          rewardD: dashboardToken(row.DefenderReward?.countedItems?.[0]?.ItemType || ''),
+          attackerSeed: row.AttackerMissionInfo?.seed ?? 'n/a',
+          defenderSeed: row.DefenderMissionInfo?.seed ?? 'n/a',
+          rawKeys: Object.keys(row || {}).join(', ')
+      }));
+      return {
+        id: 'invasions',
+        type: 'invasions',
+        title: 'Invasions',
+        source: 'worldState Invasions',
+        expiresAt: '',
+        rows: rows.length ? rows : []
+      };
+    }
+
+    function parseVoidStormDetail(voidStorms = []) {
+      const rows = voidStorms.map((row, index) => ({
+        id: `voidstorm-${index}`,
+        node: row.Node || 'Unknown node',
+        tier: dashboardToken(row.ActiveMissionTier || ''),
+        activation: worldstateExpiry({ Activation: row.Activation }, true),
+        expiresAt: worldstateExpiry(row),
+        rawKeys: Object.keys(row || {}).join(', ')
+      }));
+      return {
+        id: 'void-storms',
+        type: 'void-storms',
+        title: 'Void Storms (Railjack)',
+        source: 'worldState VoidStorms',
+        expiresAt: soonestExpiry(voidStorms),
+        rows: rows.length ? rows : []
+      };
+    }
+
+    function parseArchimedeaDetail(id, title, conquest = {}, sourceType) {
+      const missionRows = Array.isArray(conquest.Missions) ? conquest.Missions.map((mission, index) => ({
+        id: `${id}-mission-${index}`,
+        missionType: dashboardToken(mission.missionType || ''),
+        faction: dashboardToken(mission.faction || ''),
+        deviation: dashboardToken(mission.difficulties?.[0]?.deviation || ''),
+        risks: Array.isArray(mission.difficulties?.[0]?.risks) ? mission.difficulties[0].risks.map(risk => dashboardToken(risk)).join(' // ') : '',
+        expiresAt: worldstateExpiry(conquest)
+      })) : [];
+      const rawSummary = {
+        type: conquest.Type || sourceType,
+        variables: Array.isArray(conquest.Variables) ? conquest.Variables.map(value => dashboardToken(value)).join(' // ') : '',
+        randomSeed: conquest.RandomSeed ?? 'n/a'
+      };
+      return {
+        id,
+        type: 'archimedea',
+        title,
+        source: `worldState Conquests ${sourceType}`,
+        expiresAt: worldstateExpiry(conquest),
+        rows: missionRows,
+        rawSummary
+      };
+    }
+
+    function parseGeneralBountiesDetail(data, worldstate) {
+      const locationBounties = data?.locationBounties || {};
+      const expiry = browseDate(locationBounties.expiry);
+      const tags = ['CetusSyndicate', 'SolarisSyndicate', 'EntratiSyndicate'];
+      const groups = tags.map(tag => findSyndicate(worldstate, tag)).filter(group => group.Tag);
+      const allEntries = [];
+
+      console.info('[orbiter] bounty raw keys', {
+        locationBountiesKeys: Object.keys(locationBounties),
+        cetusLocationKeys: Object.keys(locationBounties.CetusSyndicate || {}),
+        solarisLocationKeys: Object.keys(locationBounties.SolarisSyndicate || {}),
+        entratiLocationKeys: Object.keys(locationBounties.EntratiSyndicate || {}),
+        cetusWorldstateKeys: Object.keys(groups.find(group => group.Tag === 'CetusSyndicate') || {}),
+        solarisWorldstateKeys: Object.keys(groups.find(group => group.Tag === 'SolarisSyndicate') || {}),
+        entratiWorldstateKeys: Object.keys(groups.find(group => group.Tag === 'EntratiSyndicate') || {})
+      });
+
+      groups.forEach(group => {
+        const groupExpiry = worldstateExpiry(group) || expiry;
+        const groupLocationData = locationBounties[group.Tag] || {};
+        const jobIndex = new Map((group.Jobs || []).map(job => [job.jobType, job]));
+
+        Object.entries(groupLocationData).forEach(([locationName, bountyJobs]) => {
+          (bountyJobs || []).forEach((jobType, index) => {
+            const job = jobIndex.get(jobType) || {};
+            allEntries.push(buildDetailEntry(`bounty-${group.Tag}-${locationName}-${index}`, {
+              name: dashboardToken(jobType),
+              tier: [
+                job.minEnemyLevel !== undefined && job.maxEnemyLevel !== undefined ? `Lvl ${job.minEnemyLevel}-${job.maxEnemyLevel}` : '',
+                job.masteryReq !== undefined ? `MR ${job.masteryReq}` : '',
+                job.endless ? 'Endless' : '',
+                job.isVault ? 'Vault' : ''
+              ].filter(Boolean).join(' // ') || 'Rotation tier data only',
+              rewards: dashboardToken(job.rewards || ''),
+              factionLocation: `${dashboardToken(group.Tag)} // ${dashboardToken(locationName)}`,
+              expiresAt: groupExpiry,
+              detail: `Source: location-bounties + SyndicateMissions`
+            }));
+          });
+        });
+
+        if (!Object.keys(groupLocationData).length && Array.isArray(group.Jobs) && group.Jobs.length) {
+          group.Jobs.forEach((job, index) => {
+            allEntries.push(buildDetailEntry(`bounty-job-${group.Tag}-${index}`, {
+              name: dashboardToken(job.jobType || `Bounty ${index + 1}`),
+              tier: [
+                job.minEnemyLevel !== undefined && job.maxEnemyLevel !== undefined ? `Lvl ${job.minEnemyLevel}-${job.maxEnemyLevel}` : '',
+                job.masteryReq !== undefined ? `MR ${job.masteryReq}` : '',
+                job.endless ? 'Endless' : '',
+                job.isVault ? 'Vault' : ''
+              ].filter(Boolean).join(' // ') || 'Tier data only',
+              rewards: dashboardToken(job.rewards || ''),
+              factionLocation: dashboardToken(group.Tag),
+              expiresAt: groupExpiry,
+              detail: `Source: SyndicateMissions Jobs`
+            }));
+          });
+        }
+      });
+
+      const entries = mergeUniqueEntries(allEntries);
+      if (!entries.length && (groups.length || Object.keys(locationBounties).length > 1)) {
+        entries.push(buildDetailEntry('bounty-fallback', {
+          name: 'Open-world bounty rotation',
+          tier: 'Rotation data available',
+          rewards: 'Reward band data pending in source',
+          factionLocation: 'Cetus / Solaris / Entrati',
+          expiresAt: expiry || soonestExpiry(groups),
+          detail: 'location-bounties returned section metadata but no row list.'
+        }));
+      }
+      return {
+        id: 'open-world-bounties',
+        title: 'Bounties',
+        entries,
+        expiresAt: expiry || soonestExpiry(groups),
+        source: 'location-bounties + worldState SyndicateMissions'
+      };
+    }
+
+    function parseHoldfastsDetail(data, worldstate) {
+      const holdfasts = findSyndicate(worldstate, 'ZarimanSyndicate');
+      const cycle = data?.bountyCycle?.bounties?.ZarimanSyndicate || [];
+      const cycleExpiry = browseDate(data?.bountyCycle?.expiry) || worldstateExpiry(holdfasts);
+      console.info('[orbiter] holdfasts raw keys', {
+        bountyCycleKeys: Object.keys(data?.bountyCycle || {}),
+        holdfastCycleRowKeys: Object.keys(cycle[0] || {}),
+        holdfastWorldstateKeys: Object.keys(holdfasts || {})
+      });
+      const entries = cycle.map((row, index) => buildDetailEntry(`holdfasts-${index}`, {
+        name: dashboardToken(row.challenge || row.node || `Holdfast mission ${index + 1}`),
+        tier: `Rotation ${data?.bountyCycle?.rot || '?'}`,
+        rewards: `Reward band rotation ${data?.bountyCycle?.rot || '?'}`,
+        factionLocation: `Zariman // ${row.node || 'Unknown node'}`,
+        expiresAt: cycleExpiry,
+        detail: `Faction: ${dashboardToken(data?.bountyCycle?.zarimanFaction || '')}`
+      }));
+      if (!entries.length && data?.bountyCycle?.rot) {
+        entries.push(buildDetailEntry('holdfasts-fallback', {
+          name: 'Zariman rotation',
+          tier: `Rotation ${data.bountyCycle.rot}`,
+          rewards: `Reward band rotation ${data.bountyCycle.rot}`,
+          factionLocation: 'Zariman',
+          expiresAt: cycleExpiry,
+          detail: 'bounty-cycle returned rotation metadata without mission rows.'
+        }));
+      }
+      return {
+        id: 'holdfasts',
+        title: 'The Holdfasts',
+        entries,
+        expiresAt: cycleExpiry,
+        source: 'bounty-cycle.ZarimanSyndicate'
+      };
+    }
+
+    function parseCaviaDetail(data, worldstate) {
+      const cavia = findSyndicate(worldstate, 'EntratiLabSyndicate');
+      const cycle = data?.bountyCycle?.bounties?.EntratiLabSyndicate || [];
+      const cycleExpiry = browseDate(data?.bountyCycle?.expiry) || worldstateExpiry(cavia);
+      console.info('[orbiter] cavia raw keys', {
+        bountyCycleKeys: Object.keys(data?.bountyCycle || {}),
+        caviaCycleRowKeys: Object.keys(cycle[0] || {}),
+        caviaWorldstateKeys: Object.keys(cavia || {})
+      });
+      const entries = cycle.map((row, index) => buildDetailEntry(`cavia-${index}`, {
+        name: dashboardToken(row.challenge || row.node || `Cavia mission ${index + 1}`),
+        tier: `Rotation ${data?.bountyCycle?.rot || '?'}`,
+        rewards: `Reward band rotation ${data?.bountyCycle?.rot || '?'}`,
+        factionLocation: `Cavia // ${row.node || 'Unknown node'}`,
+        expiresAt: cycleExpiry,
+        detail: 'Source: oracle.browse.wf bounty-cycle'
+      }));
+      if (!entries.length && data?.bountyCycle?.rot) {
+        entries.push(buildDetailEntry('cavia-fallback', {
+          name: 'Cavia rotation',
+          tier: `Rotation ${data.bountyCycle.rot}`,
+          rewards: `Reward band rotation ${data.bountyCycle.rot}`,
+          factionLocation: 'Cavia',
+          expiresAt: cycleExpiry,
+          detail: 'bounty-cycle returned rotation metadata without mission rows.'
+        }));
+      }
+      return {
+        id: 'cavia',
+        title: 'Cavia',
+        entries,
+        expiresAt: cycleExpiry,
+        source: 'bounty-cycle.EntratiLabSyndicate'
+      };
+    }
+
+    function parseHexDetail(data, worldstate) {
+      const hex = findSyndicate(worldstate, 'HexSyndicate');
+      const cycle = data?.bountyCycle?.bounties?.HexSyndicate || [];
+      const cycleExpiry = browseDate(data?.bountyCycle?.expiry) || worldstateExpiry(hex);
+      console.info('[orbiter] hex raw keys', {
+        bountyCycleKeys: Object.keys(data?.bountyCycle || {}),
+        hexCycleRowKeys: Object.keys(cycle[0] || {}),
+        hexWorldstateKeys: Object.keys(hex || {})
+      });
+      const entries = cycle.map((row, index) => buildDetailEntry(`hex-${index}`, {
+        name: dashboardToken(row.challenge || row.node || `Hex mission ${index + 1}`),
+        tier: `Rotation ${data?.bountyCycle?.rot || '?'}`,
+        rewards: row.ally ? `Ally: ${dashboardToken(row.ally)}` : `Reward band rotation ${data?.bountyCycle?.rot || '?'}`,
+        factionLocation: `The Hex // ${row.node || 'Unknown node'}`,
+        expiresAt: cycleExpiry,
+        detail: row.ally ? `Companion: ${dashboardToken(row.ally)}` : 'Source: oracle.browse.wf bounty-cycle'
+      }));
+      if (!entries.length && data?.bountyCycle?.rot) {
+        entries.push(buildDetailEntry('hex-fallback', {
+          name: 'Hex rotation',
+          tier: `Rotation ${data.bountyCycle.rot}`,
+          rewards: `Reward band rotation ${data.bountyCycle.rot}`,
+          factionLocation: 'The Hex',
+          expiresAt: cycleExpiry,
+          detail: 'bounty-cycle returned rotation metadata without mission rows.'
+        }));
+      }
+      return {
+        id: 'hex',
+        title: 'The Hex',
+        entries,
+        expiresAt: cycleExpiry,
+        source: 'bounty-cycle.HexSyndicate'
+      };
+    }
+
+    function mapBountyTrackers(data) {
+      const worldstate = data?.worldState || {};
+      const detail = parseGeneralBountiesDetail(data, worldstate);
+      return trackerCategory('bounties', [
+        trackerCard('open-world-bounties', 'Selectable', 'Bounties', detail.entries.length ? `${detail.entries.length} rows` : 'Unavailable', detail.expiresAt, detail.entries.length ? 'Open-world bounty rotations from Cetus, Solaris, and Entrati.' : 'No open-world bounty rows returned.', { selectable: true })
+      ], '', { details: [detail] });
+    }
+
+    function mapSyndicateMissionTrackers(data) {
+      const worldstate = data?.worldState || {};
+      const holdfasts = parseHoldfastsDetail(data, worldstate);
+      const cavia = parseCaviaDetail(data, worldstate);
+      const hex = parseHexDetail(data, worldstate);
+      return trackerCategory('syndicate-missions', [
+        trackerCard('holdfasts', 'Selectable', 'The Holdfasts', holdfasts.entries.length ? `${holdfasts.entries.length} rows` : 'Unavailable', holdfasts.expiresAt, holdfasts.entries.length ? 'Zariman bounty-cycle challenge rows.' : 'No Holdfast challenge rows returned.', { selectable: true }),
+        trackerCard('cavia', 'Selectable', 'Cavia', cavia.entries.length ? `${cavia.entries.length} rows` : 'Unavailable', cavia.expiresAt, cavia.entries.length ? 'Entrati Labs bounty-cycle challenge rows.' : 'No Cavia challenge rows returned.', { selectable: true }),
+        trackerCard('hex', 'Selectable', 'The Hex', hex.entries.length ? `${hex.entries.length} rows` : 'Unavailable', hex.expiresAt, hex.entries.length ? 'Hex bounty-cycle challenge rows.' : 'No Hex challenge rows returned.', { selectable: true })
+      ], '', { details: [holdfasts, cavia, hex] });
+    }
+
+    function mapEndgameTrackers(data) {
+      const worldstate = data?.worldState || {};
+      const deep = (Array.isArray(worldstate.Conquests) ? worldstate.Conquests : []).find(item => item.Type === 'CT_LAB') || {};
+      const temporal = (Array.isArray(worldstate.Conquests) ? worldstate.Conquests : []).find(item => item.Type === 'CT_HEX') || {};
+      const deepDetail = parseArchimedeaDetail('deep-archimedea', 'Deep Archimedea', deep, 'CT_LAB');
+      const temporalDetail = parseArchimedeaDetail('temporal-archimedea', 'Temporal Archimedea', temporal, 'CT_HEX');
+      return trackerCategory('endgame', [
+        trackerCard('deep-archimedea', 'Endgame', 'Deep Archimedea', deep.Type ? `${deep.Missions?.length || 0} missions` : 'Unavailable', worldstateExpiry(deep), deep.Type ? deep.Missions?.map(mission => dashboardToken(mission.missionType)).join(' // ') : 'No CT_LAB conquest entry returned.', { selectable: true }),
+        trackerCard('temporal-archimedea', 'Endgame', 'Temporal Archimedea', temporal.Type ? `${temporal.Missions?.length || 0} missions` : 'Unavailable', worldstateExpiry(temporal), temporal.Type ? temporal.Missions?.map(mission => dashboardToken(mission.missionType)).join(' // ') : 'No CT_HEX conquest entry returned.', { selectable: true })
+      ], '', { details: [deepDetail, temporalDetail] });
+    }
+
+    function mapUtilityTrackers(data) {
+      const worldstate = data?.worldState || {};
+      const news = (Array.isArray(worldstate.Events) ? worldstate.Events : []).find(item => item.Messages?.length) || {};
+      const deal = Array.isArray(worldstate.DailyDeals) ? worldstate.DailyDeals[0] || {} : {};
+      const baro = Array.isArray(worldstate.VoidTraders) ? worldstate.VoidTraders[0] || {} : {};
+      const vault = worldstate.PrimeVaultTraders || {};
+      let tmp = {};
+      try {
+        tmp = typeof worldstate.Tmp === 'string' ? JSON.parse(worldstate.Tmp || '{}') : (worldstate.Tmp || {});
+      } catch (error) {
+        console.warn('[orbiter] dashboard KinePage Tmp parse failed', error);
+      }
+      return trackerCategory('utility', [
+        trackerCard('news', 'Info', 'News', news.Messages?.length ? `${news.Messages.length} messages` : 'Unavailable', worldstateExpiry(news), news.Messages?.find(message => message.LanguageCode === 'en')?.Message || news.Prop || 'No Events message returned.'),
+        trackerCard('darvo', 'Store', "Darvo's Deal", deal.StoreItem ? `${deal.SalePrice ?? '?'} credits` : 'Unavailable', worldstateExpiry(deal), deal.StoreItem ? `${dashboardToken(deal.StoreItem)} // ${deal.Discount ?? 0}% off // ${deal.AmountSold ?? 0}/${deal.AmountTotal ?? '?'}` : 'No DailyDeals entry returned.'),
+        trackerCard('vendors', 'Vendor', 'Vendors', [baro.Character, vault.Node].filter(Boolean).length ? 'Vendor data loaded' : 'Unavailable', worldstateExpiry(baro) || worldstateExpiry(vault), [dashboardToken(baro.Character), baro.Node, vault.Node ? `Prime Vault: ${vault.Manifest?.length || 0} items` : ''].filter(Boolean).join(' // ') || 'No trader entries returned.'),
+        trackerCard('kinepage', 'Info', 'KinePage', tmp?.pgr ? 'Available' : 'Unavailable', tmp?.pgr?.ts ? new Date(Number(tmp.pgr.ts) * 1000).toISOString() : '', tmp?.pgr?.en || 'No KinePage payload found in browse.wf oracle Tmp data.')
+      ]);
+    }
+
+    function mapBrowseWorldstateToDashboardCategories(data) {
+      return [
+        { id: 'environments', map: mapEnvironmentTrackers },
+        { id: 'missions', map: mapMissionRotationTrackers },
+        { id: 'bounties', map: mapBountyTrackers },
+        { id: 'syndicate-missions', map: mapSyndicateMissionTrackers },
+        { id: 'endgame', map: mapEndgameTrackers },
+        { id: 'utility', map: mapUtilityTrackers }
+      ].map(entry => {
+        try {
+          return entry.map(data);
+        } catch (error) {
+          logClientError(`dashboard category map ${entry.id}`, error);
+          return trackerCategory(entry.id, [], error?.message || 'Category mapping failed.');
+        }
+      });
+    }
+
+    function loadingDashboardCategories(message) {
+      return dashboardCategoryDefs.map(def => trackerCategory(def.id, [], message));
+    }
+
+    function unavailableDashboardCategories(reason) {
+      return dashboardCategoryDefs.map(def => trackerCategory(def.id, [], reason));
+    }
+
+    function formatDashboardCountdown(expiresAt) {
+      if (!expiresAt) return 'Timer unavailable';
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      if (!Number.isFinite(diff)) return 'Timer unavailable';
+      if (diff <= 0) return 'Ready / expired';
+      const total = Math.floor(diff / 1000);
+      const days = Math.floor(total / 86400);
+      const hours = Math.floor((total % 86400) / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+      if (days) return `${days}d ${hours}h ${minutes}m`;
+      if (hours) return `${hours}h ${minutes}m ${seconds}s`;
+      if (minutes) return `${minutes}m ${seconds}s`;
+      return `${seconds}s`;
+    }
+
+    function renderDashboardCard(card) {
+      const timerLine = card.hideTimer ? '' : `
+          <div class="text-terminal mt-3 text-2xl font-black" data-dashboard-countdown="${escapeHtml(card.id)}">${formatDashboardCountdown(card.expiresAt)}</div>
+      `;
+      return `
+        <div class="panel-card p-5">
+          <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">${escapeHtml(card.label)}</div>
+          <div class="text-lg font-bold">${escapeHtml(card.title)}</div>
+          ${timerLine}
+          <div class="text-sm text-green-200/90 mt-2">${escapeHtml(card.state)}</div>
+          <p class="text-xs text-green-200/70 mt-3 leading-5">${escapeHtml(card.detail)}</p>
+        </div>
+      `;
+    }
+
+    function renderInteractiveSummaryCard(categoryId, card) {
+      const selected = dashboardTrackerState.selectedDetailCategoryId === categoryId && dashboardTrackerState.selectedDetailId === card.id;
+      const selectedClasses = selected ? ' bg-terminal text-black shadow-[0_0_24px_rgba(66,245,139,0.28)]' : ' hover:bg-terminal hover:text-black';
+      const timerLine = card.hideTimer ? '' : `<div class="mt-3 text-2xl font-black">${formatDashboardCountdown(card.expiresAt)}</div>`;
+      return `
+        <button class="panel-card p-5 text-left transition-colors${selectedClasses}" type="button" data-dashboard-detail-select="${escapeHtml(card.id)}" data-dashboard-detail-category="${escapeHtml(categoryId)}">
+          <div class="uppercase text-[10px] tracking-[0.25em] mb-2 ${selected ? 'text-black/70' : 'text-terminal/70'}">${escapeHtml(card.label)}</div>
+          <div class="text-lg font-bold">${escapeHtml(card.title)}</div>
+          ${timerLine}
+          <div class="text-sm mt-2 ${selected ? 'text-black/80' : 'text-green-200/90'}">${escapeHtml(card.state)}</div>
+          <p class="text-xs mt-3 leading-5 ${selected ? 'text-black/70' : 'text-green-200/70'}">${escapeHtml(card.detail)}</p>
+        </button>
+      `;
+    }
+
+    function renderDetailListLayout(rows = [], renderer) {
+      if (!rows.length) return '';
+      return `<div class="grid lg:grid-cols-2 gap-3">${rows.map(renderer).join('')}</div>`;
+    }
+
+    function renderArbitrationDetailPanel(detail) {
+      if (!detail.row) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No active arbitration entry available.</div>';
+      const row = detail.row;
+      const location = row.location || 'Location unknown';
+      const type = row.missionType ? dashboardToken(row.missionType) : 'Type unknown';
+      const enemy = row.enemy ? dashboardToken(row.enemy) : '';
+      console.info('[orbiter] arbitration active', { nodeId: row.nodeId, location, type, enemy, startsAt: row.startsAt, expiresAt: detail.expiresAt });
+      return `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(location)}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(detail.expiresAt)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Type:</span> ${escapeHtml(type)}</div>
+            <div><span class="text-terminal/80">Enemy:</span> ${escapeHtml(enemy || 'Unknown')}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Started:</span> ${escapeHtml(row.startsAt)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAlertsDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No active alerts returned.</div>';
+      return renderDetailListLayout(detail.rows, row => `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Type:</span> ${escapeHtml(row.missionType || 'Unknown')}</div>
+            <div><span class="text-terminal/80">Faction:</span> ${escapeHtml(row.faction || 'Unknown')}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Raw Keys:</span> ${escapeHtml(row.rawKeys)}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderEventsDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No active events returned.</div>';
+      return renderDetailListLayout(detail.rows, row => `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.tag || 'Event')}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Node:</span> ${escapeHtml(row.node)}</div>
+            <div><span class="text-terminal/80">Progress:</span> ${escapeHtml(row.count)}</div>
+            <div><span class="text-terminal/80">Health:</span> ${escapeHtml(row.health || 'n/a')}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Raw Keys:</span> ${escapeHtml(row.rawKeys)}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderSortieDetailPanel(detail) {
+      const summary = detail.rawSummary || {};
+      return `
+        ${Object.keys(summary).length ? `
+          <div class="border border-terminal/25 p-4 text-xs text-green-200/75">
+            <div><span class="text-terminal/80">Boss:</span> ${escapeHtml(summary.boss || 'Unknown')}</div>
+            <div><span class="text-terminal/80">Reward:</span> ${escapeHtml(summary.reward || 'Unknown')}</div>
+          </div>
+        ` : ''}
+        ${detail.rows?.length ? renderDetailListLayout(detail.rows, row => `
+          <div class="border border-terminal/25 p-4">
+            <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+            <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+            <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+              <div><span class="text-terminal/80">Type:</span> ${escapeHtml(row.missionType)}</div>
+              <div><span class="text-terminal/80">Modifier:</span> ${escapeHtml(row.modifier)}</div>
+              <div class="sm:col-span-2"><span class="text-terminal/80">Tileset:</span> ${escapeHtml(row.tileset)}</div>
+            </div>
+          </div>
+        `) : '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">Sortie variants not present; showing summary fields above.</div>'}
+      `;
+    }
+
+    function renderArchonDetailPanel(detail) {
+      const summary = detail.rawSummary || {};
+      return `
+        ${Object.keys(summary).length ? `
+          <div class="border border-terminal/25 p-4 text-xs text-green-200/75">
+            <div><span class="text-terminal/80">Boss:</span> ${escapeHtml(summary.boss || 'Unknown')}</div>
+            <div><span class="text-terminal/80">Reward:</span> ${escapeHtml(summary.reward || 'Unknown')}</div>
+          </div>
+        ` : ''}
+        ${detail.rows?.length ? renderDetailListLayout(detail.rows, row => `
+          <div class="border border-terminal/25 p-4">
+            <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+            <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+            <div class="text-xs text-green-200/75 mt-3"><span class="text-terminal/80">Type:</span> ${escapeHtml(row.missionType || 'Unknown')}</div>
+          </div>
+        `) : '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">Archon missions not present; showing summary fields above.</div>'}
+      `;
+    }
+
+    function renderSpIncursionsDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No Steel Path incursion nodes available.</div>';
+      return renderDetailListLayout(detail.rows, row => `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+          <div class="text-xs text-green-200/75 mt-3">Source: browse.wf/sp-incursions.txt</div>
+        </div>
+      `);
+    }
+
+    function renderWeeklyDetailPanel(detail) {
+      const summary = detail.rawSummary || {};
+      return `
+        ${Object.keys(summary).length ? `
+          <div class="border border-terminal/25 p-4 text-xs text-green-200/75">
+            <div><span class="text-terminal/80">Season:</span> ${escapeHtml(String(summary.season || 'n/a'))}</div>
+            <div><span class="text-terminal/80">Phase:</span> ${escapeHtml(String(summary.phase || 'n/a'))}</div>
+            <div><span class="text-terminal/80">Affiliation:</span> ${escapeHtml(summary.affiliation || 'n/a')}</div>
+          </div>
+        ` : ''}
+        ${detail.rows?.length ? renderDetailListLayout(detail.rows, row => `
+          <div class="border border-terminal/25 p-4">
+            <div class="text-base font-bold">${escapeHtml(row.name || 'Challenge')}</div>
+            <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+            <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+              <div><span class="text-terminal/80">Daily:</span> ${row.daily ? 'Yes' : 'No'}</div>
+              <div><span class="text-terminal/80">Starts:</span> ${escapeHtml(row.activation || 'Unknown')}</div>
+              <div class="sm:col-span-2"><span class="text-terminal/80">Raw Keys:</span> ${escapeHtml(row.rawKeys)}</div>
+            </div>
+          </div>
+        `) : '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No active weekly/daily acts returned; showing summary fields above.</div>'}
+      `;
+    }
+
+    function renderBaroDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No vendor details available.</div>';
+      const row = detail.rows[0];
+      return `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.character || "Baro Ki'Teer")}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Node:</span> ${escapeHtml(row.node)}</div>
+            <div><span class="text-terminal/80">Arrives:</span> ${escapeHtml(row.activation || 'Unknown')}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Raw Keys:</span> ${escapeHtml(row.rawKeys)}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderFissureDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No details available for this fissure section.</div>';
+      return renderDetailListLayout(detail.rows, row => `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Type:</span> ${escapeHtml(row.missionType)}</div>
+            <div><span class="text-terminal/80">Tier:</span> ${escapeHtml(row.tier)}</div>
+            <div><span class="text-terminal/80">Modifier:</span> ${escapeHtml(row.modifier)}</div>
+            <div><span class="text-terminal/80">Steel Path:</span> ${row.hard ? 'Yes' : 'No'}</div>
+            <div><span class="text-terminal/80">Seed:</span> ${escapeHtml(String(row.seed))}</div>
+            <div><span class="text-terminal/80">Region:</span> ${escapeHtml(String(row.region))}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Activation:</span> ${escapeHtml(row.activation || 'Unknown')}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderInvasionDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No details available for invasions right now.</div>';
+      return renderDetailListLayout(detail.rows, row => `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Attacker:</span> ${escapeHtml(row.attacker)}</div>
+            <div><span class="text-terminal/80">Defender:</span> ${escapeHtml(row.defender)}</div>
+            <div><span class="text-terminal/80">Progress:</span> ${escapeHtml(row.progress)}</div>
+            <div><span class="text-terminal/80">Started:</span> ${escapeHtml(row.activation || 'Unknown')}</div>
+            <div><span class="text-terminal/80">Attacker Reward:</span> ${escapeHtml(row.rewardA || 'Unknown')}</div>
+            <div><span class="text-terminal/80">Defender Reward:</span> ${escapeHtml(row.rewardD || 'Unknown')}</div>
+            <div><span class="text-terminal/80">LocTag:</span> ${escapeHtml(row.locTag || 'n/a')}</div>
+            <div><span class="text-terminal/80">Seeds:</span> ${escapeHtml(String(row.attackerSeed))} / ${escapeHtml(String(row.defenderSeed))}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Raw Keys:</span> ${escapeHtml(row.rawKeys)}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderVoidStormDetailPanel(detail) {
+      if (!detail.rows?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No details available for Void Storms right now.</div>';
+      return renderDetailListLayout(detail.rows, row => `
+        <div class="border border-terminal/25 p-4">
+          <div class="text-base font-bold">${escapeHtml(row.node)}</div>
+          <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+          <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+            <div><span class="text-terminal/80">Tier:</span> ${escapeHtml(row.tier)}</div>
+            <div><span class="text-terminal/80">Activation:</span> ${escapeHtml(row.activation || 'Unknown')}</div>
+            <div class="sm:col-span-2"><span class="text-terminal/80">Raw Keys:</span> ${escapeHtml(row.rawKeys)}</div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderArchimedeaDetailPanel(detail) {
+      const rows = detail.rows || [];
+      const summary = detail.rawSummary || {};
+      if (!rows.length && !Object.keys(summary).length) {
+        return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No details available for this Archimedea section.</div>';
+      }
+      return `
+        ${Object.keys(summary).length ? `
+          <div class="border border-terminal/25 p-4 text-xs text-green-200/75">
+            <div><span class="text-terminal/80">Type:</span> ${escapeHtml(summary.type || 'Unknown')}</div>
+            <div><span class="text-terminal/80">Variables:</span> ${escapeHtml(summary.variables || 'n/a')}</div>
+            <div><span class="text-terminal/80">Random Seed:</span> ${escapeHtml(String(summary.randomSeed ?? 'n/a'))}</div>
+          </div>
+        ` : ''}
+        ${rows.length ? renderDetailListLayout(rows, row => `
+          <div class="border border-terminal/25 p-4">
+            <div class="text-base font-bold">${escapeHtml(row.missionType || 'Mission')}</div>
+            <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(row.id)}">${formatDashboardCountdown(row.expiresAt)}</div>
+            <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+              <div><span class="text-terminal/80">Faction:</span> ${escapeHtml(row.faction || 'Unknown')}</div>
+              <div><span class="text-terminal/80">Deviation:</span> ${escapeHtml(row.deviation || 'Unknown')}</div>
+              <div class="sm:col-span-2"><span class="text-terminal/80">Risks:</span> ${escapeHtml(row.risks || 'None listed')}</div>
+            </div>
+          </div>
+        `) : '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">Mission rows are not present in this payload; showing available summary fields above.</div>'}
+       `;
+    }
+
+    function renderSummaryOnlyDetailPanel(detail) {
+      const card = detail.rawCard || {};
+      const lines = [
+        card.label ? `Label: ${card.label}` : '',
+        card.state ? `State: ${card.state}` : '',
+        card.expiresAt ? `Expiry: ${card.expiresAt}` : '',
+        card.detail ? `Summary: ${card.detail}` : ''
+      ].filter(Boolean);
+      return `
+        <div class="border border-terminal/25 p-4 text-sm text-green-200/75 space-y-2">
+          <div class="text-xs uppercase tracking-[0.18em] text-terminal/70">Summary Fallback</div>
+          ${lines.length ? `<div class="space-y-1">${lines.map(line => `<div>${escapeHtml(line)}</div>`).join('')}</div>` : '<div>No additional detail payload was mapped for this card yet.</div>'}
+        </div>
+      `;
+    }
+
+    function renderGenericEntryDetailPanel(detail) {
+      if (!detail.entries?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">The source returned no mission/tier/reward rows for this section right now.</div>';
+      return `
+        <div class="grid lg:grid-cols-2 gap-3">
+          ${detail.entries.map(entry => `
+            <div class="border border-terminal/25 p-4">
+              <div class="text-base font-bold">${escapeHtml(entry.name)}</div>
+              <div class="text-terminal text-sm mt-2" data-dashboard-countdown="detail-${escapeHtml(entry.id)}">${formatDashboardCountdown(entry.expiresAt)}</div>
+              <div class="grid sm:grid-cols-2 gap-2 text-xs text-green-200/75 mt-3">
+                <div><span class="text-terminal/80">Tier/Level:</span> ${escapeHtml(entry.tier)}</div>
+                <div><span class="text-terminal/80">Faction/Location:</span> ${escapeHtml(entry.factionLocation)}</div>
+                <div class="sm:col-span-2"><span class="text-terminal/80">Rewards:</span> ${escapeHtml(entry.rewards)}</div>
+                <div class="sm:col-span-2"><span class="text-terminal/80">Details:</span> ${escapeHtml(entry.detail)}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderDetailPanelByType(detail) {
+      if (detail.type === 'summary') return renderSummaryOnlyDetailPanel(detail);
+      if (detail.type === 'arbitration') return renderArbitrationDetailPanel(detail);
+      if (detail.type === 'alerts') return renderAlertsDetailPanel(detail);
+      if (detail.type === 'events') return renderEventsDetailPanel(detail);
+      if (detail.type === 'sortie') return renderSortieDetailPanel(detail);
+      if (detail.type === 'archon') return renderArchonDetailPanel(detail);
+      if (detail.type === 'sp-incursions') return renderSpIncursionsDetailPanel(detail);
+      if (detail.type === 'weekly') return renderWeeklyDetailPanel(detail);
+      if (detail.type === 'baro') return renderBaroDetailPanel(detail);
+      if (detail.type === 'fissures') return renderFissureDetailPanel(detail);
+      if (detail.type === 'invasions') return renderInvasionDetailPanel(detail);
+      if (detail.type === 'void-storms') return renderVoidStormDetailPanel(detail);
+      if (detail.type === 'archimedea') return renderArchimedeaDetailPanel(detail);
+      return renderGenericEntryDetailPanel(detail);
+    }
+
+    function selectedDetail(category) {
+      if (!dashboardTrackerState.selectedDetailId) return null;
+      if (dashboardTrackerState.selectedDetailCategoryId !== category.id) return null;
+      const found = (category.details || []).find(detail => detail.id === dashboardTrackerState.selectedDetailId) || null;
+      if (found) return found;
+      const fallbackCard = (category.cards || []).find(card => card.id === dashboardTrackerState.selectedDetailId) || null;
+      if (!fallbackCard) return null;
+      console.warn('[orbiter] dashboard detail missing; using summary fallback', {
+        categoryId: category.id,
+        selectedId: dashboardTrackerState.selectedDetailId,
+        availableDetailIds: (category.details || []).map(detail => detail.id),
+        card: fallbackCard
+      });
+      return {
+        id: fallbackCard.id,
+        type: 'summary',
+        title: fallbackCard.title || 'Details',
+        source: category.source || 'browse.wf',
+        expiresAt: fallbackCard.expiresAt || '',
+        rawCard: fallbackCard
+      };
+    }
+
+    function renderInteractiveDetailPanel(category) {
+      const detail = selectedDetail(category);
+      if (!detail) {
+        return '<div class="panel-card p-5 text-sm text-green-200/75">Select a card above to inspect detailed mission rows for that section.</div>';
+      }
+      return `
+        <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+            <div>
+              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Selected Section</div>
+              <h5 class="text-xl font-bold">${escapeHtml(detail.title)}</h5>
+              <p class="text-xs text-green-200/70 mt-2">${escapeHtml(detail.source)} // ${formatDashboardCountdown(detail.expiresAt)}</p>
+            </div>
+            <button class="terminal-link border border-terminal px-4 py-2 text-xs uppercase tracking-widest" type="button" data-dashboard-detail-close="${escapeHtml(category.id)}">Close Details</button>
+          </div>
+          ${renderDetailPanelByType(detail)}
+        </div>
+      `;
+    }
+
+    function renderInlineSelectedDetailPanel(category, detail) {
+      return `
+        <div class="md:col-span-2 xl:col-span-3">
+          <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
+            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+              <div>
+                <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Selected Section</div>
+                <h5 class="text-xl font-bold">${escapeHtml(detail.title)}</h5>
+                <p class="text-xs text-green-200/70 mt-2">${escapeHtml(detail.source)} // ${formatDashboardCountdown(detail.expiresAt)}</p>
+              </div>
+              <button class="terminal-link border border-terminal px-4 py-2 text-xs uppercase tracking-widest" type="button" data-dashboard-detail-close="${escapeHtml(category.id)}">Close Details</button>
+            </div>
+            ${renderDetailPanelByType(detail)}
+          </div>
+        </div>
+      `;
+    }
+
+    function isInteractiveCategory(category) {
+      return Array.isArray(category.details) && category.details.length > 0;
+    }
+
+    function renderInteractiveCategory(category) {
+      const forceSelectable = category.id === 'missions';
+      const inlineDetail = category.id === 'missions';
+      const detail = inlineDetail ? selectedDetail(category) : null;
+      const hint = inlineDetail && !detail
+        ? '<div class="panel-card p-5 text-sm text-green-200/75">Select a card below to inspect detailed rows for that section.</div>'
+        : '';
+      return `
+        <section class="space-y-3">
+          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2 border-b border-terminal/35 pb-2">
+            <div>
+              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Tracker Category</div>
+              <h4 class="text-lg font-bold">${escapeHtml(category.title)}</h4>
+            </div>
+            <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
+          </div>
+          ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
+          ${!category.error ? hint : ''}
+          ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(card => {
+            const cardHtml = (forceSelectable || card.selectable) ? renderInteractiveSummaryCard(category.id, card) : renderDashboardCard(card);
+            if (inlineDetail && detail && detail.id === card.id) return cardHtml + renderInlineSelectedDetailPanel(category, detail);
+            return cardHtml;
+          }).join('')}</div>` : ''}
+          ${!category.error && !inlineDetail ? renderInteractiveDetailPanel(category) : ''}
+        </section>
+      `;
+    }
+
+    function renderTrackerCategory(category) {
+      if (isInteractiveCategory(category)) return renderInteractiveCategory(category);
+      return `
+        <section class="space-y-3">
+          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2 border-b border-terminal/35 pb-2">
+            <div>
+              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Tracker Category</div>
+              <h4 class="text-lg font-bold">${escapeHtml(category.title)}</h4>
+            </div>
+            <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
+          </div>
+          ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
+          ${!category.error && !category.cards.length ? '<div class="panel-card p-5 text-sm text-green-200/75">No browse.wf data returned for this category.</div>' : ''}
+          ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(renderDashboardCard).join('')}</div>` : ''}
+        </section>
+      `;
+    }
+
+    function renderDashboardTrackerCards() {
+      if (!dashboardTrackerGrid) return;
+      if (!dashboardTrackerState.categories?.length) {
+        dashboardTrackerGrid.innerHTML = '<div class="panel-card p-5 text-sm text-green-200/80">World-state tracker data is unavailable.</div>';
+        return;
+      }
+      dashboardTrackerGrid.innerHTML = dashboardTrackerState.categories.map(renderTrackerCategory).join('');
+      bindDashboardTrackerEvents();
+    }
+
+    function bindDashboardTrackerEvents() {
+      dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-select]').forEach(button => {
+        button.addEventListener('click', () => {
+          const scrollRoot = document.querySelector('main');
+          const savedScrollTop = scrollRoot ? scrollRoot.scrollTop : 0;
+          dashboardTrackerState.selectedDetailId = button.dataset.dashboardDetailSelect || '';
+          dashboardTrackerState.selectedDetailCategoryId = button.dataset.dashboardDetailCategory || '';
+          renderDashboardTrackerCards();
+          updateDashboardCountdowns();
+          if (scrollRoot) scrollRoot.scrollTop = savedScrollTop;
+        });
+      });
+      dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-close]').forEach(button => {
+        button.addEventListener('click', () => {
+          const scrollRoot = document.querySelector('main');
+          const savedScrollTop = scrollRoot ? scrollRoot.scrollTop : 0;
+          dashboardTrackerState.selectedDetailId = '';
+          dashboardTrackerState.selectedDetailCategoryId = '';
+          renderDashboardTrackerCards();
+          updateDashboardCountdowns();
+          if (scrollRoot) scrollRoot.scrollTop = savedScrollTop;
+        });
+      });
+    }
+
+    function updateDashboardCountdowns() {
+      const cards = (dashboardTrackerState.categories || []).flatMap(category => category.cards || []);
+      document.querySelectorAll('[data-dashboard-countdown]').forEach(node => {
+        const countdownId = node.dataset.dashboardCountdown || '';
+        if (countdownId.startsWith('detail-')) {
+          const details = (dashboardTrackerState.categories || []).flatMap(category => category.details || []);
+          const rows = details.flatMap(detail => (detail.entries || []).concat(detail.rows || []).concat(detail.row ? [detail.row] : []));
+          const row = rows.find(item => `detail-${item.id}` === countdownId);
+          if (row) node.textContent = formatDashboardCountdown(row.expiresAt);
+          return;
+        }
+        const card = cards.find(item => item.id === countdownId);
+        if (card) node.textContent = formatDashboardCountdown(card.expiresAt);
+      });
+    }
+
+    async function refreshDashboardTrackers() {
+      setDashboardTrackerStatus('Syncing browse.wf oracle...');
+      ensureDashboardNodeLookup().then(() => {
+        if (!dashboardTrackerState.lastData) return;
+        // Re-map in place so readable node/type text appears without refetching.
+        dashboardTrackerState.categories = mapBrowseWorldstateToDashboardCategories(dashboardTrackerState.lastData);
+        renderDashboardTrackerCards();
+        updateDashboardCountdowns();
+      });
+      dashboardTrackerState.categories = loadingDashboardCategories('Loading browse.wf data for this category...');
+      renderDashboardTrackerCards();
+      try {
+        const result = await fetchDashboardWorldstateJson();
+        dashboardTrackerState.categories = mapBrowseWorldstateToDashboardCategories(result.data);
+        dashboardTrackerState.source = result.source;
+        dashboardTrackerState.syncedAt = new Date();
+        dashboardTrackerState.lastData = result.data;
+        renderDashboardTrackerCards();
+        updateDashboardCountdowns();
+        setDashboardTrackerStatus(`Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
+      } catch (error) {
+        dashboardTrackerState.categories = unavailableDashboardCategories(error?.message || 'browse.wf did not return world-state data.');
+        renderDashboardTrackerCards();
+        setDashboardTrackerStatus('browse.wf unavailable');
+        logClientError('dashboard world-state refresh', error);
+      }
+    }
+
+    refreshDashboardTrackers();
+    setInterval(refreshDashboardTrackers, 120000);
+    setInterval(updateDashboardCountdowns, 1000);
+
+    const marketItemSearch = document.getElementById('marketItemSearch');
+    const marketSearchBtn = document.getElementById('marketSearchBtn');
+    const marketResults = document.getElementById('marketResults');
+    const marketApiStatus = document.getElementById('marketApiStatus');
+    const marketSelectedTitle = document.getElementById('marketSelectedTitle');
+    const marketSelectedMeta = document.getElementById('marketSelectedMeta');
+    const marketStats = document.getElementById('marketStats');
+    const marketSellOrders = document.getElementById('marketSellOrders');
+    const marketBuyOrders = document.getElementById('marketBuyOrders');
+    const marketBuyMin = document.getElementById('marketBuyMin');
+    const marketBuyMax = document.getElementById('marketBuyMax');
+    const marketSellMin = document.getElementById('marketSellMin');
+    const marketSellMax = document.getElementById('marketSellMax');
+
+    const marketState = {
+      catalog: [],
+      loaded: false,
+      loading: false,
+      loadPromise: null,
+      failed: false,
+      error: null,
+      activeSource: 'direct',
+      suggestions: [],
+      suggestionIndex: -1,
+      selectedItem: null,
+      sellOrders: [],
+      buyOrders: []
+    };
+
+    function setMarketStatus(text) {
+      if (marketApiStatus) marketApiStatus.textContent = text;
+    }
+
+    function marketNorm(text) {
+      return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    }
+
+    function marketApiUrl(path) {
+      return `http://localhost:8787/api/market${path}`;
+    }
+
+    function marketServerUrls(path) {
+      const candidates = [];
+      if (location.protocol === 'http:' || location.protocol === 'https:') {
+        candidates.push({ source: 'same-origin-proxy', url: `/api/market${path}` });
+      }
+      candidates.push({ source: 'localhost-proxy', url: marketApiUrl(path) });
+      return candidates;
+    }
+
+    async function fetchMarketJson(path) {
+      let lastError = null;
+      const attempts = [];
+      for (const candidate of marketServerUrls(path)) {
+        try {
+          logRequest(`market ${candidate.source}`, candidate.url);
+          const response = await fetch(candidate.url, { cache: path === '/items' ? 'force-cache' : 'no-store' });
+          logResponse(`market ${candidate.source}`, response);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          let json;
+          try {
+            json = await response.json();
+          } catch (error) {
+            throw new Error(`parse error: ${error.message}`);
+          }
+          logJson(`market ${candidate.source}`, json);
+          marketState.activeSource = candidate.source;
+          return json;
+        } catch (error) {
+          console.warn(`[orbiter] market fetch candidate failed: ${candidate.source}`, error);
+          attempts.push(`${candidate.source}: ${error?.message || String(error)}`);
+          lastError = error;
+        }
+      }
+      throw new Error(`Market API unavailable after ${attempts.length} attempts. ${attempts.join(' | ') || lastError?.message || 'No candidates tried'}`);
+    }
+
+    async function ensureMarketCatalog() {
+      if (marketState.loaded) return marketState.catalog;
+      if (marketState.loading && marketState.loadPromise) return marketState.loadPromise;
+      marketState.loading = true;
+      marketState.failed = false;
+      marketState.error = null;
+      setMarketStatus('Catalog sync...');
+
+      marketState.loadPromise = (async () => {
+        const data = await fetchMarketJson('/items');
+        const rawItems = data?.data?.data || data?.data || data?.payload?.items || [];
+        if (!Array.isArray(rawItems)) {
+          throw new Error('bad endpoint shape: expected cached proxy item array at data.data[]');
+        }
+        marketState.catalog = rawItems
+          .map(item => ({
+            item_name: item.i18n?.en?.name || item.item_name || item.slug || item.url_name,
+            url_name: item.slug || item.url_name,
+            norm_name: marketNorm(item.i18n?.en?.name || item.item_name || item.slug || item.url_name)
+          }))
+          .filter(item => item.item_name && item.url_name)
+          .sort((a, b) => a.item_name.localeCompare(b.item_name));
+        if (!marketState.catalog.length) {
+          throw new Error('empty result: market item dataset returned zero usable items');
+        }
+        marketState.loaded = true;
+        marketState.failed = false;
+        marketState.error = null;
+        const source = data?.source || marketState.activeSource;
+        setMarketStatus(`Catalog live: ${marketState.catalog.length} items (${source})`);
+        return marketState.catalog;
+      })();
+
+      try {
+        return await marketState.loadPromise;
+      } catch (error) {
+        const reason = error?.message?.includes('HTTP')
+          ? 'bad endpoint or HTTP error'
+          : error?.message?.includes('parse error')
+            ? 'parse error'
+            : 'network or CORS blocked';
+        marketState.catalog = [];
+        marketState.loaded = false;
+        marketState.failed = true;
+        marketState.error = error;
+        setMarketStatus(`Catalog failed: ${reason}`);
+        logClientError('market catalog fetch', error);
+        throw error;
+      } finally {
+        marketState.loading = false;
+        marketState.loadPromise = null;
+      }
+    }
+
+    function marketMatches(query, limit = 20) {
+      const q = marketNorm(query);
+      if (!q) return [];
+      if (!marketState.loaded) {
+        logClientError('market match', new Error('Catalog not loaded yet'), { query });
+        return [];
+      }
+      const starts = [];
+      const includes = [];
+      for (const item of marketState.catalog) {
+        if (item.norm_name.startsWith(q)) starts.push(item);
+        else if (item.norm_name.includes(q)) includes.push(item);
+        if (starts.length + includes.length >= limit * 3) break;
+      }
+      return starts.concat(includes).slice(0, limit);
+    }
+
+    function hideMarketAutocomplete() {
+      marketState.suggestions = [];
+      marketState.suggestionIndex = -1;
+    }
+
+    function renderMarketAutocomplete(items) {
+      if (!marketResults || !items.length) return hideMarketAutocomplete();
+      marketState.suggestions = items;
+      marketState.suggestionIndex = -1;
+      marketResults.innerHTML = `
+        <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Suggestions</div>
+        <div class="space-y-2">
+          ${items.map(item => `
+        <button class="market-suggestion w-full text-left px-4 py-3 border-b border-terminal/20 last:border-b-0 hover:bg-terminal hover:text-black" data-url="${item.url_name}">
+          <div class="font-bold text-sm">${item.item_name}</div>
+          <div class="text-[10px] uppercase tracking-[0.2em] opacity-70 mt-1">${item.url_name}</div>
+        </button>
+          `).join('')}
+        </div>
+      `;
+      marketResults.querySelectorAll('.market-suggestion').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const item = marketState.catalog.find(entry => entry.url_name === btn.dataset.url);
+          if (!item) {
+            logClientError('market suggestion select', new Error('Selected suggestion not found'), { url: btn.dataset.url || '' });
+            return;
+          }
+          marketItemSearch.value = item.item_name;
+          hideMarketAutocomplete();
+          renderMarketResults([item], item.item_name);
+          loadMarketItem(item);
+        });
+      });
+    }
+
+    function renderMarketResults(items, query = '') {
+      if (!marketResults) return;
+      if (!query.trim()) {
+        marketResults.innerHTML = '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Search to load market results.</div>';
+        return;
+      }
+      if (!items.length) {
+        if (!marketState.loaded || marketState.failed) {
+          const reason = marketState.error?.message || 'catalog did not finish loading';
+          marketResults.innerHTML = `<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Catalog failed: cannot search "${marketNorm(query)}". Reason: ${reason}</div>`;
+          return;
+        }
+        marketResults.innerHTML = `<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Empty result: no v2 market item name matched "${marketNorm(query)}" in ${marketState.catalog.length} loaded items.</div>`;
+        return;
+      }
+      marketResults.innerHTML = items.map(item => `
+        <button class="market-result-row w-full text-left border border-terminal/25 p-3 hover:bg-terminal hover:text-black" data-url="${item.url_name}">
+          <div class="font-bold text-sm">${item.item_name}</div>
+          <div class="text-[10px] uppercase tracking-[0.2em] opacity-70 mt-1">${item.url_name}</div>
+        </button>
+      `).join('');
+      marketResults.querySelectorAll('.market-result-row').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const item = marketState.catalog.find(entry => entry.url_name === btn.dataset.url);
+          if (!item) {
+            logClientError('market result select', new Error('Selected result not found'), { url: btn.dataset.url || '' });
+            return;
+          }
+          marketItemSearch.value = item.item_name;
+          loadMarketItem(item);
+        });
+      });
+    }
+
+    function htmlEscape(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function jsAttrEscape(value) {
+      return htmlEscape(String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+    }
+
+    function renderOrderBook(target, orders, emptyText, action) {
+      if (!target) return;
+      if (!orders.length) {
+        target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
+        return;
+      }
+      target.innerHTML = orders.map(order => {
+        const username = order.user?.ingameName || order.user?.ingame_name || 'Unknown';
+        const price = Number(order.platinum);
+        return `
+        <div class="border border-terminal/25 p-2 text-xs">
+          <div class="flex justify-between gap-2">
+            <span class="text-terminal">${htmlEscape(price)}p</span>
+            <span class="opacity-70">${htmlEscape((order.user?.status || 'unknown').toUpperCase())}</span>
+          </div>
+          <div class="opacity-80 mt-1">${htmlEscape(username)} - qty ${htmlEscape(order.quantity || 1)}</div>
+          <button class="market-whisper-copy mt-2 border border-terminal/40 px-2 py-1 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black" data-action="${htmlEscape(action)}" data-user="${jsAttrEscape(username)}" data-price="${htmlEscape(price)}">Copy Whisper</button>
+        </div>
+      `;
+      }).join('');
+      bindWhisperButtons(target);
+    }
+
+    function marketWhisper(action, username, price) {
+      const itemName = (marketState.selectedItem?.item_name || '').replace(/"/g, '\\"');
+      const verb = action === 'buy' ? 'buy' : 'sell';
+      return `/w ${username} Hi! I want to ${verb}: "${itemName}" for ${price} platinum. (warframe.market)`;
+    }
+
+    async function copyMarketWhisper(action, username, price) {
+      const value = marketWhisper(action, username, price);
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        const scratch = document.createElement('textarea');
+        scratch.value = value;
+        scratch.style.position = 'fixed';
+        scratch.style.opacity = '0';
+        document.body.append(scratch);
+        scratch.select();
+        document.execCommand('copy');
+        scratch.remove();
+      }
+      setMarketStatus(`${action === 'buy' ? 'Buy' : 'Sell'} whisper copied`);
+    }
+
+    function bindWhisperButtons(root) {
+      root.querySelectorAll('.market-whisper-copy').forEach(button => {
+        button.addEventListener('click', () => {
+          copyMarketWhisper(button.dataset.action, button.dataset.user, button.dataset.price);
+        });
+      });
+    }
+
+    function getPlatFilter(minInput, maxInput) {
+      const min = minInput?.value === '' ? null : Number(minInput?.value);
+      const max = maxInput?.value === '' ? null : Number(maxInput?.value);
+      return {
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null
+      };
+    }
+
+    function applyPlatFilter(orders, minInput, maxInput) {
+      const { min, max } = getPlatFilter(minInput, maxInput);
+      return orders.filter(order => {
+        const price = Number(order.platinum);
+        if (!Number.isFinite(price)) return false;
+        if (min !== null && price < min) return false;
+        if (max !== null && price > max) return false;
+        return true;
+      });
+    }
+
+    function renderFilteredMarketOrders() {
+      const filteredSell = applyPlatFilter(marketState.sellOrders, marketSellMin, marketSellMax);
+      const filteredBuy = applyPlatFilter(marketState.buyOrders, marketBuyMin, marketBuyMax);
+      renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match this filter.', 'buy');
+      renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match this filter.', 'sell');
+      renderMarketStats(getOrderStats(filteredSell), 'Sell');
+    }
+
+    function getOrderStats(orders) {
+      const prices = orders.map(order => Number(order.platinum)).filter(price => Number.isFinite(price));
+      if (!prices.length) return null;
+      const sorted = [...prices].sort((a, b) => a - b);
+      const total = sorted.reduce((sum, price) => sum + price, 0);
+      const middle = Math.floor(sorted.length / 2);
+      return {
+        avg_price: total / sorted.length,
+        median: sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2,
+        min_price: sorted[0],
+        max_price: sorted[sorted.length - 1]
+      };
+    }
+
+    function renderMarketStats(stats, label = 'Sell') {
+      if (!marketStats) return;
+      if (!stats) {
+        marketStats.innerHTML = [
+          '<div class="border border-terminal/25 p-2">Avg: -</div>',
+          '<div class="border border-terminal/25 p-2">Median: -</div>',
+          '<div class="border border-terminal/25 p-2">Min: -</div>',
+          '<div class="border border-terminal/25 p-2">Max: -</div>'
+        ].join('');
+        return;
+      }
+      marketStats.innerHTML = [
+        `<div class="border border-terminal/25 p-2">${label} avg: ${Math.round(stats.avg_price || 0)}p</div>`,
+        `<div class="border border-terminal/25 p-2">Median: ${Math.round(stats.median || 0)}p</div>`,
+        `<div class="border border-terminal/25 p-2">Min: ${Math.round(stats.min_price || 0)}p</div>`,
+        `<div class="border border-terminal/25 p-2">Max: ${Math.round(stats.max_price || 0)}p</div>`
+      ].join('');
+    }
+
+    async function loadMarketItem(item) {
+      if (!item) return;
+      marketState.selectedItem = item;
+      marketState.sellOrders = [];
+      marketState.buyOrders = [];
+      marketSelectedTitle.textContent = item.item_name;
+      marketSelectedMeta.textContent = 'Loading live orders and stats...';
+      renderOrderBook(marketSellOrders, [], 'Loading sell orders...');
+      renderOrderBook(marketBuyOrders, [], 'Loading buy orders...');
+      renderMarketStats(null);
+      try {
+        const ordersData = await fetchMarketJson(`/orders/${encodeURIComponent(item.url_name)}`);
+        const sellOrders = (ordersData?.data?.data?.sell || ordersData?.data?.sell || [])
+          .filter(order => order.visible !== false)
+          .sort((a, b) => a.platinum - b.platinum)
+          .slice(0, 12);
+        const buyOrders = (ordersData?.data?.data?.buy || ordersData?.data?.buy || [])
+          .filter(order => order.visible !== false)
+          .sort((a, b) => b.platinum - a.platinum)
+          .slice(0, 12);
+        marketState.sellOrders = sellOrders;
+        marketState.buyOrders = buyOrders;
+        const bestSell = sellOrders[0]?.platinum;
+        const bestBuy = buyOrders[0]?.platinum;
+        const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
+        marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p • Best buy ${bestBuy ?? '-'}p${spread !== null ? ` • Spread ${spread}p` : ''} • ${marketState.activeSource}`;
+        renderFilteredMarketOrders();
+        setMarketStatus(`Item live (${marketState.activeSource})`);
+      } catch (error) {
+        const reason = error?.message?.includes('HTTP')
+          ? 'bad endpoint or HTTP error'
+          : error?.message?.includes('parse error')
+            ? 'parse error'
+            : 'network or CORS blocked';
+        marketSelectedMeta.textContent = `Unable to load item data: ${reason}.`;
+        marketState.sellOrders = [];
+        marketState.buyOrders = [];
+        renderOrderBook(marketSellOrders, [], 'Order fetch failed.');
+        renderOrderBook(marketBuyOrders, [], 'Order fetch failed.');
+        renderMarketStats(null);
+        setMarketStatus(`Item failed: ${reason}`);
+        logClientError('market item load', error, { item: item?.url_name || '' });
+      }
+    }
+
+    async function runMarketSearch() {
+      const query = marketItemSearch?.value || '';
+      if (!query.trim()) {
+        renderMarketResults([], '');
+        hideMarketAutocomplete();
+        setMarketStatus('Search failed: empty query');
+        logClientError('market search input', new Error('Empty query'));
+        return;
+      }
+      try {
+        setMarketStatus('Search waiting for catalog...');
+        await ensureMarketCatalog();
+      } catch (error) {
+        renderMarketResults([], query);
+        hideMarketAutocomplete();
+        setMarketStatus('Search failed: catalog failed');
+        logClientError('market search catalog gate', error, { query });
+        return;
+      }
+      const results = marketMatches(query, 30);
+      renderMarketResults(results, query);
+      hideMarketAutocomplete();
+      if (results[0]) loadMarketItem(results[0]);
+      if (!results.length) {
+        setMarketStatus('Search failed: empty result');
+        logClientError('market search results', new Error('No matches after normalized item-name search'), { query, normalized: marketNorm(query), catalogSize: marketState.catalog.length });
+      }
+    }
+
+    if (marketSearchBtn && marketItemSearch) {
+      marketSearchBtn.addEventListener('click', () => {
+        runMarketSearch().catch(error => logClientError('market search click', error));
+      });
+
+      marketItemSearch.addEventListener('focus', async () => {
+        await ensureMarketCatalog().catch(error => logClientError('market focus preload', error));
+        if (!marketState.loaded) return;
+        const query = marketItemSearch.value.trim();
+        if (query) renderMarketAutocomplete(marketMatches(query, 8));
+      });
+
+      marketItemSearch.addEventListener('input', async () => {
+        await ensureMarketCatalog().catch(error => logClientError('market input preload', error));
+        if (!marketState.loaded) {
+          const query = marketItemSearch.value;
+          renderMarketResults([], query);
+          hideMarketAutocomplete();
+          return;
+        }
+        const query = marketItemSearch.value;
+        renderMarketAutocomplete(marketMatches(query, 8));
+      });
+
+      marketItemSearch.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          hideMarketAutocomplete();
+          return;
+        }
+        if (!marketState.suggestions.length) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            runMarketSearch().catch(error => logClientError('market enter search', error));
+          }
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          marketState.suggestionIndex = (marketState.suggestionIndex + 1) % marketState.suggestions.length;
+          const selected = marketState.suggestions[marketState.suggestionIndex];
+          if (selected) marketItemSearch.value = selected.item_name;
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          marketState.suggestionIndex = (marketState.suggestionIndex - 1 + marketState.suggestions.length) % marketState.suggestions.length;
+          const selected = marketState.suggestions[marketState.suggestionIndex];
+          if (selected) marketItemSearch.value = selected.item_name;
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (marketState.suggestionIndex >= 0) {
+            const selected = marketState.suggestions[marketState.suggestionIndex];
+            if (selected) marketItemSearch.value = selected.item_name;
+          }
+          hideMarketAutocomplete();
+          runMarketSearch().catch(error => logClientError('market suggestion enter search', error));
+        }
+      });
+
+      marketItemSearch.addEventListener('blur', () => setTimeout(hideMarketAutocomplete, 150));
+    } else {
+      logClientError('market bindings', new Error('Market controls missing'));
+    }
+
+    [marketBuyMin, marketBuyMax, marketSellMin, marketSellMax].forEach(input => {
+      if (input) input.addEventListener('input', renderFilteredMarketOrders);
+    });
+
+    const codexSearchInput = document.getElementById('codexSearchInput');
+    const codexSuggestions = document.getElementById('codexSuggestions');
+    const codexSearchBtn = document.getElementById('codexSearchBtn');
+    const codexOpenBtn = document.getElementById('codexOpenBtn');
+    const codexTitle = document.getElementById('codexTitle');
+    const codexSummary = document.getElementById('codexSummary');
+    const codexMeta = document.getElementById('codexMeta');
+    const codexResults = document.getElementById('codexResults');
+    const codexPageLink = document.getElementById('codexPageLink');
+    let codexSuggestionsCache = [];
+    let codexActiveTitle = '';
+    let codexSearchTimer;
+
+    function codexApiBase() {
+      return 'https://wiki.warframe.com/api.php';
+    }
+
+    function buildCodexUrl(params) {
+      const search = new URLSearchParams({
+        format: 'json',
+        origin: '*',
+        ...params
+      });
+      return `${codexApiBase()}?${search.toString()}`;
+    }
+
+    function codexApiCandidates(url) {
+      return [
+        { source: 'direct', url },
+        { source: 'proxy:corsproxy', url: `https://corsproxy.io/?${encodeURIComponent(url)}` },
+        { source: 'proxy:allorigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` }
+      ];
+    }
+
+    async function fetchCodexJson(url) {
+      let lastError = null;
+      for (const candidate of codexApiCandidates(url)) {
+        try {
+          logRequest(`codex ${candidate.source}`, candidate.url);
+          const response = await fetch(candidate.url, { headers: { Accept: 'application/json' } });
+          logResponse(`codex ${candidate.source}`, response);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          let json;
+          try {
+            json = await response.json();
+          } catch (error) {
+            throw new Error(`parse error: ${error.message}`);
+          }
+          logJson(`codex ${candidate.source}`, json);
+          return json;
+        } catch (error) {
+          console.warn(`[orbiter] codex fetch candidate failed: ${candidate.source}`, error);
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('Codex API unavailable');
+    }
+
+    function codexPageUrl(title) {
+      return `https://wiki.warframe.com/w/${encodeURIComponent((title || '').replace(/\s+/g, '_'))}`;
+    }
+
+    function stripHtml(html) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html || '';
+      return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function setCodexState({ title, summary, meta, url, loading = false }) {
+      codexTitle.textContent = title || (loading ? 'Loading...' : 'Awaiting query');
+      codexSummary.textContent = summary || (loading ? 'Querying official wiki...' : 'Enter a topic and the terminal will search the official wiki, pull the best matching page, and summarize the intro here.');
+      codexMeta.textContent = meta || '';
+      if (url) {
+        codexPageLink.href = url;
+        codexPageLink.classList.remove('hidden');
+      } else {
+        codexPageLink.classList.add('hidden');
+      }
+    }
+
+    function renderCodexResults(items = []) {
+      if (!codexResults) return;
+      if (!items.length) {
+        codexResults.innerHTML = '<div class="border border-terminal/25 p-3">No matching official wiki pages found yet.</div>';
+        return;
+      }
+      codexResults.innerHTML = items.map(item => `
+        <button class="codex-result w-full text-left border border-terminal/25 p-3 hover:bg-terminal hover:text-black" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
+          <div class="font-bold">${item.title || 'Untitled'}</div>
+          <div class="text-xs opacity-80 mt-1">${item.snippet || 'Open this result in the codex panel.'}</div>
+        </button>
+      `).join('');
+      codexResults.querySelectorAll('.codex-result').forEach(btn => {
+        btn.addEventListener('click', () => loadCodexEntry(btn.dataset.title || ''));
+      });
+    }
+
+    function hideCodexSuggestions() {
+      if (codexSuggestions) {
+        codexSuggestions.classList.add('hidden');
+        codexSuggestions.innerHTML = '';
+      }
+    }
+
+    function renderCodexSuggestions(items = []) {
+      codexSuggestionsCache = items;
+      if (!codexSuggestions) return;
+      if (!items.length) {
+        hideCodexSuggestions();
+        return;
+      }
+      codexSuggestions.innerHTML = items.map(item => `
+        <button class="codex-suggestion w-full text-left px-4 py-3 border-b border-terminal/20 last:border-b-0 hover:bg-terminal hover:text-black" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
+          <div class="font-bold text-sm">${item.title || 'Untitled'}</div>
+          <div class="text-xs opacity-80 mt-1">${item.snippet || 'Official wiki result'}</div>
+        </button>
+      `).join('');
+      codexSuggestions.classList.remove('hidden');
+      codexSuggestions.querySelectorAll('.codex-suggestion').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (codexSearchInput) codexSearchInput.value = btn.dataset.title || '';
+          hideCodexSuggestions();
+          loadCodexEntry(btn.dataset.title || '');
+        });
+      });
+    }
+
+    async function searchCodexSuggestions(query) {
+      const q = (query || '').trim();
+      if (!q) {
+        renderCodexResults([]);
+        hideCodexSuggestions();
+        return [];
+      }
+      try {
+        const url = buildCodexUrl({
+          action: 'query',
+          list: 'search',
+          srsearch: q,
+          srlimit: '6'
+        });
+        const data = await fetchCodexJson(url);
+        const items = (data?.query?.search || []).map(entry => ({
+          title: entry.title,
+          snippet: stripHtml(entry.snippet || '')
+        }));
+        if (!items.length) {
+          console.warn('[orbiter] codex suggestions empty result', { query: q, data });
+        }
+        renderCodexSuggestions(items);
+        renderCodexResults(items);
+        return items;
+      } catch (error) {
+        hideCodexSuggestions();
+        renderCodexResults([]);
+        logClientError('codex suggestions fetch', error, { query: q });
+        return [];
+      }
+    }
+
+    async function loadCodexEntry(queryOrTitle) {
+      const q = (queryOrTitle || codexSearchInput?.value || '').trim();
+      if (!q) {
+        logClientError('codex entry load', new Error('Empty query'));
+        return;
+      }
+      setCodexState({ loading: true });
+      hideCodexSuggestions();
+      try {
+        let title = q;
+        const searchUrl = buildCodexUrl({
+          action: 'query',
+          list: 'search',
+          srsearch: q,
+          srlimit: '1'
+        });
+        const searchData = await fetchCodexJson(searchUrl);
+        const top = searchData?.query?.search?.[0];
+        if (top?.title) {
+          title = top.title;
+        } else {
+          setCodexState({
+            title: 'No codex result',
+            summary: `No official wiki page matched "${q}". Try a broader term like Orokin, Lotus, Duviri, or Nightwave.`,
+            meta: 'SOURCE // EMPTY SEARCH RESULT',
+            url: ''
+          });
+          console.warn('[orbiter] codex entry empty result', { query: q, data: searchData });
+          return;
+        }
+
+        const summaryUrl = buildCodexUrl({
+          action: 'query',
+          prop: 'extracts',
+          exintro: '1',
+          explaintext: '1',
+          redirects: '1',
+          titles: title
+        });
+        const summaryData = await fetchCodexJson(summaryUrl);
+        const pages = summaryData?.query?.pages || {};
+        const pageEntries = Object.entries(pages);
+        const [pageId, page] = pageEntries[0] || [];
+        if (!page || pageId === '-1' || page.missing || page.invalid) {
+          setCodexState({
+            title: 'Missing wiki page',
+            summary: `The official wiki API found "${title}" in search, but the extracts query returned a missing or invalid page.`,
+            meta: 'SOURCE // MISSING PAGE',
+            url: ''
+          });
+          console.warn('[orbiter] codex missing page', { title, pageId, page, data: summaryData });
+          return;
+        }
+        const finalTitle = page.title || title;
+        const extract = (page.extract || '').trim();
+        codexActiveTitle = finalTitle;
+        if (!extract) {
+          console.warn('[orbiter] codex summary empty extract', { title: finalTitle, data: summaryData });
+        }
+        setCodexState({
+          title: finalTitle,
+          summary: extract || `The official wiki returned the page "${finalTitle}" but did not include an intro extract.`,
+          meta: extract ? 'SOURCE // OFFICIAL WARFRAME WIKI INTRO' : 'SOURCE // EMPTY EXTRACT',
+          url: codexPageUrl(finalTitle)
+        });
+      } catch (error) {
+        const reason = error?.message?.includes('HTTP')
+          ? 'bad endpoint or HTTP error'
+          : error?.message?.includes('parse error')
+            ? 'parse error'
+            : 'network or CORS blocked';
+        setCodexState({
+          title: 'Lookup failed',
+          summary: `Codex lookup failed because of ${reason}. Check the console for the request URL, response status, and parsed JSON details.`,
+          meta: `SOURCE // ${reason.toUpperCase()}`,
+          url: q ? codexPageUrl(q) : ''
+        });
+        logClientError('codex entry fetch', error, { query: q, reason });
+      }
+    }
+
+    if (codexSearchInput) {
+      codexSearchInput.addEventListener('input', () => {
+        clearTimeout(codexSearchTimer);
+        const q = codexSearchInput.value;
+        codexSearchTimer = setTimeout(() => searchCodexSuggestions(q), 220);
+      });
+      codexSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          loadCodexEntry(codexSearchInput.value);
+        } else if (e.key === 'Escape') {
+          hideCodexSuggestions();
+        }
+      });
+      codexSearchInput.addEventListener('blur', () => setTimeout(hideCodexSuggestions, 150));
+    } else {
+      logClientError('codex bindings', new Error('codexSearchInput not found'));
+    }
+
+    if (codexSearchBtn) codexSearchBtn.addEventListener('click', () => loadCodexEntry(codexSearchInput?.value || ''));
+    if (codexOpenBtn) codexOpenBtn.addEventListener('click', () => {
+      const title = (codexActiveTitle || codexSearchInput?.value || '').trim();
+      if (!title) {
+        logClientError('codex open page', new Error('No title to open'));
+        return;
+      }
+      window.open(codexPageUrl(title), '_blank', 'noopener,noreferrer');
+    });
+    document.querySelectorAll('.codex-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (codexSearchInput) codexSearchInput.value = chip.dataset.query || '';
+        loadCodexEntry(chip.dataset.query || '');
+      });
+    });
+
+
+    setupSubtabs();
+    document.querySelectorAll('[data-subtabs]').forEach(group => {
+      const firstBtn = group.querySelector('.subtab-btn');
+      if (firstBtn) firstBtn.click();
+    });
