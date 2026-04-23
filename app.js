@@ -2425,9 +2425,10 @@ function runBootSequence() {
         marketModal.setAttribute('aria-hidden', 'false');
         marketModalState.prevBodyOverflow = document.body.style.overflow || '';
         document.body.style.overflow = 'hidden';
-        requestAnimationFrame(() => {
-          marketModal.dataset.open = '1';
-        });
+        // Ensure a stable start state even on mobile where click/tap timing can be weird.
+        marketModal.dataset.open = '0';
+        marketModal.getBoundingClientRect(); // force reflow so the "closed" styles apply
+        marketModal.dataset.open = '1';
         return Promise.resolve();
       }
 
@@ -2714,9 +2715,7 @@ function runBootSequence() {
       if (input) input.addEventListener('input', () => { applyMarketModalControlsToPanel(); renderFilteredMarketOrders(); });
     });
     if (marketModal) {
-      marketModal.querySelectorAll('[data-market-modal-close]').forEach(el => {
-        el.addEventListener('click', closeMarketModal);
-      });
+      // Close only via close button or Escape (no backdrop close).
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && marketModalState.open) closeMarketModal();
       });

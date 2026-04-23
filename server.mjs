@@ -102,7 +102,15 @@ async function handleApi(req, res, url) {
     const orderMatch = url.pathname.match(/^\/api\/market\/orders\/([^/]+)$/);
     if (orderMatch) {
       const slug = encodeURIComponent(decodeURIComponent(orderMatch[1]));
-      const result = await fetchJsonCached(`orders:${slug}`, `${MARKET_API}/orders/item/${slug}/top`);
+      // Prefer full order books when possible (no hardcoded top-N).
+      // Some deployments may still only support /top; fall back if needed.
+      let result;
+      try {
+        result = await fetchJsonCached(`orders:${slug}`, `${MARKET_API}/orders/item/${slug}`);
+      } catch (error) {
+        console.warn('[market-proxy] full orders failed, falling back to /top', error?.message || error);
+        result = await fetchJsonCached(`orders:${slug}:top`, `${MARKET_API}/orders/item/${slug}/top`);
+      }
       send(res, 200, JSON.stringify(result));
       return;
     }
