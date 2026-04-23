@@ -2289,6 +2289,33 @@ function runBootSequence() {
       });
     }
 
+    function statusRank(status) {
+      // warframe.market typical statuses: ingame, online, offline
+      // Keep unknown statuses last.
+      const s = String(status || '').toLowerCase();
+      if (s === 'ingame') return 0;
+      if (s === 'online') return 1;
+      if (s === 'offline') return 2;
+      return 3;
+    }
+
+    function applyStatusThenPriceSort(orders, sortValue, defaultValue) {
+      const value = String(sortValue || defaultValue || '').toLowerCase();
+      const dir = value === 'price_desc' ? -1 : 1;
+      return [...orders].sort((a, b) => {
+        const ar = statusRank(orderStatus(a));
+        const br = statusRank(orderStatus(b));
+        if (ar !== br) return ar - br;
+
+        const ap = Number(a.platinum);
+        const bp = Number(b.platinum);
+        if (!Number.isFinite(ap) && !Number.isFinite(bp)) return 0;
+        if (!Number.isFinite(ap)) return 1;
+        if (!Number.isFinite(bp)) return -1;
+        return (ap - bp) * dir;
+      });
+    }
+
     function getMarketFilteredOrders(side) {
       const isBuy = side === 'buy';
       const status = isBuy ? (marketBuyStatus?.value || 'all') : (marketSellStatus?.value || 'all');
@@ -2296,8 +2323,13 @@ function runBootSequence() {
       const minInput = isBuy ? marketBuyMin : marketSellMin;
       const maxInput = isBuy ? marketBuyMax : marketSellMax;
       const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
+      const filteredByPlat = applyPlatFilter(raw, minInput, maxInput);
+      if (String(status).toLowerCase() === 'all') {
+        // Show ingame first (then online/offline), while still sorting by price within each status group.
+        return applyStatusThenPriceSort(filteredByPlat, sort, isBuy ? 'price_desc' : 'price_asc');
+      }
       return applyPriceSort(
-        applyPlatFilter(applyStatusFilter(raw, status), minInput, maxInput),
+        applyStatusFilter(filteredByPlat, status),
         sort,
         isBuy ? 'price_desc' : 'price_asc'
       );
