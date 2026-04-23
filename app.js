@@ -2223,24 +2223,44 @@ function runBootSequence() {
       const value = marketWhisper(action, username, price);
       if (!value) return;
       try {
-        await navigator.clipboard.writeText(value);
-      } catch {
-        const scratch = document.createElement('textarea');
-        scratch.value = value;
-        scratch.style.position = 'fixed';
-        scratch.style.opacity = '0';
-        document.body.append(scratch);
-        scratch.select();
-        document.execCommand('copy');
-        scratch.remove();
+        try {
+          await navigator.clipboard.writeText(value);
+        } catch {
+          const scratch = document.createElement('textarea');
+          scratch.value = value;
+          scratch.style.position = 'fixed';
+          scratch.style.opacity = '0';
+          document.body.append(scratch);
+          scratch.select();
+          document.execCommand('copy');
+          scratch.remove();
+        }
+      } catch (error) {
+        logClientError('market whisper copy', error, { action, username, price });
+        throw error;
       }
       setMarketStatus(`${action === 'buy' ? 'Buy' : 'Sell'} whisper copied`);
     }
 
     function bindWhisperButtons(root) {
       root.querySelectorAll('.market-whisper-copy').forEach(button => {
-        button.addEventListener('click', () => {
-          copyMarketWhisper(button.dataset.action, button.dataset.user, button.dataset.price);
+        if (button.dataset.bound === '1') return;
+        button.dataset.bound = '1';
+        button.addEventListener('click', async () => {
+          const original = button.textContent || 'Copy Whisper';
+          if (button._copyResetTimer) window.clearTimeout(button._copyResetTimer);
+          button.textContent = 'Copying...';
+          button.disabled = true;
+          try {
+            await copyMarketWhisper(button.dataset.action, button.dataset.user, button.dataset.price);
+            button.textContent = 'Copied';
+          } catch {
+            button.textContent = 'Copy failed';
+          }
+          button._copyResetTimer = window.setTimeout(() => {
+            button.textContent = original;
+            button.disabled = false;
+          }, 900);
         });
       });
     }
