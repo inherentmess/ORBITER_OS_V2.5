@@ -55,6 +55,9 @@
     /* Layout safety: prevent flex/grid children from forcing horizontal overflow. */
     .app-shell, .app-main, .panel-card { min-width: 0; }
     .panel-card, [data-dashboard-detail] { overflow-wrap: anywhere; }
+    img, svg, video, canvas { max-width: 100%; height: auto; }
+    pre, code { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+    html, body { max-width: 100%; overflow-x: hidden; }
 
     /* Mobile accordion behavior (section wrappers are created by app.js). */
     .section-toggle-btn { display: none; touch-action: manipulation; align-items: center; justify-content: center; gap: 10px; }
@@ -66,17 +69,19 @@
 
     /* Responsive shell: sidebar becomes a top tab bar on smaller screens. */
     @media (max-width: 900px) {
-      body { overflow-x: hidden; }
-      .app-shell { flex-direction: column; height: 100vh; }
+      /* Tailwind utilities (h-screen/w-72/overflow-hidden) can override these unless we force them. */
+      body { overflow-x: hidden !important; overflow-y: auto !important; }
+      .app-shell { flex-direction: column; height: auto !important; min-height: 100dvh; overflow: visible !important; }
       .app-nav {
-        width: 100%;
-        height: auto;
+        width: 100% !important;
+        height: auto !important;
         border-right: 0;
         border-bottom: 2px solid #4ade80;
         flex-direction: row;
         align-items: center;
         gap: 12px;
         padding: 10px 12px;
+        overflow-x: hidden;
       }
       .app-nav .mb-8 { margin-bottom: 0; }
       .app-nav .mb-8 .text-xl { font-size: 0.95rem; }
@@ -93,15 +98,21 @@
       .nav-btn, .subtab-btn, .terminal-link, button[data-dashboard-detail-select], button[data-dashboard-detail-close] {
         min-height: 44px;
       }
-      .app-main { height: auto; flex: 1; min-height: 0; }
+      .app-main { height: auto !important; flex: 1; min-height: 0; overflow-y: visible !important; }
+
+      /* Stack everything vertically on phones/tablets. */
+      .app-main .grid { grid-template-columns: 1fr !important; }
+      .app-main .xl\\:grid-cols-3,
+      .app-main .xl\\:grid-cols-5,
+      .app-main .lg\\:grid-cols-3,
+      .app-main .md\\:grid-cols-2,
+      .app-main .grid-cols-2 { grid-template-columns: 1fr !important; }
     }
 
     /* Phone ergonomics: avoid iOS zoom on inputs and tighten padding. */
     @media (max-width: 520px) {
       input, select, textarea { font-size: 16px !important; }
       .panel-card { padding: 16px !important; }
-      /* Grids should behave like a single column list on narrow phones. */
-      .app-main .grid { grid-template-columns: 1fr !important; }
       #marketResults, #marketSellOrders, #marketBuyOrders { max-height: 45vh; }
     }
   </style>
