@@ -4,11 +4,17 @@ const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
 
 const MOBILE_ACCORDION_QUERY = '(max-width: 900px)';
+const accordionMql = typeof window.matchMedia === 'function' ? window.matchMedia(MOBILE_ACCORDION_QUERY) : null;
 const sectionAccordionState = {
-  enabled: typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_ACCORDION_QUERY).matches,
+  enabled: Boolean(accordionMql?.matches),
   bodies: new Map(),
   toggles: new Map()
 };
+
+let currentSectionName = 'dashboard';
+const sectionNames = Array.from(sections)
+  .map(section => String(section.id || '').replace(/^section-/, ''))
+  .filter(Boolean);
 
     function logClientError(action, error, extra = {}) {
       console.error(`[orbiter] ${action} failed`, {
@@ -81,10 +87,12 @@ const sectionAccordionState = {
         headerBlock.insertAdjacentElement('afterend', toggle);
 
         const body = document.createElement('div');
+        body.id = `section-body-${sectionName}`;
         body.className = 'section-body space-y-6';
         body.style.maxHeight = '0px';
         body.style.opacity = '0';
         toggle.insertAdjacentElement('afterend', body);
+        toggle.setAttribute('aria-controls', body.id);
 
         let cursor = body.nextSibling;
         while (cursor) {
@@ -106,13 +114,42 @@ const sectionAccordionState = {
       ['arsenal', 'market', 'codex'].forEach(name => setSectionOpen(name, false));
     }
 
+    function syncAccordionMode() {
+      const shouldEnable = Boolean(accordionMql?.matches);
+      if (shouldEnable === sectionAccordionState.enabled) return;
+      sectionAccordionState.enabled = shouldEnable;
+
+      if (sectionAccordionState.enabled) {
+        // Mobile/tablet: accordion mode, keep all sections in the DOM flow.
+        setupSectionAccordion();
+        sections.forEach(section => section.classList.remove('hidden-panel'));
+        sectionNames.forEach(name => setSectionOpen(name, name === currentSectionName));
+        return;
+      }
+
+      // Desktop: restore single-panel navigation.
+      sectionAccordionState.bodies.forEach((body, name) => {
+        // Leave bodies expanded so if CSS changes later, content is still accessible.
+        body.dataset.open = '1';
+        body.style.opacity = '1';
+        body.style.maxHeight = 'none';
+        const toggle = sectionAccordionState.toggles.get(name);
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', 'true');
+          toggle.textContent = 'collapse';
+        }
+      });
+      sections.forEach(section => section.classList.toggle('hidden-panel', section.id !== `section-${currentSectionName}`));
+    }
+
     function showSection(sectionName) {
+      currentSectionName = sectionName || 'dashboard';
       navButtons.forEach(btn => btn.classList.toggle('nav-active', btn.dataset.section === sectionName));
 
       if (sectionAccordionState.enabled) {
-        const body = sectionAccordionState.bodies.get(sectionName);
-        const isOpen = body?.dataset.open === '1';
-        setSectionOpen(sectionName, !isOpen, { scrollIntoView: true });
+        // Mobile/tablet: treat nav buttons as "open this panel" (not toggle).
+        sectionNames.forEach(name => setSectionOpen(name, name === sectionName));
+        setSectionOpen(sectionName, true, { scrollIntoView: true });
       } else {
         sections.forEach(section => section.classList.toggle('hidden-panel', section.id !== `section-${sectionName}`));
       }
@@ -158,7 +195,13 @@ const sectionAccordionState = {
     }
 
     setupSectionAccordion();
+    if (accordionMql) {
+      // Keep behavior correct across resize/orientation changes.
+      if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncAccordionMode);
+      else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncAccordionMode);
+    }
     navButtons.forEach(btn => btn.addEventListener('click', () => showSection(btn.dataset.section)));
+    showSection(currentSectionName);
 
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {
@@ -180,7 +223,10 @@ const sectionAccordionState = {
       searchInput.addEventListener('input', (e) => {
         const q = e.target.value.trim().toLowerCase();
         const activeSections = sectionAccordionState.enabled
-          ? Array.from(sections)
+          ? sectionNames
+              .filter(name => sectionAccordionState.bodies.get(name)?.dataset.open === '1')
+              .map(name => document.getElementById(`section-${name}`))
+              .filter(Boolean)
           : [document.querySelector('.content-section:not(.hidden-panel)')].filter(Boolean);
 
         activeSections.forEach(activeSection => {

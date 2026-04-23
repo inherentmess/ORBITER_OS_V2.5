@@ -57,10 +57,11 @@
     .panel-card, [data-dashboard-detail] { overflow-wrap: anywhere; }
 
     /* Mobile accordion behavior (section wrappers are created by app.js). */
-    .section-toggle-btn { display: none; touch-action: manipulation; }
+    .section-toggle-btn { display: none; touch-action: manipulation; align-items: center; justify-content: center; gap: 10px; }
     .section-body { transition: max-height 240ms ease, opacity 200ms ease; overflow: hidden; }
     @media (max-width: 900px) {
-      .section-toggle-btn { display: inline-flex; margin-top: 12px; }
+      .section-toggle-btn { display: inline-flex; margin-top: 12px; width: 100%; }
+      .app-main { overflow-x: hidden; }
     }
 
     /* Responsive shell: sidebar becomes a top tab bar on smaller screens. */
