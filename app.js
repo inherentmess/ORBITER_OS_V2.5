@@ -2,6 +2,83 @@ const navButtons = document.querySelectorAll('.nav-btn');
 const sections = document.querySelectorAll('.content-section');
 const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
+const soundToggleBtn = document.getElementById('soundToggleBtn');
+
+function createSoundSystem() {
+  const STORAGE_KEY = 'orbiter_sound_muted';
+  const state = {
+    muted: localStorage.getItem(STORAGE_KEY) === '1',
+    unlocked: false,
+    lastPlay: new Map(),
+    audio: {
+      click: new Audio('sounds/click.wav'),
+      type: new Audio('sounds/type.wav'),
+      boot: new Audio('sounds/boot.wav')
+    }
+  };
+
+  Object.values(state.audio).forEach(a => {
+    a.preload = 'auto';
+    a.volume = 0.5;
+  });
+  state.audio.type.volume = 0.22;
+  state.audio.boot.volume = 0.45;
+
+  function setMuted(muted) {
+    state.muted = Boolean(muted);
+    localStorage.setItem(STORAGE_KEY, state.muted ? '1' : '0');
+    if (soundToggleBtn) {
+      soundToggleBtn.textContent = state.muted ? 'volume_off' : 'volume_up';
+      soundToggleBtn.setAttribute('aria-pressed', state.muted ? 'true' : 'false');
+    }
+  }
+
+  async function tryPlay(name, { cooldownMs = 0 } = {}) {
+    if (state.muted) return false;
+    const audio = state.audio[name];
+    if (!audio) return false;
+
+    const now = Date.now();
+    const last = state.lastPlay.get(name) || 0;
+    if (cooldownMs && now - last < cooldownMs) return false;
+    state.lastPlay.set(name, now);
+
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+      await audio.play();
+      state.unlocked = true;
+      return true;
+    } catch (error) {
+      // Autoplay restrictions or blocked audio: silently ignore, but mark as locked.
+      state.unlocked = false;
+      return false;
+    }
+  }
+
+  function ensureUnlocked() {
+    if (state.unlocked) return;
+    const unlock = async () => {
+      // Attempt a tiny sound once on first interaction to unlock playback.
+      await tryPlay('click', { cooldownMs: 0 });
+      document.removeEventListener('pointerdown', unlock, true);
+      document.removeEventListener('keydown', unlock, true);
+    };
+    document.addEventListener('pointerdown', unlock, true);
+    document.addEventListener('keydown', unlock, true);
+  }
+
+  setMuted(state.muted);
+  ensureUnlocked();
+
+  return {
+    get muted() { return state.muted; },
+    setMuted,
+    play: tryPlay
+  };
+}
+
+const Sound = createSoundSystem();
 
 const MOBILE_ACCORDION_QUERY = '(max-width: 900px)';
 const accordionMql = typeof window.matchMedia === 'function' ? window.matchMedia(MOBILE_ACCORDION_QUERY) : null;
@@ -15,6 +92,68 @@ let currentSectionName = 'dashboard';
 const sectionNames = Array.from(sections)
   .map(section => String(section.id || '').replace(/^section-/, ''))
   .filter(Boolean);
+
+function runBootSequence() {
+  const overlay = document.getElementById('bootOverlay');
+  const linesEl = document.getElementById('bootLines');
+  if (!overlay || !linesEl) return;
+
+  const lines = [
+    '[LINK_ESTABLISHED]  Cephalon_Link online',
+    '[MOUNT]  archives://tenno',
+    '[SYNC]  browse.wf oracle handshake',
+    '[INIT]  market catalog cache',
+    '[READY]  enter command'
+  ];
+
+  let cancelled = false;
+  let lineIndex = 0;
+  let charIndex = 0;
+
+  const finish = () => {
+    if (cancelled) return;
+    cancelled = true;
+    overlay.classList.add('hidden');
+    window.setTimeout(() => overlay.remove(), 280);
+  };
+
+  const skip = () => {
+    linesEl.textContent = lines.join('\n');
+    finish();
+  };
+
+  overlay.addEventListener('click', skip, { once: true });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') skip();
+  }, { once: true });
+
+  Sound.play('boot', { cooldownMs: 5000 }).catch(() => {});
+
+  const step = () => {
+    if (cancelled) return;
+    const current = lines[lineIndex] || '';
+    const prefix = lines.slice(0, lineIndex).join('\n');
+    const typed = current.slice(0, charIndex);
+    const nextText = (prefix ? `${prefix}\n` : '') + typed;
+    linesEl.textContent = nextText;
+
+    if (charIndex < current.length) {
+      charIndex += 1;
+      window.setTimeout(step, 18);
+      return;
+    }
+
+    lineIndex += 1;
+    charIndex = 0;
+    if (lineIndex >= lines.length) {
+      window.setTimeout(finish, 420);
+      return;
+    }
+    window.setTimeout(step, 140);
+  };
+
+  window.setTimeout(step, 120);
+}
 
     function logClientError(action, error, extra = {}) {
       console.error(`[orbiter] ${action} failed`, {
@@ -203,6 +342,36 @@ const sectionNames = Array.from(sections)
     navButtons.forEach(btn => btn.addEventListener('click', () => showSection(btn.dataset.section)));
     showSection(currentSectionName);
 
+    if (soundToggleBtn) {
+      soundToggleBtn.addEventListener('click', () => {
+        const nextMuted = !Sound.muted;
+        Sound.setMuted(nextMuted);
+        if (!nextMuted) Sound.play('click', { cooldownMs: 0 }).catch(() => {});
+      });
+    }
+
+    // Subtle click sounds only for primary terminal actions.
+    const CLICK_SELECTOR = [
+      '.nav-btn',
+      '.subtab-btn',
+      '.section-toggle-btn',
+      '#refreshBtn',
+      '#marketSearchBtn',
+      '#codexSearchBtn',
+      '#codexOpenBtn',
+      'button[data-dashboard-detail-select]',
+      'button[data-dashboard-detail-close]',
+      '.terminal-link',
+      '.clickable'
+    ].join(',');
+
+    document.addEventListener('click', (e) => {
+      const hit = e.target?.closest?.(CLICK_SELECTOR);
+      if (!hit) return;
+      if (hit === soundToggleBtn) return;
+      Sound.play('click', { cooldownMs: 90 }).catch(() => {});
+    }, true);
+
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {
         showSection('dashboard');
@@ -244,6 +413,19 @@ const sectionNames = Array.from(sections)
     } else {
       logClientError('global search binding', new Error('searchInput not found'));
     }
+
+    // Typing sound: only for major terminal/search inputs (with a small cooldown).
+    const TYPING_IDS = new Set(['searchInput', 'marketItemSearch', 'codexSearchInput']);
+    document.addEventListener('beforeinput', (e) => {
+      const t = e.target;
+      if (!t || !(t instanceof HTMLElement)) return;
+      if (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') return;
+      if (!TYPING_IDS.has(t.id)) return;
+      if (typeof e.inputType === 'string' && !e.inputType.startsWith('insert')) return;
+      Sound.play('type', { cooldownMs: 32 }).catch(() => {});
+    }, true);
+
+    runBootSequence();
 
     const dashboardTrackerGrid = document.getElementById('dashboardTrackerGrid');
     const dashboardTrackerStatus = document.getElementById('dashboardTrackerStatus');
