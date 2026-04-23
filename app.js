@@ -357,10 +357,16 @@ function runBootSequence() {
       '.section-toggle-btn',
       '#refreshBtn',
       '#marketSearchBtn',
+      '#marketViewSellBtn',
+      '#marketViewBuyBtn',
+      '#marketModalClose',
+      '#marketModalTabSell',
+      '#marketModalTabBuy',
       '#codexSearchBtn',
       '#codexOpenBtn',
       'button[data-dashboard-detail-select]',
       'button[data-dashboard-detail-close]',
+      '.market-whisper-copy',
       '.terminal-link',
       '.clickable'
     ].join(',');
@@ -1909,6 +1915,8 @@ function runBootSequence() {
     const marketBuyOrders = document.getElementById('marketBuyOrders');
     const marketTabSell = document.getElementById('marketTabSell');
     const marketTabBuy = document.getElementById('marketTabBuy');
+    const marketViewSellBtn = document.getElementById('marketViewSellBtn');
+    const marketViewBuyBtn = document.getElementById('marketViewBuyBtn');
     const marketSellPanel = document.getElementById('marketSellPanel');
     const marketBuyPanel = document.getElementById('marketBuyPanel');
     const marketBuyMin = document.getElementById('marketBuyMin');
@@ -1919,6 +1927,16 @@ function runBootSequence() {
     const marketSellSort = document.getElementById('marketSellSort');
     const marketBuyStatus = document.getElementById('marketBuyStatus');
     const marketBuySort = document.getElementById('marketBuySort');
+    const marketModal = document.getElementById('marketModal');
+    const marketModalTitle = document.getElementById('marketModalTitle');
+    const marketModalList = document.getElementById('marketModalList');
+    const marketModalClose = document.getElementById('marketModalClose');
+    const marketModalTabSell = document.getElementById('marketModalTabSell');
+    const marketModalTabBuy = document.getElementById('marketModalTabBuy');
+    const marketModalStatus = document.getElementById('marketModalStatus');
+    const marketModalSort = document.getElementById('marketModalSort');
+    const marketModalMin = document.getElementById('marketModalMin');
+    const marketModalMax = document.getElementById('marketModalMax');
 
     const marketState = {
       catalog: [],
@@ -1938,6 +1956,12 @@ function runBootSequence() {
 
     const marketUi = {
       activeSide: 'sell'
+    };
+
+    const marketModalState = {
+      open: false,
+      side: 'sell',
+      prevBodyOverflow: ''
     };
 
     function setMarketStatus(text) {
@@ -2152,7 +2176,7 @@ function runBootSequence() {
         const username = order.user?.ingameName || order.user?.ingame_name || 'Unknown';
         const price = Number(order.platinum);
         return `
-        <div class="border border-terminal/25 p-2 text-xs">
+        <div class="market-order-row border border-terminal/25 p-2 text-xs">
           <div class="flex justify-between gap-2">
             <span class="text-terminal">${htmlEscape(price)}p</span>
             <span class="opacity-70">${htmlEscape((order.user?.status || 'unknown').toUpperCase())}</span>
@@ -2241,6 +2265,20 @@ function runBootSequence() {
       });
     }
 
+    function getMarketFilteredOrders(side) {
+      const isBuy = side === 'buy';
+      const status = isBuy ? (marketBuyStatus?.value || 'all') : (marketSellStatus?.value || 'all');
+      const sort = isBuy ? (marketBuySort?.value || 'price_desc') : (marketSellSort?.value || 'price_asc');
+      const minInput = isBuy ? marketBuyMin : marketSellMin;
+      const maxInput = isBuy ? marketBuyMax : marketSellMax;
+      const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
+      return applyPriceSort(
+        applyPlatFilter(applyStatusFilter(raw, status), minInput, maxInput),
+        sort,
+        isBuy ? 'price_desc' : 'price_asc'
+      );
+    }
+
     function setMarketActiveSide(side) {
       marketUi.activeSide = side === 'buy' ? 'buy' : 'sell';
       if (marketTabSell) marketTabSell.classList.toggle('subtab-active', marketUi.activeSide === 'sell');
@@ -2251,26 +2289,94 @@ function runBootSequence() {
       if (marketBuyPanel) marketBuyPanel.dataset.active = mobile ? (marketUi.activeSide === 'buy' ? '1' : '0') : '1';
     }
 
-    function renderFilteredMarketOrders() {
-      const sellStatus = marketSellStatus?.value || 'all';
-      const buyStatus = marketBuyStatus?.value || 'all';
-      const sellSort = marketSellSort?.value || 'price_asc';
-      const buySort = marketBuySort?.value || 'price_desc';
+    function setMarketModalOpen(open) {
+      if (!marketModal) return;
+      marketModalState.open = Boolean(open);
+      marketModal.dataset.open = marketModalState.open ? '1' : '0';
+      marketModal.setAttribute('aria-hidden', marketModalState.open ? 'false' : 'true');
 
-      const filteredSell = applyPriceSort(
-        applyPlatFilter(applyStatusFilter(marketState.sellOrders, sellStatus), marketSellMin, marketSellMax),
-        sellSort,
-        'price_asc'
+      if (marketModalState.open) {
+        marketModalState.prevBodyOverflow = document.body.style.overflow || '';
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = marketModalState.prevBodyOverflow;
+      }
+    }
+
+    function setMarketModalSide(side) {
+      marketModalState.side = side === 'buy' ? 'buy' : 'sell';
+      if (marketModalTabSell) marketModalTabSell.classList.toggle('subtab-active', marketModalState.side === 'sell');
+      if (marketModalTabBuy) marketModalTabBuy.classList.toggle('subtab-active', marketModalState.side === 'buy');
+      if (marketModalTitle) {
+        const itemName = marketState.selectedItem?.item_name || 'No item selected';
+        marketModalTitle.textContent = `${itemName} // ${marketModalState.side === 'sell' ? 'Sell Orders' : 'Buy Orders'}`;
+      }
+    }
+
+    function syncMarketModalControlsFromPanel() {
+      if (!marketModalStatus || !marketModalSort || !marketModalMin || !marketModalMax) return;
+      const isBuy = marketModalState.side === 'buy';
+      const status = isBuy ? (marketBuyStatus?.value || 'all') : (marketSellStatus?.value || 'all');
+      const sort = isBuy ? (marketBuySort?.value || 'price_desc') : (marketSellSort?.value || 'price_asc');
+      const { min, max } = getPlatFilter(isBuy ? marketBuyMin : marketSellMin, isBuy ? marketBuyMax : marketSellMax);
+      marketModalStatus.value = status;
+      marketModalSort.value = sort;
+      marketModalMin.value = min === null ? '' : String(min);
+      marketModalMax.value = max === null ? '' : String(max);
+    }
+
+    function applyMarketModalControlsToPanel() {
+      const isBuy = marketModalState.side === 'buy';
+      const statusEl = isBuy ? marketBuyStatus : marketSellStatus;
+      const sortEl = isBuy ? marketBuySort : marketSellSort;
+      const minEl = isBuy ? marketBuyMin : marketSellMin;
+      const maxEl = isBuy ? marketBuyMax : marketSellMax;
+      if (statusEl && marketModalStatus) statusEl.value = marketModalStatus.value;
+      if (sortEl && marketModalSort) sortEl.value = marketModalSort.value;
+      if (minEl && marketModalMin) minEl.value = marketModalMin.value;
+      if (maxEl && marketModalMax) maxEl.value = marketModalMax.value;
+    }
+
+    function renderMarketModalList() {
+      if (!marketModalList) return;
+      if (!marketState.selectedItem) {
+        marketModalList.innerHTML = '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select an item to view orders.</div>';
+        return;
+      }
+      const orders = getMarketFilteredOrders(marketModalState.side);
+      renderOrderBook(
+        marketModalList,
+        orders,
+        'No orders match these filters.',
+        marketModalState.side === 'sell' ? 'buy' : 'sell'
       );
-      const filteredBuy = applyPriceSort(
-        applyPlatFilter(applyStatusFilter(marketState.buyOrders, buyStatus), marketBuyMin, marketBuyMax),
-        buySort,
-        'price_desc'
-      );
+    }
+
+    function openMarketModal(side) {
+      setMarketModalSide(side);
+      // Keep modal controls in sync with the small panel settings.
+      syncMarketModalControlsFromPanel();
+      setMarketModalOpen(true);
+      renderMarketModalList();
+    }
+
+    function closeMarketModal() {
+      setMarketModalOpen(false);
+    }
+
+    function renderFilteredMarketOrders() {
+      const filteredSell = getMarketFilteredOrders('sell');
+      const filteredBuy = getMarketFilteredOrders('buy');
 
       renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match these filters.', 'buy');
       renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match these filters.', 'sell');
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
+
+      if (marketModalState.open) {
+        // If modal is open, keep it live-updated with local changes.
+        syncMarketModalControlsFromPanel();
+        renderMarketModalList();
+      }
     }
 
     function getOrderStats(orders) {
@@ -2312,6 +2418,7 @@ function runBootSequence() {
       marketState.sellOrders = [];
       marketState.buyOrders = [];
       marketSelectedTitle.textContent = item.item_name;
+      if (marketModalState.open) setMarketModalSide(marketModalState.side);
       marketSelectedMeta.textContent = 'Loading live orders and stats...';
       renderOrderBook(marketSellOrders, [], 'Loading sell orders...');
       renderOrderBook(marketBuyOrders, [], 'Loading buy orders...');
@@ -2452,6 +2559,24 @@ function runBootSequence() {
 
     if (marketTabSell) marketTabSell.addEventListener('click', () => setMarketActiveSide('sell'));
     if (marketTabBuy) marketTabBuy.addEventListener('click', () => setMarketActiveSide('buy'));
+    if (marketViewSellBtn) marketViewSellBtn.addEventListener('click', () => openMarketModal('sell'));
+    if (marketViewBuyBtn) marketViewBuyBtn.addEventListener('click', () => openMarketModal('buy'));
+    if (marketModalClose) marketModalClose.addEventListener('click', closeMarketModal);
+    if (marketModalTabSell) marketModalTabSell.addEventListener('click', () => { setMarketModalSide('sell'); syncMarketModalControlsFromPanel(); renderMarketModalList(); });
+    if (marketModalTabBuy) marketModalTabBuy.addEventListener('click', () => { setMarketModalSide('buy'); syncMarketModalControlsFromPanel(); renderMarketModalList(); });
+    if (marketModalStatus) marketModalStatus.addEventListener('change', () => { applyMarketModalControlsToPanel(); renderFilteredMarketOrders(); });
+    if (marketModalSort) marketModalSort.addEventListener('change', () => { applyMarketModalControlsToPanel(); renderFilteredMarketOrders(); });
+    [marketModalMin, marketModalMax].forEach(input => {
+      if (input) input.addEventListener('input', () => { applyMarketModalControlsToPanel(); renderFilteredMarketOrders(); });
+    });
+    if (marketModal) {
+      marketModal.querySelectorAll('[data-market-modal-close]').forEach(el => {
+        el.addEventListener('click', closeMarketModal);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && marketModalState.open) closeMarketModal();
+      });
+    }
     if (accordionMql) {
       const syncMarketUiToViewport = () => setMarketActiveSide(marketUi.activeSide);
       if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncMarketUiToViewport);

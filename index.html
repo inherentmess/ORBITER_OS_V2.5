@@ -65,6 +65,88 @@
     @media (max-width: 900px) {
       .market-order-panel[data-active="0"] { display: none; }
     }
+
+    /* Market terminal restyle */
+    #section-market input,
+    #section-market select {
+      background: rgba(0, 0, 0, 0.55);
+      color: #4ade80;
+      border-color: rgba(74, 222, 128, 0.55);
+    }
+    #section-market input::placeholder { color: rgba(20, 83, 45, 0.9); }
+    #section-market input:focus,
+    #section-market select:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.22), 0 0 18px rgba(74, 222, 128, 0.12);
+    }
+    .market-order-row {
+      background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.25));
+      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.12) inset;
+    }
+    .market-order-row:hover { box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.35) inset, 0 0 18px rgba(74, 222, 128, 0.08); }
+
+    /* Terminal modal popout */
+    .terminal-modal { position: fixed; inset: 0; z-index: 180; display: none; }
+    .terminal-modal[data-open="1"] { display: block; }
+    .terminal-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.78); }
+    .terminal-modal__panel {
+      position: relative;
+      margin: 4vh auto;
+      width: min(980px, calc(100% - 20px));
+      height: min(86vh, 820px);
+      background: rgba(0, 0, 0, 0.92);
+      border: 1px solid rgba(74, 222, 128, 0.65);
+      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.15) inset, 0 0 36px rgba(74, 222, 128, 0.08);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .terminal-modal__header {
+      padding: 12px 12px 10px;
+      border-bottom: 1px solid rgba(74, 222, 128, 0.35);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .terminal-modal__title { font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+    .terminal-modal__sub { font-size: 12px; color: rgba(74, 222, 128, 0.75); overflow-wrap: anywhere; }
+    .terminal-modal__controls {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(74, 222, 128, 0.22);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .terminal-modal__controls .terminal-modal__row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .terminal-modal__controls label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(74, 222, 128, 0.7); }
+    .terminal-modal__controls select,
+    .terminal-modal__controls input {
+      width: 100%;
+      border: 1px solid rgba(74, 222, 128, 0.55);
+      padding: 10px 10px;
+      font-size: 12px;
+      background: rgba(0,0,0,0.6);
+      color: #4ade80;
+    }
+    .terminal-modal__list { padding: 12px; overflow: auto; flex: 1; }
+    .terminal-modal__list .market-order-row { padding: 10px; font-size: 12px; }
+    .terminal-modal__close {
+      border: 1px solid rgba(74, 222, 128, 0.55);
+      padding: 10px 12px;
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .terminal-modal__close:hover { background: #4ade80; color: #000; }
+    @media (max-width: 900px) {
+      .terminal-modal__panel { margin: 0; width: 100%; height: 100dvh; }
+      .terminal-modal__controls { grid-template-columns: 1fr; }
+      .terminal-modal__controls .terminal-modal__row { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 520px) {
+      .terminal-modal__controls .terminal-modal__row { grid-template-columns: 1fr; }
+    }
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
@@ -383,6 +465,10 @@
                     <button id="marketTabBuy" class="market-tab-btn border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest">Buy</button>
                   </div>
                 </div>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                  <button id="marketViewSellBtn" class="border border-terminal px-4 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">View Sell Orders</button>
+                  <button id="marketViewBuyBtn" class="border border-terminal px-4 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">View Buy Orders</button>
+                </div>
 
                 <div id="marketOrderPanels" class="grid md:grid-cols-2 gap-3">
                   <div id="marketSellPanel" class="market-order-panel border border-terminal/25 p-3 bg-black/40" data-side="sell" data-active="1">
@@ -521,6 +607,58 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <div id="marketModal" class="terminal-modal" data-open="0" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Market orders">
+    <div class="terminal-modal__backdrop" data-market-modal-close></div>
+    <div class="terminal-modal__panel">
+      <div class="terminal-modal__header">
+        <div>
+          <div class="terminal-modal__title">Market Order Book</div>
+          <div id="marketModalTitle" class="terminal-modal__sub">Awaiting selection</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="marketModalTabSell" class="market-tab-btn subtab-active border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest">Sell</button>
+          <button id="marketModalTabBuy" class="market-tab-btn border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest">Buy</button>
+          <button id="marketModalClose" class="terminal-modal__close">close</button>
+        </div>
+      </div>
+
+      <div class="terminal-modal__controls">
+        <div class="terminal-modal__row">
+          <div>
+            <label for="marketModalStatus">Status</label>
+            <select id="marketModalStatus">
+              <option value="all">all</option>
+              <option value="ingame">ingame</option>
+              <option value="online">online</option>
+              <option value="offline">offline</option>
+            </select>
+          </div>
+          <div>
+            <label for="marketModalSort">Sort</label>
+            <select id="marketModalSort">
+              <option value="price_asc">price low-high</option>
+              <option value="price_desc">price high-low</option>
+            </select>
+          </div>
+        </div>
+        <div class="terminal-modal__row">
+          <div>
+            <label for="marketModalMin">Min plat</label>
+            <input id="marketModalMin" type="number" min="0" placeholder="no min" />
+          </div>
+          <div>
+            <label for="marketModalMax">Max plat</label>
+            <input id="marketModalMax" type="number" min="0" placeholder="no max" />
+          </div>
+        </div>
+      </div>
+
+      <div id="marketModalList" class="terminal-modal__list">
+        <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select an item to view orders.</div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js" defer></script>
