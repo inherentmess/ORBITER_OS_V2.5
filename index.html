@@ -52,7 +52,16 @@
       color: #4ade80;
       overflow: hidden;
     }
-    .boot-overlay.hidden { opacity: 0; pointer-events: none; transition: opacity 260ms ease; }
+    .boot-overlay.hidden { display: none; }
+    .boot-overlay.closing {
+      pointer-events: none;
+      animation: bootClose 420ms ease forwards;
+    }
+    @keyframes bootClose {
+      0%   { opacity: 1; transform: translateY(0); filter: saturate(1) contrast(1); }
+      55%  { opacity: 0.75; transform: translateY(-10px); filter: saturate(1.15) contrast(1.25); }
+      100% { opacity: 0; transform: translateY(-14px); filter: saturate(0.95) contrast(1.1); }
+    }
     .boot-glow { text-shadow: 0 0 12px rgba(74, 222, 128, 0.35); }
     .boot-lines { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
     .boot-hint { color: rgba(74, 222, 128, 0.7); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }

@@ -116,8 +116,17 @@ function runBootSequence() {
   const closeOverlay = () => {
     if (cancelled) return;
     cancelled = true;
-    overlay.classList.add('hidden');
-    window.setTimeout(() => overlay.remove(), 280);
+
+    // Animate out via CSS, then remove only after it completes.
+    overlay.classList.add('closing');
+    const finalize = () => {
+      overlay.removeEventListener('animationend', finalize);
+      overlay.classList.add('hidden');
+      overlay.remove();
+    };
+    overlay.addEventListener('animationend', finalize);
+    // Fallback in case animationend doesn't fire (older browsers / interrupted).
+    window.setTimeout(finalize, 520);
   };
 
   const setHint = (text) => {
