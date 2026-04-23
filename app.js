@@ -96,6 +96,9 @@ const sectionNames = Array.from(sections)
 function runBootSequence() {
   const overlay = document.getElementById('bootOverlay');
   const linesEl = document.getElementById('bootLines');
+  const hintEl = document.getElementById('bootHint');
+  const continueBtn = document.getElementById('bootContinueBtn');
+  const closeBtn = document.getElementById('bootCloseBtn');
   if (!overlay || !linesEl) return;
 
   const lines = [
@@ -110,22 +113,27 @@ function runBootSequence() {
   let lineIndex = 0;
   let charIndex = 0;
 
-  const finish = () => {
+  const closeOverlay = () => {
     if (cancelled) return;
     cancelled = true;
     overlay.classList.add('hidden');
     window.setTimeout(() => overlay.remove(), 280);
   };
 
-  const skip = () => {
-    linesEl.textContent = lines.join('\n');
-    finish();
+  const setHint = (text) => {
+    if (!hintEl) return;
+    hintEl.firstChild ? (hintEl.firstChild.textContent = text) : (hintEl.textContent = text);
   };
 
-  overlay.addEventListener('click', skip, { once: true });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') skip();
-  }, { once: true });
+  // Only explicit interactions should close the welcome screen.
+  if (continueBtn) continueBtn.addEventListener('click', closeOverlay);
+  if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      closeOverlay();
+    }
+  });
 
   Sound.play('boot', { cooldownMs: 5000 }).catch(() => {});
 
@@ -146,12 +154,17 @@ function runBootSequence() {
     lineIndex += 1;
     charIndex = 0;
     if (lineIndex >= lines.length) {
-      window.setTimeout(finish, 420);
+      // Do not auto-hide; stay visible until the user presses Enter or clicks Continue/Close.
+      setHint('press enter to continue');
+      if (continueBtn) continueBtn.focus();
+      else overlay.focus();
       return;
     }
     window.setTimeout(step, 140);
   };
 
+  setHint('initializing audio (unlocks on interaction)');
+  try { overlay.focus(); } catch {}
   window.setTimeout(step, 120);
 }
 
@@ -356,6 +369,8 @@ function runBootSequence() {
       '.subtab-btn',
       '.section-toggle-btn',
       '#refreshBtn',
+      '#bootContinueBtn',
+      '#bootCloseBtn',
       '#marketSearchBtn',
       '#marketViewSellBtn',
       '#marketViewBuyBtn',
