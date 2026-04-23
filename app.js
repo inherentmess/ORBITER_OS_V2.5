@@ -93,6 +93,41 @@ const sectionNames = Array.from(sections)
   .map(section => String(section.id || '').replace(/^section-/, ''))
   .filter(Boolean);
 
+let lastCopiedWhisperBtn = null;
+let lastCopiedWhisperText = 'Copy Whisper';
+
+function animateDetailPopin(el) {
+  if (!el) return;
+  el.classList.remove('popout-leave');
+  el.classList.add('popout-enter');
+  const clear = () => {
+    el.removeEventListener('animationend', clear);
+    el.classList.remove('popout-enter');
+  };
+  el.addEventListener('animationend', clear);
+}
+
+function animateDetailPopout(el) {
+  return new Promise(resolve => {
+    if (!el) return resolve();
+    el.classList.remove('popout-enter');
+    el.classList.add('popout-leave');
+    const done = () => {
+      el.removeEventListener('animationend', done);
+      resolve();
+    };
+    el.addEventListener('animationend', done);
+    window.setTimeout(done, 260);
+  });
+}
+
+function cssEscapeValue(value) {
+  try {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(String(value));
+  } catch {}
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, match => `\\${match}`);
+}
+
 function runBootSequence() {
   const overlay = document.getElementById('bootOverlay');
   const linesEl = document.getElementById('bootLines');
@@ -172,6 +207,8 @@ function runBootSequence() {
     window.setTimeout(step, 140);
   };
 
+  overlay.classList.add('opening');
+  overlay.addEventListener('animationend', () => overlay.classList.remove('opening'), { once: true });
   setHint('initializing audio (unlocks on interaction)');
   try { overlay.focus(); } catch {}
   window.setTimeout(step, 120);
@@ -1863,14 +1900,18 @@ function runBootSequence() {
           dashboardTrackerState.selectedDetailId = button.dataset.dashboardDetailSelect || '';
           dashboardTrackerState.selectedDetailCategoryId = button.dataset.dashboardDetailCategory || '';
           renderDashboardTrackerCards();
+          const detailEl = dashboardTrackerGrid.querySelector(`[data-dashboard-detail="${cssEscapeValue(dashboardTrackerState.selectedDetailId)}"]`);
+          animateDetailPopin(detailEl);
           updateDashboardCountdowns();
           if (scrollRoot) scrollRoot.scrollTop = savedScrollTop;
         });
       });
       dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-close]').forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', async () => {
           const scrollRoot = document.querySelector('main');
           const savedScrollTop = scrollRoot ? scrollRoot.scrollTop : 0;
+          const detailEl = button.closest('[data-dashboard-detail]');
+          await animateDetailPopout(detailEl);
           dashboardTrackerState.selectedDetailId = '';
           dashboardTrackerState.selectedDetailCategoryId = '';
           renderDashboardTrackerCards();
@@ -2247,20 +2288,27 @@ function runBootSequence() {
         if (button.dataset.bound === '1') return;
         button.dataset.bound = '1';
         button.addEventListener('click', async () => {
-          const original = button.textContent || 'Copy Whisper';
-          if (button._copyResetTimer) window.clearTimeout(button._copyResetTimer);
+          const original = button.dataset.originalText || button.textContent || 'Copy Whisper';
+          button.dataset.originalText = original;
+
+          // Restore the previous "Copied" button back to its original label.
+          if (lastCopiedWhisperBtn && lastCopiedWhisperBtn !== button) {
+            lastCopiedWhisperBtn.textContent = lastCopiedWhisperBtn.dataset.originalText || lastCopiedWhisperText;
+          }
+
           button.textContent = 'Copying...';
-          button.disabled = true;
           try {
             await copyMarketWhisper(button.dataset.action, button.dataset.user, button.dataset.price);
             button.textContent = 'Copied';
+            lastCopiedWhisperBtn = button;
+            lastCopiedWhisperText = original;
           } catch {
             button.textContent = 'Copy failed';
+            window.setTimeout(() => {
+              button.textContent = original;
+            }, 900);
+            return;
           }
-          button._copyResetTimer = window.setTimeout(() => {
-            button.textContent = original;
-            button.disabled = false;
-          }, 900);
         });
       });
     }
@@ -2366,17 +2414,37 @@ function runBootSequence() {
     }
 
     function setMarketModalOpen(open) {
-      if (!marketModal) return;
-      marketModalState.open = Boolean(open);
-      marketModal.dataset.open = marketModalState.open ? '1' : '0';
-      marketModal.setAttribute('aria-hidden', marketModalState.open ? 'false' : 'true');
+      if (!marketModal) return Promise.resolve();
+      const wantOpen = Boolean(open);
+      if (marketModalState.open === wantOpen) return Promise.resolve();
+      marketModalState.open = wantOpen;
 
-      if (marketModalState.open) {
+      if (wantOpen) {
+        // Make visible first, then flip data-open so transitions animate in.
+        marketModal.classList.add('is-visible');
+        marketModal.setAttribute('aria-hidden', 'false');
         marketModalState.prevBodyOverflow = document.body.style.overflow || '';
         document.body.style.overflow = 'hidden';
-      } else {
-        document.body.style.overflow = marketModalState.prevBodyOverflow;
+        requestAnimationFrame(() => {
+          marketModal.dataset.open = '1';
+        });
+        return Promise.resolve();
       }
+
+      // Animate out, then hide from a11y and interactions.
+      marketModal.dataset.open = '0';
+      marketModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = marketModalState.prevBodyOverflow;
+      return new Promise(resolve => {
+        const panel = marketModal.querySelector('.terminal-modal__panel');
+        const done = () => {
+          if (panel) panel.removeEventListener('transitionend', done);
+          marketModal.classList.remove('is-visible');
+          resolve();
+        };
+        if (panel) panel.addEventListener('transitionend', done);
+        window.setTimeout(done, 320);
+      });
     }
 
     function setMarketModalSide(side) {

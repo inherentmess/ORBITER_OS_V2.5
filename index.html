@@ -53,9 +53,16 @@
       overflow: hidden;
     }
     .boot-overlay.hidden { display: none; }
+    .boot-overlay.opening {
+      animation: bootOpen 260ms ease both;
+    }
     .boot-overlay.closing {
       pointer-events: none;
       animation: bootClose 420ms ease forwards;
+    }
+    @keyframes bootOpen {
+      0%   { opacity: 0; transform: translateY(10px); filter: saturate(1.1) contrast(1.15); }
+      100% { opacity: 1; transform: translateY(0); filter: saturate(1) contrast(1); }
     }
     @keyframes bootClose {
       0%   { opacity: 1; transform: translateY(0); filter: saturate(1) contrast(1); }
@@ -94,10 +101,12 @@
     }
     .market-order-row:hover { box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.35) inset, 0 0 18px rgba(74, 222, 128, 0.08); }
 
-    /* Terminal modal popout */
-    .terminal-modal { position: fixed; inset: 0; z-index: 180; display: none; }
-    .terminal-modal[data-open="1"] { display: block; }
-    .terminal-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.78); }
+    /* Terminal modal popout (open/close transitions are driven via data-open + is-visible). */
+    .terminal-modal { position: fixed; inset: 0; z-index: 180; display: block; visibility: hidden; opacity: 0; pointer-events: none; transition: opacity 220ms ease; }
+    .terminal-modal.is-visible { visibility: visible; }
+    .terminal-modal[data-open="1"] { opacity: 1; pointer-events: auto; }
+    .terminal-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.78); opacity: 0; transition: opacity 220ms ease; }
+    .terminal-modal[data-open="1"] .terminal-modal__backdrop { opacity: 1; }
     .terminal-modal__panel {
       position: relative;
       margin: 4vh auto;
@@ -109,7 +118,11 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 220ms ease, transform 220ms ease;
     }
+    .terminal-modal[data-open="1"] .terminal-modal__panel { opacity: 1; transform: translateY(0); }
     .terminal-modal__header {
       padding: 12px 12px 10px;
       border-bottom: 1px solid rgba(74, 222, 128, 0.35);
@@ -155,6 +168,18 @@
     }
     @media (max-width: 520px) {
       .terminal-modal__controls .terminal-modal__row { grid-template-columns: 1fr; }
+    }
+
+    /* Detail panel transitions */
+    [data-dashboard-detail].popout-enter { animation: popoutIn 220ms ease both; }
+    [data-dashboard-detail].popout-leave { animation: popoutOut 180ms ease both; pointer-events: none; }
+    @keyframes popoutIn {
+      0% { opacity: 0; transform: translateY(10px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes popoutOut {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-6px); }
     }
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
