@@ -3,6 +3,7 @@ const sections = document.querySelectorAll('.content-section');
 const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
+const API_BASE_URL = window.ORBITER_API_BASE_URL || '';
 
 function createSoundSystem() {
   const STORAGE_KEY = 'orbiter_sound_muted';
@@ -139,7 +140,7 @@ function runBootSequence() {
   const lines = [
     '[LINK_ESTABLISHED]  Cephalon_Link online',
     '[MOUNT]  archives://tenno',
-    '[SYNC]  browse.wf oracle handshake',
+    '[SYNC]  backend API proxy handshake',
     '[INIT]  market catalog cache',
     '[READY]  enter command'
   ];
@@ -172,6 +173,11 @@ function runBootSequence() {
   // Only explicit interactions should close the welcome screen.
   if (continueBtn) continueBtn.addEventListener('click', closeOverlay);
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
+  overlay.addEventListener('click', (e) => {
+    if (!sectionAccordionState.enabled) return;
+    if (e.target?.closest?.('button')) return;
+    closeOverlay();
+  });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -567,72 +573,29 @@ function runBootSequence() {
       };
     }
 
-    function dashboardWorldstateProxyUrls() {
-      const urls = [];
-      if (location.protocol === 'http:' || location.protocol === 'https:') {
-        urls.push({ source: 'same-origin-proxy', url: '/api/worldstate' });
-      }
-      urls.push({ source: 'localhost-proxy', url: 'http://localhost:8787/api/worldstate' });
-      return urls;
-    }
-
-    async function fetchDashboardText(label, url, options = {}) {
-      logRequest(label, url);
-      const response = await fetch(url, options);
-      logResponse(label, response);
-      if (!response.ok) throw new Error(`${label} HTTP ${response.status}`);
-      const text = await response.text();
-      if (!text.trim()) throw new Error(`${label} returned an empty body`);
-      return text;
+    function apiUrl(path) {
+      return `${API_BASE_URL}${path}`;
     }
 
     async function fetchDashboardWorldstateJson() {
-      let lastError = null;
-      for (const candidate of dashboardWorldstateProxyUrls()) {
-        try {
-          const text = await fetchDashboardText(`dashboard ${candidate.source}`, candidate.url, { cache: 'no-store' });
-          const json = JSON.parse(text);
-          logJson(`dashboard ${candidate.source}`, json);
-          if (!json?.data?.worldState) throw new Error('proxy response missing data.worldState');
-          return {
-            source: json?.source || candidate.source,
-            data: json.data
-          };
-        } catch (error) {
-          console.warn(`[orbiter] dashboard world-state candidate failed: ${candidate.source}`, error);
-          lastError = error;
-        }
-      }
-
-      try {
-        const worldText = await fetchDashboardText('dashboard direct oracle.browse.wf', 'https://oracle.browse.wf/worldState.json', { cache: 'no-store' });
-        const spIncursionsText = await fetchDashboardText('dashboard direct browse.wf sp-incursions', 'https://browse.wf/sp-incursions.txt', { cache: 'no-store' });
-        const arbysText = await fetchDashboardText('dashboard direct browse.wf arbys', 'https://browse.wf/arbys.txt', { cache: 'no-store' });
-        const bountyCycleText = await fetchDashboardText('dashboard direct oracle.browse.wf bounty-cycle', 'https://oracle.browse.wf/bounty-cycle', { cache: 'no-store' });
-        const locationBountiesText = await fetchDashboardText('dashboard direct oracle.browse.wf location-bounties', 'https://oracle.browse.wf/location-bounties', { cache: 'no-store' });
-        const worldState = JSON.parse(worldText);
-        const data = {
-          worldState,
-          spIncursionsText,
-          arbysText,
-          bountyCycle: JSON.parse(bountyCycleText),
-          locationBounties: JSON.parse(locationBountiesText)
-        };
-        logJson('dashboard direct browse.wf bundle', data);
-        return { source: 'direct browse.wf', data };
-      } catch (error) {
-        console.warn('[orbiter] dashboard direct browse.wf fallback failed', error);
-        throw error || lastError || new Error('browse.wf world-state unavailable');
-      }
+      const url = apiUrl('/api/worldstate');
+      logRequest('dashboard backend worldstate', url);
+      const response = await fetch(url, { cache: 'no-store' });
+      logResponse('dashboard backend worldstate', response);
+      if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status}`);
+      const json = await response.json();
+      if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
+      logJson('dashboard backend worldstate', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
+      return json;
     }
 
     const dashboardCategoryDefs = [
-      { id: 'environments', title: 'Environments', source: 'oracle.browse.wf/worldState.json' },
-      { id: 'missions', title: 'Missions & Rotations', source: 'oracle.browse.wf/worldState.json + browse.wf/sp-incursions.txt' },
-      { id: 'bounties', title: 'Bounties', source: 'oracle.browse.wf/location-bounties + worldState SyndicateMissions' },
-      { id: 'syndicate-missions', title: 'Syndicate Missions', source: 'oracle.browse.wf/bounty-cycle + worldState SyndicateMissions' },
-      { id: 'endgame', title: 'Special / Endgame', source: 'oracle.browse.wf/worldState.json Conquests + Descents' },
-      { id: 'utility', title: 'Utility / Info', source: 'oracle.browse.wf/worldState.json Events + DailyDeals + Traders' }
+      { id: 'environments', title: 'Environments', source: '/api/worldstate (WarframeStat.us /pc)' },
+      { id: 'missions', title: 'Missions & Rotations', source: '/api/worldstate (WarframeStat.us /pc)' },
+      { id: 'bounties', title: 'Bounties', source: '/api/worldstate (WarframeStat.us /pc)' },
+      { id: 'syndicate-missions', title: 'Syndicate Missions', source: '/api/worldstate (WarframeStat.us /pc)' },
+      { id: 'endgame', title: 'Special / Endgame', source: '/api/worldstate (WarframeStat.us /pc)' },
+      { id: 'utility', title: 'Utility / Info', source: '/api/worldstate (WarframeStat.us /pc)' }
     ];
 
     function browseDate(value) {
@@ -1433,6 +1396,57 @@ function runBootSequence() {
       });
     }
 
+    function statusExpiry(entry) {
+      return entry?.expiry || entry?.eta || entry?.activation || entry?.startString || '';
+    }
+
+    function statusCard(id, label, title, state, expiresAt, detail = '', options = {}) {
+      return trackerCard(id, label, title, state || 'Unavailable', expiresAt || '', detail || 'No details returned.', options);
+    }
+
+    function mapWarframeStatusWorldstateToDashboardCategories(data) {
+      const cycleCards = [
+        statusCard('cetus-cycle', 'Cycle', 'Cetus / Plains', data?.cetusCycle?.state, data?.cetusCycle?.expiry, data?.cetusCycle?.shortString || ''),
+        statusCard('vallis-cycle', 'Cycle', 'Orb Vallis', data?.vallisCycle?.state, data?.vallisCycle?.expiry, data?.vallisCycle?.shortString || ''),
+        statusCard('cambion-cycle', 'Cycle', 'Cambion Drift', data?.cambionCycle?.state, data?.cambionCycle?.expiry, data?.cambionCycle?.active || ''),
+        statusCard('zariman-cycle', 'Cycle', 'Zariman', data?.zarimanCycle?.state || data?.zarimanCycle?.active, data?.zarimanCycle?.expiry, data?.zarimanCycle?.shortString || '')
+      ];
+
+      const alerts = Array.isArray(data?.alerts) ? data.alerts : [];
+      const fissures = Array.isArray(data?.fissures) ? data.fissures : [];
+      const invasions = Array.isArray(data?.invasions) ? data.invasions : [];
+      const sortie = data?.sortie || {};
+      const nightwave = data?.nightwave || {};
+
+      const missionCards = [
+        statusCard('alerts', 'Alerts', 'Alerts', `${alerts.length} active`, soonestExpiry(alerts.map(row => ({ Expiry: row.expiry }))), alerts[0] ? `${alerts[0].mission?.node || alerts[0].node || 'Unknown node'} // ${alerts[0].mission?.type || alerts[0].type || 'Mission'}` : 'No active alerts.', { selectable: true }),
+        statusCard('fissures', 'Fissures', 'Void Fissures', `${fissures.length} active`, soonestExpiry(fissures.map(row => ({ Expiry: row.expiry }))), fissures[0] ? `${fissures[0].tier || ''} ${fissures[0].missionType || ''} // ${fissures[0].node || ''}` : 'No fissures returned.', { selectable: true }),
+        statusCard('sortie', 'Daily', 'Sortie', sortie?.boss || sortie?.faction || 'Unavailable', sortie?.expiry, Array.isArray(sortie?.variants) ? `${sortie.variants.length} missions` : 'No sortie variants returned.', { selectable: true }),
+        statusCard('nightwave', 'Nightwave', 'Nightwave', nightwave?.season ? `Season ${nightwave.season}` : (nightwave?.tag || 'Unavailable'), nightwave?.expiry, Array.isArray(nightwave?.activeChallenges) ? `${nightwave.activeChallenges.length} active challenges` : 'No Nightwave challenges returned.', { selectable: true }),
+        statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', invasions[0] ? `${invasions[0].node || 'Unknown node'} // ${invasions[0].attackingFaction || ''} vs ${invasions[0].defendingFaction || ''}` : 'No active invasions.', { selectable: true, hideTimer: true })
+      ];
+
+      const details = [
+        { id: 'alerts', title: 'Alerts', type: 'generic', entries: alerts.map((row, index) => ({ id: `alert-${index}`, name: row.mission?.node || row.node || 'Alert', tier: row.mission?.type || row.type || 'Mission', factionLocation: row.mission?.faction || row.mission?.node || row.node || '', rewards: row.mission?.reward?.asString || row.reward?.asString || 'Unknown', detail: row.eta || '', expiresAt: row.expiry })) },
+        { id: 'fissures', title: 'Void Fissures', type: 'generic', entries: fissures.map((row, index) => ({ id: `fissure-${index}`, name: row.node || 'Fissure', tier: row.tier || '', factionLocation: [row.missionType, row.enemy].filter(Boolean).join(' // '), rewards: row.reward || 'Relic rewards', detail: row.eta || '', expiresAt: row.expiry })) },
+        { id: 'sortie', title: 'Sortie', type: 'generic', entries: (sortie.variants || []).map((row, index) => ({ id: `sortie-${index}`, name: row.node || 'Sortie mission', tier: row.missionType || '', factionLocation: sortie.faction || '', rewards: sortie.rewardPool || 'Sortie reward table', detail: row.modifier || row.modifierDescription || '', expiresAt: sortie.expiry })) },
+        { id: 'nightwave', title: 'Nightwave', type: 'generic', entries: (nightwave.activeChallenges || []).map((row, index) => ({ id: `nightwave-${index}`, name: row.title || 'Challenge', tier: `${row.reputation || 0} standing`, factionLocation: 'Nightwave', rewards: row.reputation ? `${row.reputation} standing` : 'Standing', detail: row.desc || row.description || '', expiresAt: row.expiry || nightwave.expiry })) },
+        { id: 'invasions', title: 'Invasions', type: 'generic', entries: invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.node || 'Invasion', tier: [row.attackingFaction, 'vs', row.defendingFaction].filter(Boolean).join(' '), factionLocation: row.node || '', rewards: row.rewardTypes?.join(', ') || row.desc || 'Unknown', detail: `${row.completion ?? 0}% complete` })) }
+      ];
+
+      return [
+        trackerCategory('environments', cycleCards),
+        { ...trackerCategory('missions', missionCards), details },
+        trackerCategory('bounties', [], 'WarframeStat.us /pc does not include detailed bounty rows in this adapter yet.'),
+        trackerCategory('syndicate-missions', [], 'WarframeStat.us /pc does not include detailed syndicate mission rows in this adapter yet.'),
+        trackerCategory('endgame', [], 'WarframeStat.us /pc endgame fields were not returned by the current response.'),
+        trackerCategory('utility', [
+          statusCard('news', 'News', 'News', Array.isArray(data?.news) ? `${data.news.length} posts` : 'Unavailable', '', Array.isArray(data?.news) && data.news[0] ? data.news[0].message || data.news[0].link || '' : 'No news returned.'),
+          statusCard('baro', 'Vendor', "Baro Ki'Teer", data?.voidTrader?.active ? 'Active' : 'Away', data?.voidTrader?.expiry || data?.voidTrader?.activation, [data?.voidTrader?.location, data?.voidTrader?.inventory?.length ? `${data.voidTrader.inventory.length} items` : ''].filter(Boolean).join(' // '))
+        ])
+      ];
+    }
+
     function loadingDashboardCategories(message) {
       return dashboardCategoryDefs.map(def => trackerCategory(def.id, [], message));
     }
@@ -1876,7 +1890,7 @@ function runBootSequence() {
             <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
           </div>
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
-          ${!category.error && !category.cards.length ? '<div class="panel-card p-5 text-sm text-green-200/75">No browse.wf data returned for this category.</div>' : ''}
+          ${!category.error && !category.cards.length ? '<div class="panel-card p-5 text-sm text-green-200/75">No world-state data returned for this category.</div>' : ''}
           ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(renderDashboardCard).join('')}</div>` : ''}
         </section>
       `;
@@ -1938,19 +1952,19 @@ function runBootSequence() {
     }
 
     async function refreshDashboardTrackers() {
-      setDashboardTrackerStatus('Syncing browse.wf oracle...');
+      setDashboardTrackerStatus('Syncing WarframeStat.us...');
       ensureDashboardNodeLookup().then(() => {
         if (!dashboardTrackerState.lastData) return;
         // Re-map in place so readable node/type text appears without refetching.
-        dashboardTrackerState.categories = mapBrowseWorldstateToDashboardCategories(dashboardTrackerState.lastData);
+        dashboardTrackerState.categories = mapWarframeStatusWorldstateToDashboardCategories(dashboardTrackerState.lastData);
         renderDashboardTrackerCards();
         updateDashboardCountdowns();
       });
-      dashboardTrackerState.categories = loadingDashboardCategories('Loading browse.wf data for this category...');
+      dashboardTrackerState.categories = loadingDashboardCategories('Loading WarframeStat.us data for this category...');
       renderDashboardTrackerCards();
       try {
         const result = await fetchDashboardWorldstateJson();
-        dashboardTrackerState.categories = mapBrowseWorldstateToDashboardCategories(result.data);
+        dashboardTrackerState.categories = mapWarframeStatusWorldstateToDashboardCategories(result.data);
         dashboardTrackerState.source = result.source;
         dashboardTrackerState.syncedAt = new Date();
         dashboardTrackerState.lastData = result.data;
@@ -1958,9 +1972,9 @@ function runBootSequence() {
         updateDashboardCountdowns();
         setDashboardTrackerStatus(`Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
       } catch (error) {
-        dashboardTrackerState.categories = unavailableDashboardCategories(error?.message || 'browse.wf did not return world-state data.');
+        dashboardTrackerState.categories = unavailableDashboardCategories(error?.message || 'WarframeStat.us did not return world-state data.');
         renderDashboardTrackerCards();
-        setDashboardTrackerStatus('browse.wf unavailable');
+        setDashboardTrackerStatus('WarframeStat.us unavailable');
         logClientError('dashboard world-state refresh', error);
       }
     }
@@ -2065,44 +2079,21 @@ function runBootSequence() {
       return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     }
 
-    function marketApiUrl(path) {
-      return `http://localhost:8787/api/market${path}`;
-    }
-
-    function marketServerUrls(path) {
-      const candidates = [];
-      if (location.protocol === 'http:' || location.protocol === 'https:') {
-        candidates.push({ source: 'same-origin-proxy', url: `/api/market${path}` });
-      }
-      candidates.push({ source: 'localhost-proxy', url: marketApiUrl(path) });
-      return candidates;
-    }
-
     async function fetchMarketJson(path) {
-      let lastError = null;
-      const attempts = [];
-      for (const candidate of marketServerUrls(path)) {
-        try {
-          logRequest(`market ${candidate.source}`, candidate.url);
-          const response = await fetch(candidate.url, { cache: path === '/items' ? 'force-cache' : 'no-store' });
-          logResponse(`market ${candidate.source}`, response);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          let json;
-          try {
-            json = await response.json();
-          } catch (error) {
-            throw new Error(`parse error: ${error.message}`);
-          }
-          logJson(`market ${candidate.source}`, json);
-          marketState.activeSource = candidate.source;
-          return json;
-        } catch (error) {
-          console.warn(`[orbiter] market fetch candidate failed: ${candidate.source}`, error);
-          attempts.push(`${candidate.source}: ${error?.message || String(error)}`);
-          lastError = error;
-        }
+      const url = apiUrl(path);
+      logRequest('market backend', url);
+      const response = await fetch(url, { cache: path.includes('/orders/') ? 'no-store' : 'force-cache' });
+      logResponse('market backend', response);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      let json;
+      try {
+        json = await response.json();
+      } catch (error) {
+        throw new Error(`parse error: ${error.message}`);
       }
-      throw new Error(`Market API unavailable after ${attempts.length} attempts. ${attempts.join(' | ') || lastError?.message || 'No candidates tried'}`);
+      logJson('market backend', json);
+      marketState.activeSource = json?.source || 'backend';
+      return json;
     }
 
     async function ensureMarketCatalog() {
@@ -2114,16 +2105,16 @@ function runBootSequence() {
       setMarketStatus('Catalog sync...');
 
       marketState.loadPromise = (async () => {
-        const data = await fetchMarketJson('/items');
-        const rawItems = data?.data?.data || data?.data || data?.payload?.items || [];
+        const data = await fetchMarketJson('/api/market/search?q=');
+        const rawItems = data?.items || [];
         if (!Array.isArray(rawItems)) {
-          throw new Error('bad endpoint shape: expected cached proxy item array at data.data[]');
+          throw new Error('bad endpoint shape: expected search response items[]');
         }
         marketState.catalog = rawItems
           .map(item => ({
-            item_name: item.i18n?.en?.name || item.item_name || item.slug || item.url_name,
-            url_name: item.slug || item.url_name,
-            norm_name: marketNorm(item.i18n?.en?.name || item.item_name || item.slug || item.url_name)
+            item_name: item.item_name || item.name || item.url_name,
+            url_name: item.url_name,
+            norm_name: marketNorm(item.item_name || item.name || item.url_name)
           }))
           .filter(item => item.item_name && item.url_name)
           .sort((a, b) => a.item_name.localeCompare(b.item_name));
@@ -2266,15 +2257,18 @@ function runBootSequence() {
         return;
       }
       target.innerHTML = orders.map(order => {
-        const username = order.user?.ingameName || order.user?.ingame_name || 'Unknown';
+        const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
+        const status = order.user?.status || order.status || 'unknown';
+        const platform = order.user?.platform || order.platform || 'pc';
+        const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
         const price = Number(order.platinum);
         return `
         <div class="market-order-row border border-terminal/25 p-2 text-xs">
           <div class="flex justify-between gap-2">
             <span class="text-terminal">${htmlEscape(price)}p</span>
-            <span class="opacity-70">${htmlEscape((order.user?.status || 'unknown').toUpperCase())}</span>
+            <span class="opacity-70">${htmlEscape(String(status).toUpperCase())}</span>
           </div>
-          <div class="opacity-80 mt-1">${htmlEscape(username)} - qty ${htmlEscape(order.quantity || 1)}</div>
+          <div class="opacity-80 mt-1">${htmlEscape(username)} - qty ${htmlEscape(order.quantity || 1)} - ${htmlEscape(platform)} - rep ${htmlEscape(rep)}</div>
           <button class="market-whisper-copy mt-2 border border-terminal/40 px-2 py-1 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black" data-action="${htmlEscape(action)}" data-user="${jsAttrEscape(username)}" data-price="${htmlEscape(price)}">Copy Whisper</button>
         </div>
       `;
@@ -2600,10 +2594,10 @@ function runBootSequence() {
       try {
         // Always fetch fresh orders on selection/refresh.
         const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const ordersData = await fetchMarketJson(`/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
-        const sellOrders = (ordersData?.data?.data?.sell || ordersData?.data?.sell || [])
+        const ordersData = await fetchMarketJson(`/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
+        const sellOrders = (ordersData?.sellOrders || [])
           .filter(order => order.visible !== false);
-        const buyOrders = (ordersData?.data?.data?.buy || ordersData?.data?.buy || [])
+        const buyOrders = (ordersData?.buyOrders || [])
           .filter(order => order.visible !== false);
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;

@@ -361,8 +361,8 @@
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70 mb-2">LINK CACHE</div>
                 <div class="space-y-2 text-sm">
                   <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://www.warframe.com/" target="_blank" rel="noopener noreferrer">Official Warframe</a>
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://browse.wf/" target="_blank" rel="noopener noreferrer">browse.wf</a>
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://browse.wf/" target="_blank" rel="noopener noreferrer">browse.wf data browser</a>
+                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="/api/worldstate" target="_blank" rel="noopener noreferrer">Local worldstate API</a>
+                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://api.warframestat.us/pc" target="_blank" rel="noopener noreferrer">WarframeStat.us PC</a>
                   <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://warframe.market/" target="_blank" rel="noopener noreferrer">Warframe Market</a>
                 </div>
               </div>
@@ -372,7 +372,7 @@
               <div class="panel-card p-5">
                 <h3 class="text-lg font-bold mb-3">Recommended site links</h3>
                 <div class="space-y-3 text-sm">
-                  <a class="terminal-link block border border-terminal/25 p-3" href="https://oracle.browse.wf/worldState.json" target="_blank" rel="noopener noreferrer">browse.wf oracle world-state</a>
+                  <a class="terminal-link block border border-terminal/25 p-3" href="/api/worldstate" target="_blank" rel="noopener noreferrer">Backend /api/worldstate</a>
                   <a class="terminal-link block border border-terminal/25 p-3" href="https://warframe.market/api_docs" target="_blank" rel="noopener noreferrer">Warframe Market API Docs</a>
                   <a class="terminal-link block border border-terminal/25 p-3" href="https://wiki.warframe.com/" target="_blank" rel="noopener noreferrer">Warframe Wiki</a>
                 </div>
@@ -387,9 +387,9 @@
               <div class="panel-card p-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
                 <div>
                   <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">World-State Trackers</div>
-                  <h3 class="text-lg font-bold">browse.wf oracle timers</h3>
-                  <p class="text-sm text-green-200/85 mt-2">Live cycle and activity countdowns from oracle.browse.wf, with Steel Path incursions from browse.wf/sp-incursions.txt.</p>
-                  <p class="text-[10px] text-terminal/60 mt-2 uppercase tracking-[0.2em]">Data credit // browse.wf</p>
+                <h3 class="text-lg font-bold">WarframeStat.us live state</h3>
+                <p class="text-sm text-green-200/85 mt-2">Live cycle and activity cards through the local backend proxy.</p>
+                <p class="text-[10px] text-terminal/60 mt-2 uppercase tracking-[0.2em]">Data credit // WarframeStat.us</p>
                 </div>
                 <div id="dashboardTrackerStatus" class="text-[10px] uppercase tracking-[0.2em] text-terminal/70">Awaiting sync</div>
               </div>
@@ -438,7 +438,7 @@
             <h3 class="text-lg font-bold mb-3">External reference links</h3>
             <div class="space-y-3 text-sm">
               <a class="terminal-link block border border-terminal/25 p-3" href="https://warframe.market/" target="_blank" rel="noopener noreferrer">Open Warframe Market</a>
-              <a class="terminal-link block border border-terminal/25 p-3" href="https://browse.wf/" target="_blank" rel="noopener noreferrer">Open browse.wf</a>
+              <a class="terminal-link block border border-terminal/25 p-3" href="/api/worldstate" target="_blank" rel="noopener noreferrer">Open local worldstate API</a>
             </div>
           </div>
         </section>
@@ -565,9 +565,9 @@
           <div class="panel-card p-5">
             <h3 class="text-lg font-bold mb-3">Behavior</h3>
             <ul class="space-y-2 text-sm text-green-200/85">
-              <li>• Autocomplete is powered by the Warframe Market items API</li>
+              <li>• Autocomplete is powered by the backend Warframe Market proxy</li>
               <li>• Results and order books load in-page, no external embed required</li>
-              <li>• If direct API fetch is blocked, proxy fallback is used automatically</li>
+              <li>• Backend API calls avoid browser CORS issues on PC and mobile</li>
               <li>• Arsenal archive was left unchanged</li>
             </ul>
           </div>
@@ -640,9 +640,9 @@
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Wiki</div>
               Official Warframe Wiki
             </a>
-            <a class="terminal-link panel-card p-5 block" href="https://oracle.browse.wf/worldState.json" target="_blank" rel="noopener noreferrer">
+            <a class="terminal-link panel-card p-5 block" href="/api/worldstate" target="_blank" rel="noopener noreferrer">
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">API</div>
-              browse.wf oracle data reference
+              Backend worldstate proxy
             </a>
           </div>
         </section>
