@@ -3,7 +3,31 @@ const sections = document.querySelectorAll('.content-section');
 const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
-const API_BASE_URL = window.ORBITER_API_BASE_URL || '';
+function normalizeApiBase(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+const API_BASE_URL = normalizeApiBase(
+  window.ORBITER_API_BASE_URL ||
+  document.querySelector('meta[name="orbiter-api-base"]')?.content ||
+  (window.location.protocol === 'http:' || window.location.protocol === 'https:' ? window.location.origin : '')
+);
+
+function buildApiUrl(path) {
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function hydrateApiLinks() {
+  document.querySelectorAll('[data-api-path]').forEach(link => {
+    const path = link.getAttribute('data-api-path') || '';
+    if (!API_BASE_URL || !path) {
+      link.setAttribute('href', '#');
+      link.setAttribute('title', 'Configure window.ORBITER_API_BASE_URL to open this API endpoint.');
+      return;
+    }
+    link.setAttribute('href', buildApiUrl(path));
+  });
+}
 
 function createSoundSystem() {
   const STORAGE_KEY = 'orbiter_sound_muted';
@@ -402,6 +426,7 @@ function runBootSequence() {
     }
 
     setupSectionAccordion();
+    hydrateApiLinks();
     if (accordionMql) {
       // Keep behavior correct across resize/orientation changes.
       if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncAccordionMode);
@@ -451,7 +476,6 @@ function runBootSequence() {
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {
         showSection('trackers');
-        refreshDashboardTrackers();
         document.querySelectorAll('.subtab-btn').forEach(btn => {
           btn.classList.remove('subtab-active');
         });
@@ -577,19 +601,32 @@ function runBootSequence() {
     }
 
     function apiUrl(path) {
-      return `${API_BASE_URL}${path}`;
+      return buildApiUrl(path);
     }
 
+    let dashboardWorldstateRequest = null;
+
     async function fetchDashboardWorldstateJson() {
+      if (!API_BASE_URL) {
+        throw new Error('API_BASE is not configured; set window.ORBITER_API_BASE_URL to your Railway backend URL');
+      }
+      if (dashboardWorldstateRequest) return dashboardWorldstateRequest;
       const url = apiUrl('/api/worldstate');
-      logRequest('dashboard backend worldstate', url);
-      const response = await fetch(url, { cache: 'no-store' });
-      logResponse('dashboard backend worldstate', response);
-      if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status}`);
-      const json = await response.json();
-      if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
-      logJson('dashboard backend worldstate', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
-      return json;
+      dashboardWorldstateRequest = (async () => {
+        logRequest('dashboard backend worldstate', url);
+        const response = await fetch(url, { cache: 'no-store' });
+        logResponse('dashboard backend worldstate', response);
+        if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status} from ${url}`);
+        const json = await response.json();
+        if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
+        logJson('dashboard backend worldstate', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
+        return json;
+      })();
+      try {
+        return await dashboardWorldstateRequest;
+      } finally {
+        dashboardWorldstateRequest = null;
+      }
     }
 
     const dashboardCategoryDefs = [
@@ -1982,8 +2019,10 @@ function runBootSequence() {
       }
     }
 
-    refreshDashboardTrackers();
-    setInterval(refreshDashboardTrackers, 120000);
+    if (currentSectionName === 'trackers') refreshDashboardTrackers();
+    setInterval(() => {
+      if (currentSectionName === 'trackers') refreshDashboardTrackers();
+    }, 120000);
     setInterval(updateDashboardCountdowns, 1000);
 
     const marketItemSearch = document.getElementById('marketItemSearch');

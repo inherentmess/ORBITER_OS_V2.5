@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <meta name="orbiter-api-base" content="">
   <title>Orbiter OS // Warframe Terminal</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700;900&display=swap" rel="stylesheet"/>
@@ -363,7 +364,7 @@
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70 mb-2">LINK CACHE</div>
                 <div class="space-y-2 text-sm">
                   <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://www.warframe.com/" target="_blank" rel="noopener noreferrer">Official Warframe</a>
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="/api/worldstate" target="_blank" rel="noopener noreferrer">Local worldstate API</a>
+                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="#" data-api-path="/api/worldstate" target="_blank" rel="noopener noreferrer">Local worldstate API</a>
                   <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://api.warframestat.us/pc" target="_blank" rel="noopener noreferrer">WarframeStat.us PC</a>
                   <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://warframe.market/" target="_blank" rel="noopener noreferrer">Warframe Market</a>
                 </div>
@@ -374,7 +375,7 @@
               <div class="panel-card p-5">
                 <h3 class="text-lg font-bold mb-3">Recommended site links</h3>
                 <div class="space-y-3 text-sm">
-                  <a class="terminal-link block border border-terminal/25 p-3" href="/api/worldstate" target="_blank" rel="noopener noreferrer">Backend /api/worldstate</a>
+                  <a class="terminal-link block border border-terminal/25 p-3" href="#" data-api-path="/api/worldstate" target="_blank" rel="noopener noreferrer">Backend /api/worldstate</a>
                   <a class="terminal-link block border border-terminal/25 p-3" href="https://warframe.market/api_docs" target="_blank" rel="noopener noreferrer">Warframe Market API Docs</a>
                   <a class="terminal-link block border border-terminal/25 p-3" href="https://wiki.warframe.com/" target="_blank" rel="noopener noreferrer">Warframe Wiki</a>
                 </div>
@@ -448,7 +449,7 @@
             <h3 class="text-lg font-bold mb-3">External reference links</h3>
             <div class="space-y-3 text-sm">
               <a class="terminal-link block border border-terminal/25 p-3" href="https://warframe.market/" target="_blank" rel="noopener noreferrer">Open Warframe Market</a>
-              <a class="terminal-link block border border-terminal/25 p-3" href="/api/worldstate" target="_blank" rel="noopener noreferrer">Open local worldstate API</a>
+              <a class="terminal-link block border border-terminal/25 p-3" href="#" data-api-path="/api/worldstate" target="_blank" rel="noopener noreferrer">Open local worldstate API</a>
             </div>
           </div>
         </section>
@@ -650,7 +651,7 @@
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Wiki</div>
               Official Warframe Wiki
             </a>
-            <a class="terminal-link panel-card p-5 block" href="/api/worldstate" target="_blank" rel="noopener noreferrer">
+            <a class="terminal-link panel-card p-5 block" href="#" data-api-path="/api/worldstate" target="_blank" rel="noopener noreferrer">
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">API</div>
               Backend worldstate proxy
             </a>

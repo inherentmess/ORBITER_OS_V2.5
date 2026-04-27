@@ -6,6 +6,12 @@ import { searchItems, getItemOrders } from "./services/warframeMarket.mjs";
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = process.cwd();
 const WARFRAMESTATUS_BASE_URL = (process.env.WARFRAMESTATUS_BASE_URL || "https://api.warframestat.us").replace(/\/+$/, "");
+const WORLDSTATE_CACHE_MS = Number(process.env.WORLDSTATE_CACHE_MS || 30000);
+const worldstateCache = {
+  expiresAt: 0,
+  payload: null,
+  inFlight: null
+};
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -39,6 +45,7 @@ async function fetchJson(url) {
       "User-Agent": "ORBITER_OS_V2.5"
     }
   });
+  console.log("[api-proxy] upstream response", response.status, response.statusText, url);
 
   if (!response.ok) {
     throw new Error(`Upstream HTTP ${response.status} for ${url}`);
@@ -54,6 +61,35 @@ async function fetchJson(url) {
   } catch (error) {
     throw new Error(`Upstream JSON parse failed for ${url}: ${error.message}`);
   }
+}
+
+async function fetchWorldstate() {
+  const now = Date.now();
+  if (worldstateCache.payload && worldstateCache.expiresAt > now) {
+    return { ...worldstateCache.payload, cached: true };
+  }
+
+  if (worldstateCache.inFlight) return worldstateCache.inFlight;
+
+  const upstreamUrl = `${WARFRAMESTATUS_BASE_URL}/pc`;
+  worldstateCache.inFlight = (async () => {
+    try {
+      const data = await fetchJson(upstreamUrl);
+      const payload = {
+        source: "warframestat.us",
+        upstreamUrl,
+        fetchedAt: new Date().toISOString(),
+        data
+      };
+      worldstateCache.payload = payload;
+      worldstateCache.expiresAt = Date.now() + WORLDSTATE_CACHE_MS;
+      return { ...payload, cached: false };
+    } finally {
+      worldstateCache.inFlight = null;
+    }
+  })();
+
+  return worldstateCache.inFlight;
 }
 
 async function handleApi(req, res, url) {
@@ -74,12 +110,8 @@ async function handleApi(req, res, url) {
     }
 
     if (url.pathname === "/api/worldstate") {
-      const data = await fetchJson(`${WARFRAMESTATUS_BASE_URL}/pc`);
-      sendJson(res, 200, {
-        source: "warframestat.us",
-        fetchedAt: new Date().toISOString(),
-        data
-      }, "no-store");
+      const payload = await fetchWorldstate();
+      sendJson(res, 200, payload, "no-store");
       return;
     }
 
@@ -87,7 +119,8 @@ async function handleApi(req, res, url) {
   } catch (error) {
     console.error("[api-proxy]", error);
     sendJson(res, 502, {
-      error: error.message || String(error)
+      error: error.message || String(error),
+      route: url.pathname
     });
   }
 }
@@ -125,5 +158,5 @@ createServer(async (req, res) => {
 
   await handleStatic(req, res, url);
 }).listen(PORT, () => {
-  console.log(`ORBITER_OS proxy listening on http://localhost:${PORT}`);
+  console.log(`ORBITER_OS proxy listening on port ${PORT}`);
 });
