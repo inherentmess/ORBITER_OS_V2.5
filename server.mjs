@@ -45,15 +45,28 @@ async function fetchJson(url) {
       "User-Agent": "ORBITER_OS_V2.5"
     }
   });
-  console.log("[api-proxy] upstream response", response.status, response.statusText, url);
+  const contentType = response.headers.get("content-type") || "";
+  console.log("[api-proxy] upstream response", {
+    status: response.status,
+    url: response.url,
+    contentType
+  });
+
+  const text = await response.text();
 
   if (!response.ok) {
     throw new Error(`Upstream HTTP ${response.status} for ${url}`);
   }
 
-  const text = await response.text();
   if (!text.trim()) {
-    throw new Error(`Upstream returned an empty body for ${url}`);
+    return {
+      upstreamError: true,
+      reason: "empty_body",
+      status: response.status,
+      url: response.url,
+      contentType,
+      message: `Upstream returned an empty body for ${url}`
+    };
   }
 
   try {
@@ -71,7 +84,7 @@ async function fetchWorldstate() {
 
   if (worldstateCache.inFlight) return worldstateCache.inFlight;
 
-  const upstreamUrl = `${WARFRAMESTATUS_BASE_URL}/pc`;
+  const upstreamUrl = `${WARFRAMESTATUS_BASE_URL}/pc/`;
   worldstateCache.inFlight = (async () => {
     try {
       const data = await fetchJson(upstreamUrl);
