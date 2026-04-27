@@ -5,7 +5,7 @@ import { searchItems, getItemOrders } from "./services/warframeMarket.mjs";
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = process.cwd();
-const WARFRAMESTATUS_BASE_URL = (process.env.WARFRAMESTATUS_BASE_URL || "https://api.warframestat.us").replace(/\/+$/, "");
+const TENNO_TOOLS_WORLDSTATE_URL = process.env.TENNO_TOOLS_WORLDSTATE_URL || "https://api.tenno.tools/worldstate/pc";
 const WORLDSTATE_CACHE_MS = Number(process.env.WORLDSTATE_CACHE_MS || 30000);
 const worldstateCache = {
   expiresAt: 0,
@@ -84,12 +84,12 @@ async function fetchWorldstate() {
 
   if (worldstateCache.inFlight) return worldstateCache.inFlight;
 
-  const upstreamUrl = `${WARFRAMESTATUS_BASE_URL}/pc/`;
+  const upstreamUrl = TENNO_TOOLS_WORLDSTATE_URL;
   worldstateCache.inFlight = (async () => {
     try {
       const data = await fetchJson(upstreamUrl);
       const payload = {
-        source: "warframestat.us",
+        source: "tenno.tools",
         upstreamUrl,
         fetchedAt: new Date().toISOString(),
         data

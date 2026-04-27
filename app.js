@@ -641,12 +641,12 @@ function runBootSequence() {
     }
 
     const dashboardCategoryDefs = [
-      { id: 'environments', title: 'Environments', source: '/api/worldstate (WarframeStat.us /pc)' },
-      { id: 'missions', title: 'Missions & Rotations', source: '/api/worldstate (WarframeStat.us /pc)' },
-      { id: 'bounties', title: 'Bounties', source: '/api/worldstate (WarframeStat.us /pc)' },
-      { id: 'syndicate-missions', title: 'Syndicate Missions', source: '/api/worldstate (WarframeStat.us /pc)' },
-      { id: 'endgame', title: 'Special / Endgame', source: '/api/worldstate (WarframeStat.us /pc)' },
-      { id: 'utility', title: 'Utility / Info', source: '/api/worldstate (WarframeStat.us /pc)' }
+      { id: 'environments', title: 'Cycles', source: '/api/worldstate (Tenno Tools)' },
+      { id: 'missions', title: 'Missions & Rotations', source: '/api/worldstate (Tenno Tools)' },
+      { id: 'bounties', title: 'Bounties', source: '/api/worldstate (Tenno Tools)' },
+      { id: 'syndicate-missions', title: 'Nightwave & Events', source: '/api/worldstate (Tenno Tools)' },
+      { id: 'endgame', title: 'Special / Endgame', source: '/api/worldstate (Tenno Tools)' },
+      { id: 'utility', title: 'Utility / Info', source: '/api/worldstate (Tenno Tools)' }
     ];
 
     function browseDate(value) {
@@ -1447,54 +1447,187 @@ function runBootSequence() {
       });
     }
 
-    function statusExpiry(entry) {
-      return entry?.expiry || entry?.eta || entry?.activation || entry?.startString || '';
-    }
-
     function statusCard(id, label, title, state, expiresAt, detail = '', options = {}) {
       return trackerCard(id, label, title, state || 'Unavailable', expiresAt || '', detail || 'No details returned.', options);
     }
 
-    function mapWarframeStatusWorldstateToDashboardCategories(data) {
-      const cycleCards = [
-        statusCard('cetus-cycle', 'Cycle', 'Cetus / Plains', data?.cetusCycle?.state, data?.cetusCycle?.expiry, data?.cetusCycle?.shortString || ''),
-        statusCard('vallis-cycle', 'Cycle', 'Orb Vallis', data?.vallisCycle?.state, data?.vallisCycle?.expiry, data?.vallisCycle?.shortString || ''),
-        statusCard('cambion-cycle', 'Cycle', 'Cambion Drift', data?.cambionCycle?.state, data?.cambionCycle?.expiry, data?.cambionCycle?.active || ''),
-        statusCard('zariman-cycle', 'Cycle', 'Zariman', data?.zarimanCycle?.state || data?.zarimanCycle?.active, data?.zarimanCycle?.expiry, data?.zarimanCycle?.shortString || '')
-      ];
+    function tennoData(data, key) {
+      const component = data?.[key];
+      if (Array.isArray(component)) return component;
+      return Array.isArray(component?.data) ? component.data : [];
+    }
 
-      const alerts = Array.isArray(data?.alerts) ? data.alerts : [];
-      const fissures = Array.isArray(data?.fissures) ? data.fissures : [];
-      const invasions = Array.isArray(data?.invasions) ? data.invasions : [];
-      const sortie = data?.sortie || {};
-      const nightwave = data?.nightwave || {};
+    function tennoIso(seconds) {
+      const value = Number(seconds);
+      if (!Number.isFinite(value) || value <= 0) return '';
+      return new Date(value * 1000).toISOString();
+    }
+
+    function tennoSoonestEnd(rows = []) {
+      return rows
+        .map(row => row?.expiresAt || tennoIso(row?.end))
+        .filter(Boolean)
+        .sort((a, b) => new Date(a) - new Date(b))[0] || '';
+    }
+
+    function rewardName(item) {
+      if (!item) return '';
+      if (typeof item === 'string') return item;
+      const count = Number(item.count);
+      return `${Number.isFinite(count) && count > 1 ? `${count}x ` : ''}${item.name || item.item || item.type || ''}`.trim();
+    }
+
+    function rewardsText(rewards, fallback = 'Unknown rewards') {
+      const flat = [];
+      const collect = value => {
+        if (!value) return;
+        if (Array.isArray(value)) return value.forEach(collect);
+        const text = rewardName(value);
+        if (text) flat.push(text);
+      };
+      collect(rewards);
+      return flat.slice(0, 6).join(', ') || fallback;
+    }
+
+    function genericDetail(id, title, entries, source = 'Tenno Tools') {
+      return { id, title, entries, source, expiresAt: tennoSoonestEnd(entries), type: 'generic' };
+    }
+
+    function cycleFromTenno(row) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const length = Number(row.length);
+      const start = Number(row.start);
+      const dayStart = Number(row.dayStart);
+      const dayEnd = Number(row.dayEnd);
+      if (!Number.isFinite(length) || !Number.isFinite(start) || !Number.isFinite(dayStart) || !Number.isFinite(dayEnd)) return null;
+      const elapsed = ((nowSec - start) % length + length) % length;
+      const isDay = dayStart <= dayEnd
+        ? elapsed >= dayStart && elapsed < dayEnd
+        : elapsed >= dayStart || elapsed < dayEnd;
+      let nextOffset = isDay ? dayEnd : dayStart;
+      if (nextOffset <= elapsed) nextOffset += length;
+      const expiresAt = new Date((nowSec + Math.max(0, nextOffset - elapsed)) * 1000).toISOString();
+      return { state: isDay ? 'Day' : 'Night', expiresAt };
+    }
+
+    function mapTennoToolsWorldstateToDashboardCategories(data) {
+      if (data?.upstreamError) {
+        return unavailableDashboardCategories(data.message || 'Tenno Tools returned an empty worldstate body.');
+      }
+
+      const alerts = tennoData(data, 'alerts');
+      const arbitrations = tennoData(data, 'arbitrations');
+      const fissures = tennoData(data, 'fissures');
+      const invasions = tennoData(data, 'invasions');
+      const sorties = tennoData(data, 'sorties');
+      const voidTraders = tennoData(data, 'voidtraders');
+      const challenges = tennoData(data, 'challenges');
+      const events = tennoData(data, 'news');
+      const daynight = tennoData(data, 'daynight');
+      const bounties = tennoData(data, 'bounties');
+      const kuvaMissions = tennoData(data, 'kuvasiphons');
+      const voidStorms = tennoData(data, 'voidstorms');
+      const acolytes = tennoData(data, 'acolytes');
+      const boosters = tennoData(data, 'upgrades');
+      const dailyDeals = tennoData(data, 'dailydeals');
+      const factionProjects = tennoData(data, 'factionprojects');
+      const sentientOutpost = tennoData(data, 'sentientoutposts');
+
+      const cycleTitles = { cetus: 'Cetus / Plains', earth: 'Earth', fortuna: 'Orb Vallis' };
+      const cycleCards = daynight.map(row => {
+        const cycle = cycleFromTenno(row) || {};
+        const title = cycleTitles[row.id] || dashboardToken(row.id);
+        return statusCard(`cycle-${row.id}`, 'Cycle', title, cycle.state || 'Unavailable', cycle.expiresAt, `Tenno Tools cycle id: ${row.id}`);
+      });
+
+      const sortie = sorties[0] || {};
+      const voidTrader = voidTraders[0] || {};
+      const nightwave = challenges[0] || {};
+      const normalFissures = fissures.filter(row => !row.hard);
+      const hardFissures = fissures.filter(row => row.hard);
 
       const missionCards = [
-        statusCard('alerts', 'Alerts', 'Alerts', `${alerts.length} active`, soonestExpiry(alerts.map(row => ({ Expiry: row.expiry }))), alerts[0] ? `${alerts[0].mission?.node || alerts[0].node || 'Unknown node'} // ${alerts[0].mission?.type || alerts[0].type || 'Mission'}` : 'No active alerts.', { selectable: true }),
-        statusCard('fissures', 'Fissures', 'Void Fissures', `${fissures.length} active`, soonestExpiry(fissures.map(row => ({ Expiry: row.expiry }))), fissures[0] ? `${fissures[0].tier || ''} ${fissures[0].missionType || ''} // ${fissures[0].node || ''}` : 'No fissures returned.', { selectable: true }),
-        statusCard('sortie', 'Daily', 'Sortie', sortie?.boss || sortie?.faction || 'Unavailable', sortie?.expiry, Array.isArray(sortie?.variants) ? `${sortie.variants.length} missions` : 'No sortie variants returned.', { selectable: true }),
-        statusCard('nightwave', 'Nightwave', 'Nightwave', nightwave?.season ? `Season ${nightwave.season}` : (nightwave?.tag || 'Unavailable'), nightwave?.expiry, Array.isArray(nightwave?.activeChallenges) ? `${nightwave.activeChallenges.length} active challenges` : 'No Nightwave challenges returned.', { selectable: true }),
-        statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', invasions[0] ? `${invasions[0].node || 'Unknown node'} // ${invasions[0].attackingFaction || ''} vs ${invasions[0].defendingFaction || ''}` : 'No active invasions.', { selectable: true, hideTimer: true })
+        statusCard('alerts', 'Alerts', 'Alerts', `${alerts.length} active`, tennoSoonestEnd(alerts), alerts[0] ? `${alerts[0].location || 'Unknown'} // ${alerts[0].missionType || 'Mission'}` : 'No active alerts returned.', { selectable: true }),
+        statusCard('arbitrations', 'Arbitration', 'Arbitrations', `${arbitrations.length} active`, tennoSoonestEnd(arbitrations), arbitrations[0] ? `${arbitrations[0].location || 'Unknown'} // ${arbitrations[0].missionType || 'Mission'}` : 'No arbitration rows returned.', { selectable: true }),
+        statusCard('sortie', 'Daily', 'Sortie', sortie.bossName || sortie.faction || 'Unavailable', tennoIso(sortie.end), Array.isArray(sortie.missions) ? `${sortie.missions.length} missions // ${sortie.faction || 'Faction unknown'}` : 'No sortie missions returned.', { selectable: true }),
+        statusCard('fissures-normal', 'Relics', 'Void Fissures', `${normalFissures.length} active`, tennoSoonestEnd(normalFissures), normalFissures[0] ? `${normalFissures[0].tier || ''} ${normalFissures[0].missionType || ''} // ${normalFissures[0].location || ''}` : 'No normal fissures returned.', { selectable: true }),
+        statusCard('fissures-hard', 'Steel Path', 'Steel Path Fissures', `${hardFissures.length} active`, tennoSoonestEnd(hardFissures), hardFissures[0] ? `${hardFissures[0].tier || ''} ${hardFissures[0].missionType || ''} // ${hardFissures[0].location || ''}` : 'No Steel Path fissures returned.', { selectable: true }),
+        statusCard('void-storms', 'Railjack', 'Void Storms', `${voidStorms.length} active`, tennoSoonestEnd(voidStorms), voidStorms[0] ? `${voidStorms[0].tier || ''} ${voidStorms[0].missionType || ''} // ${voidStorms[0].location || ''}` : 'No Void Storms returned.', { selectable: true }),
+        statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', invasions[0] ? `${invasions[0].location || 'Unknown'} // ${invasions[0].factionAttacker || ''} vs ${invasions[0].factionDefender || ''}` : 'No invasions returned.', { selectable: true, hideTimer: true }),
+        statusCard('kuva', 'Kuva', 'Kuva Missions', `${kuvaMissions.length} active`, tennoSoonestEnd(kuvaMissions), kuvaMissions[0] ? `${kuvaMissions[0].location || 'Unknown'} // ${kuvaMissions[0].missionType || 'Mission'}` : 'No Kuva missions returned.', { selectable: true })
       ];
 
-      const details = [
-        { id: 'alerts', title: 'Alerts', type: 'generic', entries: alerts.map((row, index) => ({ id: `alert-${index}`, name: row.mission?.node || row.node || 'Alert', tier: row.mission?.type || row.type || 'Mission', factionLocation: row.mission?.faction || row.mission?.node || row.node || '', rewards: row.mission?.reward?.asString || row.reward?.asString || 'Unknown', detail: row.eta || '', expiresAt: row.expiry })) },
-        { id: 'fissures', title: 'Void Fissures', type: 'generic', entries: fissures.map((row, index) => ({ id: `fissure-${index}`, name: row.node || 'Fissure', tier: row.tier || '', factionLocation: [row.missionType, row.enemy].filter(Boolean).join(' // '), rewards: row.reward || 'Relic rewards', detail: row.eta || '', expiresAt: row.expiry })) },
-        { id: 'sortie', title: 'Sortie', type: 'generic', entries: (sortie.variants || []).map((row, index) => ({ id: `sortie-${index}`, name: row.node || 'Sortie mission', tier: row.missionType || '', factionLocation: sortie.faction || '', rewards: sortie.rewardPool || 'Sortie reward table', detail: row.modifier || row.modifierDescription || '', expiresAt: sortie.expiry })) },
-        { id: 'nightwave', title: 'Nightwave', type: 'generic', entries: (nightwave.activeChallenges || []).map((row, index) => ({ id: `nightwave-${index}`, name: row.title || 'Challenge', tier: `${row.reputation || 0} standing`, factionLocation: 'Nightwave', rewards: row.reputation ? `${row.reputation} standing` : 'Standing', detail: row.desc || row.description || '', expiresAt: row.expiry || nightwave.expiry })) },
-        { id: 'invasions', title: 'Invasions', type: 'generic', entries: invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.node || 'Invasion', tier: [row.attackingFaction, 'vs', row.defendingFaction].filter(Boolean).join(' '), factionLocation: row.node || '', rewards: row.rewardTypes?.join(', ') || row.desc || 'Unknown', detail: `${row.completion ?? 0}% complete` })) }
+      const missionDetails = [
+        genericDetail('alerts', 'Alerts', alerts.map((row, index) => ({ id: `alert-${index}`, name: row.location || 'Alert', tier: row.missionType || 'Mission', factionLocation: row.faction || '', rewards: rewardsText(row.rewards || row.reward), detail: `Starts ${tennoIso(row.start) || 'unknown'}`, expiresAt: tennoIso(row.end) }))),
+        genericDetail('arbitrations', 'Arbitrations', arbitrations.map((row, index) => ({ id: `arbitration-${index}`, name: row.location || 'Arbitration', tier: row.missionType || 'Mission', factionLocation: row.faction || '', rewards: rewardsText(row.rewards), detail: `Enemy: ${row.enemy || row.faction || 'Unknown'}`, expiresAt: tennoIso(row.end) }))),
+        genericDetail('sortie', 'Sortie', (sortie.missions || []).map((row, index) => ({ id: `sortie-${index}`, name: row.location || row.node || `Sortie ${index + 1}`, tier: row.missionType || '', factionLocation: sortie.faction || '', rewards: rewardsText(sortie.rewards, 'Sortie reward table'), detail: row.modifier || row.modifierDescription || '', expiresAt: tennoIso(sortie.end) }))),
+        genericDetail('fissures-normal', 'Void Fissures', normalFissures.map((row, index) => ({ id: `fissure-${index}`, name: row.location || 'Fissure', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Relic rewards', detail: `Hard: ${row.hard ? 'yes' : 'no'}`, expiresAt: tennoIso(row.end) }))),
+        genericDetail('fissures-hard', 'Steel Path Fissures', hardFissures.map((row, index) => ({ id: `hard-fissure-${index}`, name: row.location || 'Fissure', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Steel Path relic rewards', detail: `Hard: ${row.hard ? 'yes' : 'no'}`, expiresAt: tennoIso(row.end) }))),
+        genericDetail('void-storms', 'Void Storms', voidStorms.map((row, index) => ({ id: `voidstorm-${index}`, name: row.location || 'Void Storm', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Railjack relic rewards', detail: `Starts ${tennoIso(row.start) || 'unknown'}`, expiresAt: tennoIso(row.end) }))),
+        genericDetail('invasions', 'Invasions', invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.location || 'Invasion', tier: [row.factionAttacker, 'vs', row.factionDefender].filter(Boolean).join(' '), factionLocation: row.location || '', rewards: [rewardsText(row.rewardsAttacker, ''), rewardsText(row.rewardsDefender, '')].filter(Boolean).join(' // ') || 'Unknown rewards', detail: `Score ${row.score ?? '?'} / ${row.endScore ?? '?'}` }))),
+        genericDetail('kuva', 'Kuva Missions', kuvaMissions.map((row, index) => ({ id: `kuva-${index}`, name: row.location || 'Kuva mission', tier: row.missionType || '', factionLocation: row.faction || '', rewards: 'Kuva', detail: row.siphonType || row.type || '', expiresAt: tennoIso(row.end) })))
+      ];
+
+      const bountyEntries = bounties.flatMap(group => (group.jobs || []).map((job, index) => ({
+        id: `bounty-${group.id}-${index}`,
+        name: group.syndicate || group.id || 'Bounty',
+        tier: `${job.minLevel ?? '?'}-${job.maxLevel ?? '?'} Level`,
+        factionLocation: group.syndicate || '',
+        rewards: rewardsText(job.rewards, 'Bounty reward table'),
+        detail: `Standing: ${(job.xpAmounts || []).join(', ') || 'unknown'}`,
+        expiresAt: tennoIso(group.end)
+      })));
+      const bountyDetail = genericDetail('bounties', 'Bounties', bountyEntries);
+
+      const nightwaveEntries = (nightwave.challenges || []).map((row, index) => ({
+        id: `nightwave-${index}`,
+        name: row.description || 'Nightwave challenge',
+        tier: row.daily ? 'Daily' : 'Weekly',
+        factionLocation: `Season ${nightwave.season ?? '?'}`,
+        rewards: `${row.xpAmount ?? 0} standing`,
+        detail: row.id || '',
+        expiresAt: tennoIso(row.end)
+      }));
+      const eventEntries = events.slice(0, 12).map((row, index) => ({
+        id: `event-${index}`,
+        name: row.text || 'News / Event',
+        tier: 'News',
+        factionLocation: row.link || '',
+        rewards: 'Info',
+        detail: row.id || '',
+        expiresAt: tennoIso(row.end)
+      }));
+
+      const endgameCards = [
+        statusCard('acolytes', 'Endgame', 'Acolytes', `${acolytes.length} active`, tennoSoonestEnd(acolytes), acolytes[0] ? `${acolytes[0].location || 'Unknown'} // ${acolytes[0].name || 'Acolyte'}` : 'No acolytes returned.', { selectable: true }),
+        statusCard('sentient-outpost', 'Sentient', 'Sentient Outpost', `${sentientOutpost.length} active`, tennoSoonestEnd(sentientOutpost), sentientOutpost[0] ? sentientOutpost[0].location || sentientOutpost[0].missionType || 'Available' : 'No sentient outpost data returned.', { selectable: true }),
+        statusCard('global-boosters', 'Boosters', 'Global Boosters', `${boosters.length} active`, tennoSoonestEnd(boosters), boosters[0] ? boosters[0].item || boosters[0].upgrade || boosters[0].type || 'Booster active' : 'No global boosters returned.', { selectable: true })
+      ];
+
+      const utilityCards = [
+        statusCard('void-trader', 'Vendor', "Baro Ki'Teer", voidTrader.active ? 'Active' : 'Away', tennoIso(voidTrader.end || voidTrader.start), [voidTrader.location, voidTrader.active ? 'Inventory available' : 'Arrival pending'].filter(Boolean).join(' // '), { selectable: true }),
+        statusCard('daily-deal', 'Store', "Darvo's Deal", dailyDeals[0]?.item?.name || 'Unavailable', tennoIso(dailyDeals[0]?.end), dailyDeals[0] ? `${dailyDeals[0].price ?? '?'} credits // ${dailyDeals[0].sold ?? 0}/${dailyDeals[0].stock ?? '?'}` : 'No daily deal returned.', { selectable: true }),
+        statusCard('faction-projects', 'World', 'Faction Projects', `${factionProjects.length} tracked`, '', factionProjects[0] ? `${factionProjects[0].type || 'Project'} // ${Math.round(factionProjects[0].progress || 0)}%` : 'No faction project data returned.', { selectable: true })
       ];
 
       return [
         trackerCategory('environments', cycleCards),
-        { ...trackerCategory('missions', missionCards), details },
-        trackerCategory('bounties', [], 'WarframeStat.us /pc does not include detailed bounty rows in this adapter yet.'),
-        trackerCategory('syndicate-missions', [], 'WarframeStat.us /pc does not include detailed syndicate mission rows in this adapter yet.'),
-        trackerCategory('endgame', [], 'WarframeStat.us /pc endgame fields were not returned by the current response.'),
-        trackerCategory('utility', [
-          statusCard('news', 'News', 'News', Array.isArray(data?.news) ? `${data.news.length} posts` : 'Unavailable', '', Array.isArray(data?.news) && data.news[0] ? data.news[0].message || data.news[0].link || '' : 'No news returned.'),
-          statusCard('baro', 'Vendor', "Baro Ki'Teer", data?.voidTrader?.active ? 'Active' : 'Away', data?.voidTrader?.expiry || data?.voidTrader?.activation, [data?.voidTrader?.location, data?.voidTrader?.inventory?.length ? `${data.voidTrader.inventory.length} items` : ''].filter(Boolean).join(' // '))
-        ])
+        { ...trackerCategory('missions', missionCards), details: missionDetails },
+        { ...trackerCategory('bounties', [statusCard('bounties', 'Bounties', 'Bounties', `${bountyEntries.length} jobs`, tennoSoonestEnd(bountyEntries), bountyEntries[0] ? `${bountyEntries[0].name} // ${bountyEntries[0].tier}` : 'No bounty jobs returned.', { selectable: true })]), details: [bountyDetail] },
+        { ...trackerCategory('syndicate-missions', [
+          statusCard('nightwave', 'Nightwave', 'Nightwave', nightwave.season ? `Season ${nightwave.season}` : 'Unavailable', tennoIso(nightwave.end), `${nightwaveEntries.length} active challenges`, { selectable: true }),
+          statusCard('events', 'Events', 'Events / News', `${events.length} posts`, '', events[0]?.text || 'No event/news rows returned.', { selectable: true, hideTimer: true })
+        ]), details: [genericDetail('nightwave', 'Nightwave', nightwaveEntries), genericDetail('events', 'Events / News', eventEntries)] },
+        { ...trackerCategory('endgame', endgameCards), details: [
+          genericDetail('acolytes', 'Acolytes', acolytes.map((row, index) => ({ id: `acolyte-${index}`, name: row.name || 'Acolyte', tier: row.missionType || '', factionLocation: row.location || '', rewards: rewardsText(row.rewards), detail: row.faction || '', expiresAt: tennoIso(row.end) }))),
+          genericDetail('sentient-outpost', 'Sentient Outpost', sentientOutpost.map((row, index) => ({ id: `sentient-${index}`, name: row.location || 'Sentient Outpost', tier: row.missionType || '', factionLocation: row.faction || '', rewards: rewardsText(row.rewards), detail: row.id || '', expiresAt: tennoIso(row.end) }))),
+          genericDetail('global-boosters', 'Global Boosters', boosters.map((row, index) => ({ id: `booster-${index}`, name: row.item || row.upgrade || row.type || 'Booster', tier: row.operation || '', factionLocation: 'Global', rewards: row.value || row.upgrade || 'Booster', detail: row.id || '', expiresAt: tennoIso(row.end) })))
+        ] },
+        { ...trackerCategory('utility', utilityCards), details: [
+          genericDetail('void-trader', "Baro Ki'Teer", voidTraders.map((row, index) => ({ id: `baro-${index}`, name: row.name || "Baro Ki'Teer", tier: row.active ? 'Active' : 'Away', factionLocation: row.location || '', rewards: 'Void trader inventory', detail: `Starts ${tennoIso(row.start) || 'unknown'}`, expiresAt: tennoIso(row.end) }))),
+          genericDetail('daily-deal', "Darvo's Deal", dailyDeals.map((row, index) => ({ id: `deal-${index}`, name: row.item?.name || 'Daily Deal', tier: `${row.price ?? '?'} credits`, factionLocation: 'Market', rewards: `${row.originalPrice ?? '?'} original credits`, detail: `${row.sold ?? 0}/${row.stock ?? '?'} sold`, expiresAt: tennoIso(row.end) }))),
+          genericDetail('faction-projects', 'Faction Projects', factionProjects.map((row, index) => ({ id: `project-${index}`, name: row.type || 'Faction Project', tier: `${Math.round(row.progress || 0)}%`, factionLocation: row.id || '', rewards: 'World event progress', detail: `${(row.progressHistory || []).length} history points` })))
+        ] }
       ];
     }
 
@@ -2003,19 +2136,19 @@ function runBootSequence() {
     }
 
     async function refreshDashboardTrackers() {
-      setDashboardTrackerStatus('Syncing WarframeStat.us...');
+      setDashboardTrackerStatus('Syncing Tenno Tools...');
       ensureDashboardNodeLookup().then(() => {
         if (!dashboardTrackerState.lastData) return;
         // Re-map in place so readable node/type text appears without refetching.
-        dashboardTrackerState.categories = mapWarframeStatusWorldstateToDashboardCategories(dashboardTrackerState.lastData);
+        dashboardTrackerState.categories = mapTennoToolsWorldstateToDashboardCategories(dashboardTrackerState.lastData);
         renderDashboardTrackerCards();
         updateDashboardCountdowns();
       });
-      dashboardTrackerState.categories = loadingDashboardCategories('Loading WarframeStat.us data for this category...');
+      dashboardTrackerState.categories = loadingDashboardCategories('Loading Tenno Tools data for this category...');
       renderDashboardTrackerCards();
       try {
         const result = await fetchDashboardWorldstateJson();
-        dashboardTrackerState.categories = mapWarframeStatusWorldstateToDashboardCategories(result.data);
+        dashboardTrackerState.categories = mapTennoToolsWorldstateToDashboardCategories(result.data);
         dashboardTrackerState.source = result.source;
         dashboardTrackerState.syncedAt = new Date();
         dashboardTrackerState.lastData = result.data;
@@ -2023,9 +2156,9 @@ function runBootSequence() {
         updateDashboardCountdowns();
         setDashboardTrackerStatus(`Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
       } catch (error) {
-        dashboardTrackerState.categories = unavailableDashboardCategories(error?.message || 'WarframeStat.us did not return world-state data.');
+        dashboardTrackerState.categories = unavailableDashboardCategories(error?.message || 'Tenno Tools did not return world-state data.');
         renderDashboardTrackerCards();
-        setDashboardTrackerStatus('WarframeStat.us unavailable');
+        setDashboardTrackerStatus('Tenno Tools unavailable');
         logClientError('dashboard world-state refresh', error);
       }
     }
@@ -2033,7 +2166,7 @@ function runBootSequence() {
     if (currentSectionName === 'trackers') refreshDashboardTrackers();
     setInterval(() => {
       if (currentSectionName === 'trackers') refreshDashboardTrackers();
-    }, 120000);
+    }, 60000);
     setInterval(updateDashboardCountdowns, 1000);
 
     const marketItemSearch = document.getElementById('marketItemSearch');
