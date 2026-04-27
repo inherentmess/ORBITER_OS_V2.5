@@ -541,8 +541,15 @@ function runBootSequence() {
 
     const dashboardTrackerGrid = document.getElementById('dashboardTrackerGrid');
     const dashboardTrackerStatus = document.getElementById('dashboardTrackerStatus');
+    const trackerSortMode = document.getElementById('trackerSortMode');
+    const trackerResetOrderBtn = document.getElementById('trackerResetOrderBtn');
+    const TRACKER_ORDER_KEY = 'orbiter_tracker_category_order';
+    const TRACKER_SORT_KEY = 'orbiter_tracker_sort_mode';
+    const trackerDefaultOrder = ['environments', 'missions', 'bounties', 'syndicate-missions', 'utility'];
     const dashboardTrackerState = {
       categories: [],
+      customOrder: loadTrackerOrder(),
+      sortMode: localStorage.getItem(TRACKER_SORT_KEY) || 'default',
       selectedDetailCategoryId: '',
       selectedDetailId: '',
       source: '',
@@ -561,6 +568,46 @@ function runBootSequence() {
 
     function setDashboardTrackerStatus(text) {
       if (dashboardTrackerStatus) dashboardTrackerStatus.textContent = text;
+    }
+
+    function loadTrackerOrder() {
+      try {
+        const value = JSON.parse(localStorage.getItem(TRACKER_ORDER_KEY) || '[]');
+        return Array.isArray(value) ? value.filter(Boolean) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveTrackerOrder(order) {
+      dashboardTrackerState.customOrder = Array.isArray(order) ? order.filter(Boolean) : [];
+      localStorage.setItem(TRACKER_ORDER_KEY, JSON.stringify(dashboardTrackerState.customOrder));
+    }
+
+    function setTrackerSortMode(mode) {
+      dashboardTrackerState.sortMode = mode || 'default';
+      localStorage.setItem(TRACKER_SORT_KEY, dashboardTrackerState.sortMode);
+      if (trackerSortMode) trackerSortMode.value = dashboardTrackerState.sortMode;
+    }
+
+    if (trackerSortMode) {
+      trackerSortMode.value = dashboardTrackerState.sortMode;
+      trackerSortMode.addEventListener('change', () => {
+        setTrackerSortMode(trackerSortMode.value);
+        dashboardTrackerState.categories = orderDashboardCategories(dashboardTrackerState.categories);
+        renderDashboardTrackerCards();
+        updateDashboardCountdowns();
+      });
+    }
+
+    if (trackerResetOrderBtn) {
+      trackerResetOrderBtn.addEventListener('click', () => {
+        saveTrackerOrder([]);
+        setTrackerSortMode('default');
+        dashboardTrackerState.categories = orderDashboardCategories(dashboardTrackerState.categories);
+        renderDashboardTrackerCards();
+        updateDashboardCountdowns();
+      });
     }
 
     function ensureDashboardNodeLookup() {
@@ -1629,6 +1676,40 @@ function runBootSequence() {
       return dashboardCategoryDefs.map(def => trackerCategory(def.id, [], reason));
     }
 
+    function categoryExpiryMs(category) {
+      const times = (category.cards || [])
+        .map(card => new Date(card.expiresAt).getTime())
+        .filter(Number.isFinite);
+      return times.length ? Math.min(...times) : Number.POSITIVE_INFINITY;
+    }
+
+    function orderDashboardCategories(categories = []) {
+      const visible = categories.filter(category => category?.error || category?.cards?.length);
+      const defaultIndex = id => {
+        const index = trackerDefaultOrder.indexOf(id);
+        return index >= 0 ? index : trackerDefaultOrder.length;
+      };
+      if (dashboardTrackerState.sortMode === 'alpha') {
+        return [...visible].sort((a, b) => String(a.title).localeCompare(String(b.title)));
+      }
+      if (dashboardTrackerState.sortMode === 'expiry') {
+        return [...visible].sort((a, b) => categoryExpiryMs(a) - categoryExpiryMs(b) || defaultIndex(a.id) - defaultIndex(b.id));
+      }
+      if (dashboardTrackerState.sortMode === 'custom') {
+        const saved = dashboardTrackerState.customOrder || [];
+        const savedIndex = id => {
+          const index = saved.indexOf(id);
+          return index >= 0 ? index : saved.length + defaultIndex(id);
+        };
+        return [...visible].sort((a, b) => savedIndex(a.id) - savedIndex(b.id));
+      }
+      return [...visible].sort((a, b) => defaultIndex(a.id) - defaultIndex(b.id));
+    }
+
+    function setDashboardCategories(categories) {
+      dashboardTrackerState.categories = orderDashboardCategories(categories);
+    }
+
     function formatDashboardCountdown(expiresAt) {
       if (!expiresAt) return 'Timer unavailable';
       const diff = new Date(expiresAt).getTime() - Date.now();
@@ -2026,6 +2107,25 @@ function runBootSequence() {
       return Array.isArray(category.details) && category.details.length > 0;
     }
 
+    function renderTrackerCategoryHeader(category) {
+      return `
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2 border-b border-terminal/35 pb-2">
+          <div class="flex items-start gap-3 min-w-0">
+            <button class="tracker-drag-handle border border-terminal/50 px-2 py-1 text-xs text-terminal/80 hover:bg-terminal hover:text-black cursor-grab" type="button" draggable="true" data-tracker-drag="${escapeHtml(category.id)}" aria-label="Drag ${escapeHtml(category.title)}">drag</button>
+            <div class="min-w-0">
+              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Tracker Category</div>
+              <h4 class="text-lg font-bold break-words">${escapeHtml(category.title)}</h4>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button class="terminal-link border border-terminal/50 px-2 py-1 text-[10px] uppercase tracking-widest" type="button" data-tracker-move="${escapeHtml(category.id)}" data-direction="up">Up</button>
+            <button class="terminal-link border border-terminal/50 px-2 py-1 text-[10px] uppercase tracking-widest" type="button" data-tracker-move="${escapeHtml(category.id)}" data-direction="down">Down</button>
+            <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderInteractiveCategory(category) {
       const forceSelectable = category.id === 'missions';
       const inlineDetail = category.id === 'missions';
@@ -2034,14 +2134,8 @@ function runBootSequence() {
         ? '<div class="panel-card p-5 text-sm text-green-200/75">Select a card below to inspect detailed rows for that section.</div>'
         : '';
       return `
-        <section class="space-y-3">
-          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2 border-b border-terminal/35 pb-2">
-            <div>
-              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Tracker Category</div>
-              <h4 class="text-lg font-bold">${escapeHtml(category.title)}</h4>
-            </div>
-            <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
-          </div>
+        <section class="space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
+          ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
           ${!category.error ? hint : ''}
           ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(card => {
@@ -2058,14 +2152,8 @@ function runBootSequence() {
       if (!category?.error && !category?.cards?.length) return '';
       if (isInteractiveCategory(category)) return renderInteractiveCategory(category);
       return `
-        <section class="space-y-3">
-          <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2 border-b border-terminal/35 pb-2">
-            <div>
-              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Tracker Category</div>
-              <h4 class="text-lg font-bold">${escapeHtml(category.title)}</h4>
-            </div>
-            <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
-          </div>
+        <section class="space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
+          ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
           ${!category.error && !category.cards.length ? '<div class="panel-card p-5 text-sm text-green-200/75">No world-state data returned for this category.</div>' : ''}
           ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(renderDashboardCard).join('')}</div>` : ''}
@@ -2075,6 +2163,9 @@ function runBootSequence() {
 
     function renderDashboardTrackerCards() {
       if (!dashboardTrackerGrid) return;
+      if (trackerSortMode && trackerSortMode.value !== dashboardTrackerState.sortMode) {
+        trackerSortMode.value = dashboardTrackerState.sortMode;
+      }
       if (!dashboardTrackerState.categories?.length) {
         dashboardTrackerGrid.innerHTML = '<div class="panel-card p-5 text-sm text-green-200/80">World-state tracker data is unavailable.</div>';
         return;
@@ -2083,7 +2174,72 @@ function runBootSequence() {
       bindDashboardTrackerEvents();
     }
 
+    function persistCurrentTrackerOrder() {
+      saveTrackerOrder((dashboardTrackerState.categories || []).map(category => category.id));
+    }
+
+    function moveTrackerCategory(id, direction) {
+      const categories = [...(dashboardTrackerState.categories || [])];
+      const index = categories.findIndex(category => category.id === id);
+      if (index < 0) return;
+      const nextIndex = direction === 'up' ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= categories.length) return;
+      [categories[index], categories[nextIndex]] = [categories[nextIndex], categories[index]];
+      setTrackerSortMode('custom');
+      dashboardTrackerState.categories = categories;
+      persistCurrentTrackerOrder();
+      renderDashboardTrackerCards();
+      updateDashboardCountdowns();
+    }
+
+    function bindTrackerOrderingEvents() {
+      dashboardTrackerGrid.querySelectorAll('[data-tracker-move]').forEach(button => {
+        button.addEventListener('click', () => moveTrackerCategory(button.dataset.trackerMove || '', button.dataset.direction || 'down'));
+      });
+
+      let draggedId = '';
+      dashboardTrackerGrid.querySelectorAll('[data-tracker-drag]').forEach(handle => {
+        handle.addEventListener('dragstart', event => {
+          draggedId = handle.dataset.trackerDrag || '';
+          event.dataTransfer?.setData('text/plain', draggedId);
+          handle.closest('[data-tracker-category]')?.classList.add('opacity-50');
+        });
+        handle.addEventListener('dragend', () => {
+          handle.closest('[data-tracker-category]')?.classList.remove('opacity-50');
+          draggedId = '';
+        });
+      });
+
+      dashboardTrackerGrid.querySelectorAll('[data-tracker-category]').forEach(section => {
+        section.addEventListener('dragover', event => {
+          if (!draggedId) return;
+          event.preventDefault();
+          section.classList.add('ring-1', 'ring-terminal');
+        });
+        section.addEventListener('dragleave', () => section.classList.remove('ring-1', 'ring-terminal'));
+        section.addEventListener('drop', event => {
+          event.preventDefault();
+          section.classList.remove('ring-1', 'ring-terminal');
+          const sourceId = event.dataTransfer?.getData('text/plain') || draggedId;
+          const targetId = section.dataset.trackerCategory || '';
+          if (!sourceId || !targetId || sourceId === targetId) return;
+          const categories = [...(dashboardTrackerState.categories || [])];
+          const sourceIndex = categories.findIndex(category => category.id === sourceId);
+          const targetIndex = categories.findIndex(category => category.id === targetId);
+          if (sourceIndex < 0 || targetIndex < 0) return;
+          const [moved] = categories.splice(sourceIndex, 1);
+          categories.splice(targetIndex, 0, moved);
+          setTrackerSortMode('custom');
+          dashboardTrackerState.categories = categories;
+          persistCurrentTrackerOrder();
+          renderDashboardTrackerCards();
+          updateDashboardCountdowns();
+        });
+      });
+    }
+
     function bindDashboardTrackerEvents() {
+      bindTrackerOrderingEvents();
       dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-select]').forEach(button => {
         button.addEventListener('click', () => {
           const scrollRoot = document.querySelector('main');
@@ -2133,15 +2289,15 @@ function runBootSequence() {
       ensureDashboardNodeLookup().then(() => {
         if (!dashboardTrackerState.lastData) return;
         // Re-map in place so readable node/type text appears without refetching.
-        dashboardTrackerState.categories = mapTennoToolsWorldstateToDashboardCategories(dashboardTrackerState.lastData);
+        setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(dashboardTrackerState.lastData));
         renderDashboardTrackerCards();
         updateDashboardCountdowns();
       });
-      dashboardTrackerState.categories = loadingDashboardCategories('Loading Tenno Tools data for this category...');
+      setDashboardCategories(loadingDashboardCategories('Loading Tenno Tools data for this category...'));
       renderDashboardTrackerCards();
       try {
         const result = await fetchDashboardWorldstateJson();
-        dashboardTrackerState.categories = mapTennoToolsWorldstateToDashboardCategories(result.data);
+        setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(result.data));
         dashboardTrackerState.source = result.source;
         dashboardTrackerState.syncedAt = new Date();
         dashboardTrackerState.lastData = result.data;
@@ -2149,7 +2305,7 @@ function runBootSequence() {
         updateDashboardCountdowns();
         setDashboardTrackerStatus(`Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
       } catch (error) {
-        dashboardTrackerState.categories = unavailableDashboardCategories(error?.message || 'Tenno Tools did not return world-state data.');
+        setDashboardCategories(unavailableDashboardCategories(error?.message || 'Tenno Tools did not return world-state data.'));
         renderDashboardTrackerCards();
         setDashboardTrackerStatus('Tenno Tools unavailable');
         logClientError('dashboard world-state refresh', error);

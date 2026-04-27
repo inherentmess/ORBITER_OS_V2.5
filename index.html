@@ -446,6 +446,23 @@
             <div id="dashboardTrackerStatus" class="text-[10px] uppercase tracking-[0.2em] text-terminal/70">Awaiting sync</div>
           </div>
 
+          <div class="panel-card p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Category Order</div>
+              <p class="text-xs text-green-200/70 mt-1">Drag category headers, use move buttons, or choose a sort mode.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="text-[10px] uppercase tracking-[0.2em] text-terminal/70" for="trackerSortMode">Sort</label>
+              <select id="trackerSortMode" class="bg-black border border-terminal text-terminal text-xs uppercase tracking-widest px-3 py-2">
+                <option value="default">Default order</option>
+                <option value="alpha">Alphabetical</option>
+                <option value="expiry">Expiring soon</option>
+                <option value="custom">Custom order</option>
+              </select>
+              <button id="trackerResetOrderBtn" class="terminal-link border border-terminal px-3 py-2 text-xs uppercase tracking-widest" type="button">Reset</button>
+            </div>
+          </div>
+
           <div id="dashboardTrackerGrid" class="space-y-5">
             <div class="panel-card p-5 text-sm text-green-200/80">Tracker data will load here.</div>
           </div>
