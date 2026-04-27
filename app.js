@@ -1478,7 +1478,7 @@ function runBootSequence() {
       return `${Number.isFinite(count) && count > 1 ? `${count}x ` : ''}${item.name || item.item || item.type || ''}`.trim();
     }
 
-    function rewardsText(rewards, fallback = 'Unknown rewards') {
+    function rewardsText(rewards, fallback = '') {
       const flat = [];
       const collect = value => {
         if (!value) return;
@@ -1492,6 +1492,18 @@ function runBootSequence() {
 
     function genericDetail(id, title, entries, source = 'Tenno Tools') {
       return { id, title, entries, source, expiresAt: tennoSoonestEnd(entries), type: 'generic' };
+    }
+
+    function compactCategory(id, cards = [], details = []) {
+      const placeholderPattern = /\b(unavailable|unknown|no data|no .*returned|empty)\b/i;
+      const usefulCards = cards
+        .filter(Boolean)
+        .filter(card => !placeholderPattern.test([card.title, card.state, card.detail].filter(Boolean).join(' ')))
+        .map(card => card.expiresAt ? card : { ...card, hideTimer: true });
+      if (!usefulCards.length) return null;
+      const usefulIds = new Set(usefulCards.map(card => card.id));
+      const usefulDetails = details.filter(detail => usefulIds.has(detail.id) && ((detail.entries || []).length || (detail.rows || []).length || detail.row));
+      return { ...trackerCategory(id, usefulCards), details: usefulDetails };
     }
 
     function cycleFromTenno(row) {
@@ -1538,8 +1550,8 @@ function runBootSequence() {
       const cycleCards = daynight.map(row => {
         const cycle = cycleFromTenno(row) || {};
         const title = cycleTitles[row.id] || dashboardToken(row.id);
-        return statusCard(`cycle-${row.id}`, 'Cycle', title, cycle.state || 'Unavailable', cycle.expiresAt, `Tenno Tools cycle id: ${row.id}`);
-      });
+        return cycle.expiresAt && title ? statusCard(`cycle-${row.id}`, 'Cycle', title, cycle.state, cycle.expiresAt, `Tenno Tools cycle id: ${row.id}`) : null;
+      }).filter(Boolean);
 
       const sortie = sorties[0] || {};
       const voidTrader = voidTraders[0] || {};
@@ -1548,24 +1560,24 @@ function runBootSequence() {
       const hardFissures = fissures.filter(row => row.hard);
 
       const missionCards = [
-        statusCard('alerts', 'Alerts', 'Alerts', `${alerts.length} active`, tennoSoonestEnd(alerts), alerts[0] ? `${alerts[0].location || 'Unknown'} // ${alerts[0].missionType || 'Mission'}` : 'No active alerts returned.', { selectable: true }),
-        statusCard('arbitrations', 'Arbitration', 'Arbitrations', `${arbitrations.length} active`, tennoSoonestEnd(arbitrations), arbitrations[0] ? `${arbitrations[0].location || 'Unknown'} // ${arbitrations[0].missionType || 'Mission'}` : 'No arbitration rows returned.', { selectable: true }),
-        statusCard('sortie', 'Daily', 'Sortie', sortie.bossName || sortie.faction || 'Unavailable', tennoIso(sortie.end), Array.isArray(sortie.missions) ? `${sortie.missions.length} missions // ${sortie.faction || 'Faction unknown'}` : 'No sortie missions returned.', { selectable: true }),
-        statusCard('fissures-normal', 'Relics', 'Void Fissures', `${normalFissures.length} active`, tennoSoonestEnd(normalFissures), normalFissures[0] ? `${normalFissures[0].tier || ''} ${normalFissures[0].missionType || ''} // ${normalFissures[0].location || ''}` : 'No normal fissures returned.', { selectable: true }),
-        statusCard('fissures-hard', 'Steel Path', 'Steel Path Fissures', `${hardFissures.length} active`, tennoSoonestEnd(hardFissures), hardFissures[0] ? `${hardFissures[0].tier || ''} ${hardFissures[0].missionType || ''} // ${hardFissures[0].location || ''}` : 'No Steel Path fissures returned.', { selectable: true }),
-        statusCard('void-storms', 'Railjack', 'Void Storms', `${voidStorms.length} active`, tennoSoonestEnd(voidStorms), voidStorms[0] ? `${voidStorms[0].tier || ''} ${voidStorms[0].missionType || ''} // ${voidStorms[0].location || ''}` : 'No Void Storms returned.', { selectable: true }),
-        statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', invasions[0] ? `${invasions[0].location || 'Unknown'} // ${invasions[0].factionAttacker || ''} vs ${invasions[0].factionDefender || ''}` : 'No invasions returned.', { selectable: true, hideTimer: true }),
-        statusCard('kuva', 'Kuva', 'Kuva Missions', `${kuvaMissions.length} active`, tennoSoonestEnd(kuvaMissions), kuvaMissions[0] ? `${kuvaMissions[0].location || 'Unknown'} // ${kuvaMissions[0].missionType || 'Mission'}` : 'No Kuva missions returned.', { selectable: true })
+        alerts.length ? statusCard('alerts', 'Alerts', 'Alerts', `${alerts.length} active`, tennoSoonestEnd(alerts), `${alerts[0].location || 'Alert'} // ${alerts[0].missionType || 'Mission'}`, { selectable: true }) : null,
+        arbitrations.length ? statusCard('arbitrations', 'Arbitration', 'Arbitrations', `${arbitrations.length} active`, tennoSoonestEnd(arbitrations), `${arbitrations[0].location || 'Arbitration'} // ${arbitrations[0].missionType || 'Mission'}`, { selectable: true }) : null,
+        Array.isArray(sortie.missions) && sortie.missions.length ? statusCard('sortie', 'Daily', 'Sortie', sortie.bossName || sortie.faction, tennoIso(sortie.end), `${sortie.missions.length} missions // ${sortie.faction || 'Faction pending'}`, { selectable: true }) : null,
+        normalFissures.length ? statusCard('fissures-normal', 'Relics', 'Void Fissures', `${normalFissures.length} active`, tennoSoonestEnd(normalFissures), `${normalFissures[0].tier || ''} ${normalFissures[0].missionType || ''} // ${normalFissures[0].location || ''}`.trim(), { selectable: true }) : null,
+        hardFissures.length ? statusCard('fissures-hard', 'Steel Path', 'Steel Path Fissures', `${hardFissures.length} active`, tennoSoonestEnd(hardFissures), `${hardFissures[0].tier || ''} ${hardFissures[0].missionType || ''} // ${hardFissures[0].location || ''}`.trim(), { selectable: true }) : null,
+        voidStorms.length ? statusCard('void-storms', 'Railjack', 'Void Storms', `${voidStorms.length} active`, tennoSoonestEnd(voidStorms), `${voidStorms[0].tier || ''} ${voidStorms[0].missionType || ''} // ${voidStorms[0].location || ''}`.trim(), { selectable: true }) : null,
+        invasions.length ? statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', `${invasions[0].location || 'Invasion'} // ${invasions[0].factionAttacker || ''} vs ${invasions[0].factionDefender || ''}`, { selectable: true, hideTimer: true }) : null,
+        kuvaMissions.length ? statusCard('kuva', 'Kuva', 'Kuva Missions', `${kuvaMissions.length} active`, tennoSoonestEnd(kuvaMissions), `${kuvaMissions[0].location || 'Kuva mission'} // ${kuvaMissions[0].missionType || 'Mission'}`, { selectable: true }) : null
       ];
 
       const missionDetails = [
-        genericDetail('alerts', 'Alerts', alerts.map((row, index) => ({ id: `alert-${index}`, name: row.location || 'Alert', tier: row.missionType || 'Mission', factionLocation: row.faction || '', rewards: rewardsText(row.rewards || row.reward), detail: `Starts ${tennoIso(row.start) || 'unknown'}`, expiresAt: tennoIso(row.end) }))),
-        genericDetail('arbitrations', 'Arbitrations', arbitrations.map((row, index) => ({ id: `arbitration-${index}`, name: row.location || 'Arbitration', tier: row.missionType || 'Mission', factionLocation: row.faction || '', rewards: rewardsText(row.rewards), detail: `Enemy: ${row.enemy || row.faction || 'Unknown'}`, expiresAt: tennoIso(row.end) }))),
+        genericDetail('alerts', 'Alerts', alerts.map((row, index) => ({ id: `alert-${index}`, name: row.location || 'Alert', tier: row.missionType || 'Mission', factionLocation: row.faction || '', rewards: rewardsText(row.rewards || row.reward), detail: tennoIso(row.start) ? `Starts ${tennoIso(row.start)}` : '', expiresAt: tennoIso(row.end) }))),
+        genericDetail('arbitrations', 'Arbitrations', arbitrations.map((row, index) => ({ id: `arbitration-${index}`, name: row.location || 'Arbitration', tier: row.missionType || 'Mission', factionLocation: row.faction || '', rewards: rewardsText(row.rewards), detail: row.enemy || row.faction || '', expiresAt: tennoIso(row.end) }))),
         genericDetail('sortie', 'Sortie', (sortie.missions || []).map((row, index) => ({ id: `sortie-${index}`, name: row.location || row.node || `Sortie ${index + 1}`, tier: row.missionType || '', factionLocation: sortie.faction || '', rewards: rewardsText(sortie.rewards, 'Sortie reward table'), detail: row.modifier || row.modifierDescription || '', expiresAt: tennoIso(sortie.end) }))),
         genericDetail('fissures-normal', 'Void Fissures', normalFissures.map((row, index) => ({ id: `fissure-${index}`, name: row.location || 'Fissure', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Relic rewards', detail: `Hard: ${row.hard ? 'yes' : 'no'}`, expiresAt: tennoIso(row.end) }))),
         genericDetail('fissures-hard', 'Steel Path Fissures', hardFissures.map((row, index) => ({ id: `hard-fissure-${index}`, name: row.location || 'Fissure', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Steel Path relic rewards', detail: `Hard: ${row.hard ? 'yes' : 'no'}`, expiresAt: tennoIso(row.end) }))),
-        genericDetail('void-storms', 'Void Storms', voidStorms.map((row, index) => ({ id: `voidstorm-${index}`, name: row.location || 'Void Storm', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Railjack relic rewards', detail: `Starts ${tennoIso(row.start) || 'unknown'}`, expiresAt: tennoIso(row.end) }))),
-        genericDetail('invasions', 'Invasions', invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.location || 'Invasion', tier: [row.factionAttacker, 'vs', row.factionDefender].filter(Boolean).join(' '), factionLocation: row.location || '', rewards: [rewardsText(row.rewardsAttacker, ''), rewardsText(row.rewardsDefender, '')].filter(Boolean).join(' // ') || 'Unknown rewards', detail: `Score ${row.score ?? '?'} / ${row.endScore ?? '?'}` }))),
+        genericDetail('void-storms', 'Void Storms', voidStorms.map((row, index) => ({ id: `voidstorm-${index}`, name: row.location || 'Void Storm', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Railjack relic rewards', detail: tennoIso(row.start) ? `Starts ${tennoIso(row.start)}` : '', expiresAt: tennoIso(row.end) }))),
+        genericDetail('invasions', 'Invasions', invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.location || 'Invasion', tier: [row.factionAttacker, 'vs', row.factionDefender].filter(Boolean).join(' '), factionLocation: row.location || '', rewards: [rewardsText(row.rewardsAttacker, ''), rewardsText(row.rewardsDefender, '')].filter(Boolean).join(' // '), detail: `Score ${row.score ?? '?'} / ${row.endScore ?? '?'}` }))),
         genericDetail('kuva', 'Kuva Missions', kuvaMissions.map((row, index) => ({ id: `kuva-${index}`, name: row.location || 'Kuva mission', tier: row.missionType || '', factionLocation: row.faction || '', rewards: 'Kuva', detail: row.siphonType || row.type || '', expiresAt: tennoIso(row.end) })))
       ];
 
@@ -1575,7 +1587,7 @@ function runBootSequence() {
         tier: `${job.minLevel ?? '?'}-${job.maxLevel ?? '?'} Level`,
         factionLocation: group.syndicate || '',
         rewards: rewardsText(job.rewards, 'Bounty reward table'),
-        detail: `Standing: ${(job.xpAmounts || []).join(', ') || 'unknown'}`,
+        detail: (job.xpAmounts || []).length ? `Standing: ${(job.xpAmounts || []).join(', ')}` : '',
         expiresAt: tennoIso(group.end)
       })));
       const bountyDetail = genericDetail('bounties', 'Bounties', bountyEntries);
@@ -1600,36 +1612,36 @@ function runBootSequence() {
       }));
 
       const endgameCards = [
-        statusCard('acolytes', 'Endgame', 'Acolytes', `${acolytes.length} active`, tennoSoonestEnd(acolytes), acolytes[0] ? `${acolytes[0].location || 'Unknown'} // ${acolytes[0].name || 'Acolyte'}` : 'No acolytes returned.', { selectable: true }),
-        statusCard('sentient-outpost', 'Sentient', 'Sentient Outpost', `${sentientOutpost.length} active`, tennoSoonestEnd(sentientOutpost), sentientOutpost[0] ? sentientOutpost[0].location || sentientOutpost[0].missionType || 'Available' : 'No sentient outpost data returned.', { selectable: true }),
-        statusCard('global-boosters', 'Boosters', 'Global Boosters', `${boosters.length} active`, tennoSoonestEnd(boosters), boosters[0] ? boosters[0].item || boosters[0].upgrade || boosters[0].type || 'Booster active' : 'No global boosters returned.', { selectable: true })
+        acolytes.length ? statusCard('acolytes', 'Endgame', 'Acolytes', `${acolytes.length} active`, tennoSoonestEnd(acolytes), `${acolytes[0].location || 'Acolyte'} // ${acolytes[0].name || ''}`.trim(), { selectable: true }) : null,
+        sentientOutpost.length ? statusCard('sentient-outpost', 'Sentient', 'Sentient Outpost', `${sentientOutpost.length} active`, tennoSoonestEnd(sentientOutpost), sentientOutpost[0].location || sentientOutpost[0].missionType, { selectable: true }) : null,
+        boosters.length ? statusCard('global-boosters', 'Boosters', 'Global Boosters', `${boosters.length} active`, tennoSoonestEnd(boosters), boosters[0].item || boosters[0].upgrade || boosters[0].type, { selectable: true }) : null
       ];
 
       const utilityCards = [
-        statusCard('void-trader', 'Vendor', "Baro Ki'Teer", voidTrader.active ? 'Active' : 'Away', tennoIso(voidTrader.end || voidTrader.start), [voidTrader.location, voidTrader.active ? 'Inventory available' : 'Arrival pending'].filter(Boolean).join(' // '), { selectable: true }),
-        statusCard('daily-deal', 'Store', "Darvo's Deal", dailyDeals[0]?.item?.name || 'Unavailable', tennoIso(dailyDeals[0]?.end), dailyDeals[0] ? `${dailyDeals[0].price ?? '?'} credits // ${dailyDeals[0].sold ?? 0}/${dailyDeals[0].stock ?? '?'}` : 'No daily deal returned.', { selectable: true }),
-        statusCard('faction-projects', 'World', 'Faction Projects', `${factionProjects.length} tracked`, '', factionProjects[0] ? `${factionProjects[0].type || 'Project'} // ${Math.round(factionProjects[0].progress || 0)}%` : 'No faction project data returned.', { selectable: true })
+        voidTrader.id ? statusCard('void-trader', 'Vendor', "Baro Ki'Teer", voidTrader.active ? 'Active' : 'Away', tennoIso(voidTrader.end || voidTrader.start), [voidTrader.location, voidTrader.active ? 'Inventory available' : 'Arrival pending'].filter(Boolean).join(' // '), { selectable: true }) : null,
+        dailyDeals.length ? statusCard('daily-deal', 'Store', "Darvo's Deal", dailyDeals[0]?.item?.name, tennoIso(dailyDeals[0]?.end), `${dailyDeals[0].price ?? '?'} credits // ${dailyDeals[0].sold ?? 0}/${dailyDeals[0].stock ?? '?'}`, { selectable: true }) : null,
+        factionProjects.length ? statusCard('faction-projects', 'World', 'Faction Projects', `${factionProjects.length} tracked`, '', `${factionProjects[0].type || 'Project'} // ${Math.round(factionProjects[0].progress || 0)}%`, { selectable: true }) : null
       ];
 
       return [
-        trackerCategory('environments', cycleCards),
-        { ...trackerCategory('missions', missionCards), details: missionDetails },
-        { ...trackerCategory('bounties', [statusCard('bounties', 'Bounties', 'Bounties', `${bountyEntries.length} jobs`, tennoSoonestEnd(bountyEntries), bountyEntries[0] ? `${bountyEntries[0].name} // ${bountyEntries[0].tier}` : 'No bounty jobs returned.', { selectable: true })]), details: [bountyDetail] },
-        { ...trackerCategory('syndicate-missions', [
-          statusCard('nightwave', 'Nightwave', 'Nightwave', nightwave.season ? `Season ${nightwave.season}` : 'Unavailable', tennoIso(nightwave.end), `${nightwaveEntries.length} active challenges`, { selectable: true }),
-          statusCard('events', 'Events', 'Events / News', `${events.length} posts`, '', events[0]?.text || 'No event/news rows returned.', { selectable: true, hideTimer: true })
-        ]), details: [genericDetail('nightwave', 'Nightwave', nightwaveEntries), genericDetail('events', 'Events / News', eventEntries)] },
-        { ...trackerCategory('endgame', endgameCards), details: [
+        compactCategory('environments', cycleCards),
+        compactCategory('missions', missionCards, missionDetails),
+        compactCategory('bounties', bountyEntries.length ? [statusCard('bounties', 'Bounties', 'Bounties', `${bountyEntries.length} jobs`, tennoSoonestEnd(bountyEntries), `${bountyEntries[0].name} // ${bountyEntries[0].tier}`, { selectable: true })] : [], [bountyDetail]),
+        compactCategory('syndicate-missions', [
+          nightwaveEntries.length ? statusCard('nightwave', 'Nightwave', 'Nightwave', `Season ${nightwave.season ?? '?'}`, tennoIso(nightwave.end), `${nightwaveEntries.length} active challenges`, { selectable: true }) : null,
+          events.length ? statusCard('events', 'Events', 'Events / News', `${events.length} posts`, '', events[0]?.text, { selectable: true, hideTimer: true }) : null
+        ], [genericDetail('nightwave', 'Nightwave', nightwaveEntries), genericDetail('events', 'Events / News', eventEntries)]),
+        compactCategory('endgame', endgameCards, [
           genericDetail('acolytes', 'Acolytes', acolytes.map((row, index) => ({ id: `acolyte-${index}`, name: row.name || 'Acolyte', tier: row.missionType || '', factionLocation: row.location || '', rewards: rewardsText(row.rewards), detail: row.faction || '', expiresAt: tennoIso(row.end) }))),
           genericDetail('sentient-outpost', 'Sentient Outpost', sentientOutpost.map((row, index) => ({ id: `sentient-${index}`, name: row.location || 'Sentient Outpost', tier: row.missionType || '', factionLocation: row.faction || '', rewards: rewardsText(row.rewards), detail: row.id || '', expiresAt: tennoIso(row.end) }))),
           genericDetail('global-boosters', 'Global Boosters', boosters.map((row, index) => ({ id: `booster-${index}`, name: row.item || row.upgrade || row.type || 'Booster', tier: row.operation || '', factionLocation: 'Global', rewards: row.value || row.upgrade || 'Booster', detail: row.id || '', expiresAt: tennoIso(row.end) })))
-        ] },
-        { ...trackerCategory('utility', utilityCards), details: [
-          genericDetail('void-trader', "Baro Ki'Teer", voidTraders.map((row, index) => ({ id: `baro-${index}`, name: row.name || "Baro Ki'Teer", tier: row.active ? 'Active' : 'Away', factionLocation: row.location || '', rewards: 'Void trader inventory', detail: `Starts ${tennoIso(row.start) || 'unknown'}`, expiresAt: tennoIso(row.end) }))),
+        ]),
+        compactCategory('utility', utilityCards, [
+          genericDetail('void-trader', "Baro Ki'Teer", voidTraders.map((row, index) => ({ id: `baro-${index}`, name: row.name || "Baro Ki'Teer", tier: row.active ? 'Active' : 'Away', factionLocation: row.location || '', rewards: 'Void trader inventory', detail: tennoIso(row.start) ? `Starts ${tennoIso(row.start)}` : '', expiresAt: tennoIso(row.end) }))),
           genericDetail('daily-deal', "Darvo's Deal", dailyDeals.map((row, index) => ({ id: `deal-${index}`, name: row.item?.name || 'Daily Deal', tier: `${row.price ?? '?'} credits`, factionLocation: 'Market', rewards: `${row.originalPrice ?? '?'} original credits`, detail: `${row.sold ?? 0}/${row.stock ?? '?'} sold`, expiresAt: tennoIso(row.end) }))),
           genericDetail('faction-projects', 'Faction Projects', factionProjects.map((row, index) => ({ id: `project-${index}`, name: row.type || 'Faction Project', tier: `${Math.round(row.progress || 0)}%`, factionLocation: row.id || '', rewards: 'World event progress', detail: `${(row.progressHistory || []).length} history points` })))
-        ] }
-      ];
+        ])
+      ].filter(Boolean);
     }
 
     function loadingDashboardCategories(message) {
@@ -1998,13 +2010,14 @@ function runBootSequence() {
       if (!detail) {
         return '<div class="panel-card p-5 text-sm text-green-200/75">Select a card above to inspect detailed mission rows for that section.</div>';
       }
+      const timerText = detail.expiresAt ? ` // ${formatDashboardCountdown(detail.expiresAt)}` : '';
       return `
         <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
           <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
             <div>
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Selected Section</div>
               <h5 class="text-xl font-bold">${escapeHtml(detail.title)}</h5>
-              <p class="text-xs text-green-200/70 mt-2">${escapeHtml(detail.source)} // ${formatDashboardCountdown(detail.expiresAt)}</p>
+              <p class="text-xs text-green-200/70 mt-2">${escapeHtml(detail.source)}${timerText}</p>
             </div>
             <button class="terminal-link border border-terminal px-4 py-2 text-xs uppercase tracking-widest" type="button" data-dashboard-detail-close="${escapeHtml(category.id)}">Close Details</button>
           </div>
@@ -2014,6 +2027,7 @@ function runBootSequence() {
     }
 
     function renderInlineSelectedDetailPanel(category, detail) {
+      const timerText = detail.expiresAt ? ` // ${formatDashboardCountdown(detail.expiresAt)}` : '';
       return `
         <div class="md:col-span-2 xl:col-span-3">
           <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
@@ -2021,7 +2035,7 @@ function runBootSequence() {
               <div>
                 <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Selected Section</div>
                 <h5 class="text-xl font-bold">${escapeHtml(detail.title)}</h5>
-                <p class="text-xs text-green-200/70 mt-2">${escapeHtml(detail.source)} // ${formatDashboardCountdown(detail.expiresAt)}</p>
+                <p class="text-xs text-green-200/70 mt-2">${escapeHtml(detail.source)}${timerText}</p>
               </div>
               <button class="terminal-link border border-terminal px-4 py-2 text-xs uppercase tracking-widest" type="button" data-dashboard-detail-close="${escapeHtml(category.id)}">Close Details</button>
             </div>
@@ -2064,6 +2078,7 @@ function runBootSequence() {
     }
 
     function renderTrackerCategory(category) {
+      if (!category?.error && !category?.cards?.length) return '';
       if (isInteractiveCategory(category)) return renderInteractiveCategory(category);
       return `
         <section class="space-y-3">
