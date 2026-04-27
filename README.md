@@ -1,6 +1,6 @@
 # 🚀 Orbiter OS
 
-A modern Warframe companion dashboard featuring live worldstate tracking, integrated market data, and a clean mobile-friendly interface.
+A modern Warframe companion dashboard featuring live tracking, integrated market data, and a clean mobile-first interface.
 
 ---
 
@@ -8,38 +8,48 @@ A modern Warframe companion dashboard featuring live worldstate tracking, integr
 
 ### 📊 Dashboard
 
-* Live Warframe worldstate data
+* Live Warframe data overview
 * Alerts, Fissures, Sorties, Invasions, Nightwave
-* Open world cycles (Cetus, Fortuna, Deimos)
+* Open-world cycles (when available)
 
 ### 📡 Trackers
 
-* Dedicated tracking section for real-time timers
-* Clean, easy-to-read cards
-* Auto-updating data from worldstate API
+* Powered by Tenno Tools API
+* Displays only **available live data** (no empty or broken sections)
+* Real-time timers with no negative values
+* Auto-refresh every 30–60 seconds
+* Clean, dynamic layout that adapts to available data
 
 ### 🛒 Market
 
-* Integrated Warframe Market search
+* Integrated Warframe Market API
 * Auto-complete item search
-* Displays **all in-game sellers**
-* Sorted by cheapest platinum price
-* Copy whisper button with "Copied" state
+* Shows **all in-game sellers**
+* Sorted by lowest platinum price
+* Copy whisper button with persistent "Copied" state
 
 ### 📚 Codex
 
-* Wiki-powered summaries using official Warframe Wiki API
-* Clean info panels without scraping
+* Uses Warframe Wiki API (MediaWiki)
+* Clean summaries without scraping
 
-### 🛠️ Backend API
+---
 
-* Custom proxy backend (hosted on Railway)
-* Fixes CORS issues (works on mobile + desktop)
-* Endpoints:
+## 🛠️ Backend API
 
-  * `/api/worldstate`
-  * `/api/market/search`
-  * `/api/market/orders/:item`
+Custom proxy backend hosted on Railway to:
+
+* Fix CORS issues
+* Support mobile devices
+* Provide stable API endpoints
+
+### Endpoints
+
+```http
+GET /api/worldstate
+GET /api/market/search?q=item_name
+GET /api/market/orders/{item_url_name}
+```
 
 ---
 
@@ -54,47 +64,34 @@ A modern Warframe companion dashboard featuring live worldstate tracking, integr
 
 ---
 
-## 🚆 API Usage
+## 🔗 API Sources
 
-### Worldstate
-
-```http
-GET /api/worldstate
-```
-
-### Market Search
-
-```http
-GET /api/market/search?q=item_name
-```
-
-### Market Orders
-
-```http
-GET /api/market/orders/{item_url_name}
-```
+* Tenno Tools API (worldstate)
+* Warframe Market API (trading)
+* Warframe Wiki API (codex)
 
 ---
 
 ## 📱 Mobile Support
 
 * Fully responsive layout
-* Fixed top navigation
-* Horizontal scroll for tabs
+* Fixed/sticky navigation bar
+* Horizontal scroll tabs
 * Boot screen closes on tap
 * Optimized for vertical phone screens
 
 ---
 
-## ⚠️ Notes
+## ⚠️ Behavior
 
-* Uses Warframe Market API (v1 for compatibility)
-* Uses WarframeStat.us for worldstate data
-* No scraping is used — API only
+* Only shows **valid, available data**
+* Removes empty or unavailable tracker sections
+* Uses a single API request for worldstate
+* No website scraping — API only
 
 ---
 
-## 🚀 Deployment
+## 🚆 Deployment
 
 ### Backend (Railway)
 
@@ -103,40 +100,41 @@ GET /api/market/orders/{item_url_name}
 3. Deploy automatically
 4. Generate public domain
 
-### Frontend
+### Frontend (GitHub Pages)
 
-* Hosted via GitHub Pages
+* Hosted at:
+  https://inherentmess.github.io/ORBITER_OS_V2.5/
 * Connects to Railway API
 
 ---
 
 ## 🧠 Future Improvements
 
-* Switch to Warframe Market v2 API
-* Add caching layer for performance
-* User settings / saved trackers
-* Notifications for events
+* Improve caching for faster load times
+* Add user preferences / saved trackers
+* Notifications for important events
+* Further UI polish and animations
 
 ---
 
 ## 📌 Status
 
 🟢 Active development
-⚡ Optimized for speed and mobile use
+⚡ Optimized for performance and mobile
 🔧 Continuously improving
 
 ---
 
 ## 👾 Credits
 
-* Warframe Market API
-* WarframeStat.us API
+* Tenno Tools API
+* Warframe Market
 * Warframe Wiki
 * Digital Extremes (Warframe)
 
 ---
 
-## 💬 Notes
+## 💬 Disclaimer
 
 This project is not affiliated with Digital Extremes.
 Built as a community tool for Warframe players.
