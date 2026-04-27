@@ -7,10 +7,11 @@ function normalizeApiBase(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+const API_BASE = "https://orbiter-os.up.railway.app";
 const API_BASE_URL = normalizeApiBase(
   window.ORBITER_API_BASE_URL ||
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
-  (window.location.protocol === 'http:' || window.location.protocol === 'https:' ? window.location.origin : '')
+  API_BASE
 );
 
 function buildApiUrl(path) {
