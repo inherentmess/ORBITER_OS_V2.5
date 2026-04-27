@@ -286,6 +286,9 @@
         <button data-section="dashboard" class="nav-btn nav-active text-terminal px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
           <span class="material-symbols-outlined text-sm">terminal</span> Dashboard
         </button>
+        <button data-section="trackers" class="nav-btn text-terminal opacity-80 px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
+          <span class="material-symbols-outlined text-sm">radar</span> Trackers
+        </button>
         <button data-section="arsenal" class="nav-btn text-terminal opacity-80 px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
           <span class="material-symbols-outlined text-sm">shield</span> Arsenal
         </button>
@@ -333,7 +336,6 @@
           <div class="flex flex-wrap gap-3" data-subtabs="dashboard">
             <button class="subtab-btn subtab-active border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="dash-overview">Overview</button>
             <button class="subtab-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="dash-links">Links</button>
-            <button class="subtab-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="dash-trackers">Trackers</button>
           </div>
 
           <div class="space-y-4">
@@ -383,20 +385,28 @@
               </div>
             </div>
 
-            <div id="dash-trackers" class="subpanel hidden-panel space-y-4">
-              <div class="panel-card p-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-                <div>
-                  <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">World-State Trackers</div>
-                <h3 class="text-lg font-bold">WarframeStat.us live state</h3>
-                <p class="text-sm text-green-200/85 mt-2">Live cycle and activity cards through the local backend proxy.</p>
-                <p class="text-[10px] text-terminal/60 mt-2 uppercase tracking-[0.2em]">Data credit // WarframeStat.us</p>
-                </div>
-                <div id="dashboardTrackerStatus" class="text-[10px] uppercase tracking-[0.2em] text-terminal/70">Awaiting sync</div>
-              </div>
-              <div id="dashboardTrackerGrid" class="space-y-5">
-                <div class="panel-card p-5 text-sm text-green-200/80">Tracker data will load here.</div>
-              </div>
+          </div>
+        </section>
+
+        <section id="section-trackers" class="content-section hidden-panel space-y-6">
+          <div>
+            <div class="text-[10px] text-green-700 font-bold mb-3 tracking-[0.2em]">SECTION // TRACKERS</div>
+            <h1 class="text-3xl font-black tracking-tight">World-State Trackers</h1>
+            <p class="text-sm text-green-300/80 mt-2 max-w-3xl">Live Warframe rotations from the backend worldstate proxy: alerts, fissures, sorties, Nightwave, invasions, and open-world cycles.</p>
+          </div>
+
+          <div class="panel-card p-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+            <div>
+              <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">WarframeStat.us live state</div>
+              <h3 class="text-lg font-bold">Current activity feed</h3>
+              <p class="text-sm text-green-200/85 mt-2">Timers and rotating content load through <span class="text-terminal">/api/worldstate</span>.</p>
+              <p class="text-[10px] text-terminal/60 mt-2 uppercase tracking-[0.2em]">Data credit // WarframeStat.us</p>
             </div>
+            <div id="dashboardTrackerStatus" class="text-[10px] uppercase tracking-[0.2em] text-terminal/70">Awaiting sync</div>
+          </div>
+
+          <div id="dashboardTrackerGrid" class="space-y-5">
+            <div class="panel-card p-5 text-sm text-green-200/80">Tracker data will load here.</div>
           </div>
         </section>
 

@@ -315,7 +315,7 @@ function runBootSequence() {
       });
 
       setSectionOpen('dashboard', true);
-      ['arsenal', 'market', 'codex'].forEach(name => setSectionOpen(name, false));
+      ['trackers', 'arsenal', 'market', 'codex'].forEach(name => setSectionOpen(name, false));
     }
 
     function syncAccordionMode() {
@@ -362,6 +362,9 @@ function runBootSequence() {
       clearHighlights();
       if (sectionName === 'market') {
         ensureMarketCatalog().catch(error => logClientError('market catalog preload', error));
+      }
+      if (sectionName === 'trackers') {
+        refreshDashboardTrackers();
       }
       if (sectionName === 'codex') {
         const codexGroup = document.querySelector('[data-subtabs="codex"]');
@@ -447,7 +450,7 @@ function runBootSequence() {
 
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => {
-        showSection('dashboard');
+        showSection('trackers');
         refreshDashboardTrackers();
         document.querySelectorAll('.subtab-btn').forEach(btn => {
           btn.classList.remove('subtab-active');
