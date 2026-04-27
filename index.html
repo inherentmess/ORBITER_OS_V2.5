@@ -215,17 +215,29 @@
     @media (max-width: 900px) {
       /* Tailwind utilities (h-screen/w-72/overflow-hidden) can override these unless we force them. */
       body { overflow-x: hidden !important; overflow-y: auto !important; }
-      .app-shell { flex-direction: column; height: auto !important; min-height: 100dvh; overflow: visible !important; }
-      .app-nav {
-        width: 100% !important;
+      .app-shell {
+        flex-direction: column;
         height: auto !important;
+        min-height: 100dvh;
+        overflow: visible !important;
+        padding-top: 74px;
+      }
+      .app-nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 120;
+        width: 100% !important;
+        height: 74px !important;
         border-right: 0;
         border-bottom: 2px solid #4ade80;
         flex-direction: row;
         align-items: center;
         gap: 12px;
-        padding: 10px 12px;
+        padding: 8px 10px;
         overflow-x: hidden;
+        overflow-y: hidden;
       }
       .app-nav .mb-8 { margin-bottom: 0; }
       .app-nav .mb-8 .text-xl { font-size: 0.95rem; }
@@ -235,14 +247,36 @@
         flex-wrap: nowrap;
         gap: 8px;
         overflow-x: auto;
+        overflow-y: hidden;
         -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        min-width: 0;
+        flex: 1 1 auto;
+        padding-bottom: 4px;
       }
-      #navButtons .nav-btn { white-space: nowrap; flex: 0 0 auto; }
-      #refreshBtn { margin-top: 0 !important; margin-left: auto; padding: 10px 12px; }
+      #navButtons .nav-btn {
+        white-space: nowrap;
+        flex: 0 0 auto;
+        min-width: max-content;
+        padding: 10px 12px;
+      }
+      #refreshBtn {
+        margin-top: 0 !important;
+        margin-left: 0;
+        flex: 0 0 auto;
+        padding: 10px 12px;
+        white-space: nowrap;
+      }
       .nav-btn, .subtab-btn, .terminal-link, button[data-dashboard-detail-select], button[data-dashboard-detail-close] {
         min-height: 44px;
       }
-      .app-main { height: auto !important; flex: 1; min-height: 0; overflow-y: visible !important; }
+      .app-main {
+        height: auto !important;
+        flex: 1;
+        min-height: 0;
+        overflow-y: visible !important;
+      }
+      .app-header { position: static !important; top: auto !important; }
 
       /* Stack everything vertically on phones/tablets. */
       .app-main .grid { grid-template-columns: 1fr !important; }
@@ -255,6 +289,12 @@
 
     /* Phone ergonomics: avoid iOS zoom on inputs and tighten padding. */
     @media (max-width: 520px) {
+      .app-shell { padding-top: 64px; }
+      .app-nav { height: 64px !important; gap: 8px; padding: 7px 8px; }
+      .app-nav .mb-8 .text-xl { font-size: 0.75rem; max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #refreshBtn { padding: 10px; font-size: 0; }
+      #refreshBtn::after { content: "refresh"; font-size: 10px; letter-spacing: 0.14em; }
+      #navButtons .nav-btn { padding: 10px; font-size: 10px; }
       input, select, textarea { font-size: 16px !important; }
       .panel-card { padding: 16px !important; }
       #marketResults, #marketSellOrders, #marketBuyOrders { max-height: 45vh; }

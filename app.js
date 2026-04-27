@@ -107,6 +107,8 @@ const Sound = createSoundSystem();
 
 const MOBILE_ACCORDION_QUERY = '(max-width: 900px)';
 const accordionMql = typeof window.matchMedia === 'function' ? window.matchMedia(MOBILE_ACCORDION_QUERY) : null;
+const touchMql = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)') : null;
+const isMobileOrTouch = () => Boolean(accordionMql?.matches || touchMql?.matches || navigator.maxTouchPoints > 0);
 const sectionAccordionState = {
   enabled: Boolean(accordionMql?.matches),
   bodies: new Map(),
@@ -160,6 +162,12 @@ function runBootSequence() {
   const continueBtn = document.getElementById('bootContinueBtn');
   const closeBtn = document.getElementById('bootCloseBtn');
   if (!overlay || !linesEl) return;
+  if (sessionStorage.getItem('orbiter_boot_closed') === '1' || isMobileOrTouch()) {
+    sessionStorage.setItem('orbiter_boot_closed', '1');
+    overlay.classList.add('hidden');
+    overlay.remove();
+    return;
+  }
 
   const lines = [
     '[LINK_ESTABLISHED]  Cephalon_Link online',
@@ -176,6 +184,7 @@ function runBootSequence() {
   const closeOverlay = () => {
     if (cancelled) return;
     cancelled = true;
+    sessionStorage.setItem('orbiter_boot_closed', '1');
 
     // Animate out via CSS, then remove only after it completes.
     overlay.classList.add('closing');
@@ -197,11 +206,13 @@ function runBootSequence() {
   // Only explicit interactions should close the welcome screen.
   if (continueBtn) continueBtn.addEventListener('click', closeOverlay);
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
-  overlay.addEventListener('click', (e) => {
-    if (!sectionAccordionState.enabled) return;
-    if (e.target?.closest?.('button')) return;
+  const closeFromTouch = (e) => {
+    if (!isMobileOrTouch()) return;
+    e.preventDefault();
     closeOverlay();
-  });
+  };
+  overlay.addEventListener('click', closeFromTouch);
+  overlay.addEventListener('touchstart', closeFromTouch, { passive: false });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
