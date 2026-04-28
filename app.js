@@ -2116,7 +2116,7 @@ function runBootSequence() {
         ? '<div class="panel-card p-5 text-sm text-green-200/75">Select a card below to inspect detailed rows for that section.</div>'
         : '';
       return `
-        <section class="space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
+        <section class="tracker-category-shell space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
           ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
           ${!category.error ? hint : ''}
@@ -2134,7 +2134,7 @@ function runBootSequence() {
       if (!category?.error && !category?.cards?.length) return '';
       if (isInteractiveCategory(category)) return renderInteractiveCategory(category);
       return `
-        <section class="space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
+        <section class="tracker-category-shell space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
           ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
           ${!category.error && !category.cards.length ? '<div class="panel-card p-5 text-sm text-green-200/75">No world-state data returned for this category.</div>' : ''}
@@ -2156,6 +2156,58 @@ function runBootSequence() {
       bindDashboardTrackerEvents();
     }
 
+    function animateTrackerReorder(applyChange) {
+      if (!dashboardTrackerGrid || typeof applyChange !== 'function') return;
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      if (reduceMotion) {
+        applyChange();
+        return;
+      }
+
+      const beforeRects = new Map(
+        [...dashboardTrackerGrid.querySelectorAll('[data-tracker-category]')]
+          .map(section => [section.dataset.trackerCategory || '', section.getBoundingClientRect()])
+      );
+
+      applyChange();
+
+      const movedSections = [...dashboardTrackerGrid.querySelectorAll('[data-tracker-category]')];
+      movedSections.forEach(section => {
+        const id = section.dataset.trackerCategory || '';
+        const before = beforeRects.get(id);
+        if (!before) return;
+        const after = section.getBoundingClientRect();
+        const dx = before.left - after.left;
+        const dy = before.top - after.top;
+        if (!dx && !dy) return;
+        section.classList.add('tracker-category--moving');
+        section.style.transition = 'none';
+        section.style.transform = `translate(${dx}px, ${dy}px)`;
+      });
+
+      dashboardTrackerGrid.offsetHeight;
+
+      movedSections.forEach(section => {
+        if (!section.classList.contains('tracker-category--moving')) return;
+        section.style.transition = '';
+        section.style.transform = '';
+        const cleanup = () => {
+          section.classList.remove('tracker-category--moving');
+          section.style.transition = '';
+          section.style.transform = '';
+          section.removeEventListener('transitionend', cleanup);
+        };
+        section.addEventListener('transitionend', cleanup);
+        window.setTimeout(cleanup, 360);
+      });
+    }
+
+    function clearTrackerDropTargets() {
+      dashboardTrackerGrid?.querySelectorAll('.tracker-category--drop-target').forEach(section => {
+        section.classList.remove('tracker-category--drop-target');
+      });
+    }
+
     function persistCurrentTrackerOrder() {
       saveTrackerOrder((dashboardTrackerState.categories || []).map(category => category.id));
     }
@@ -2168,10 +2220,12 @@ function runBootSequence() {
       if (nextIndex < 0 || nextIndex >= categories.length) return;
       [categories[index], categories[nextIndex]] = [categories[nextIndex], categories[index]];
       setTrackerSortMode('custom');
-      dashboardTrackerState.categories = categories;
-      persistCurrentTrackerOrder();
-      renderDashboardTrackerCards();
-      updateDashboardCountdowns();
+      animateTrackerReorder(() => {
+        dashboardTrackerState.categories = categories;
+        persistCurrentTrackerOrder();
+        renderDashboardTrackerCards();
+        updateDashboardCountdowns();
+      });
     }
 
     function bindTrackerOrderingEvents() {
@@ -2184,10 +2238,14 @@ function runBootSequence() {
         handle.addEventListener('dragstart', event => {
           draggedId = handle.dataset.trackerDrag || '';
           event.dataTransfer?.setData('text/plain', draggedId);
-          handle.closest('[data-tracker-category]')?.classList.add('opacity-50');
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+          dashboardTrackerGrid.classList.add('tracker-grid--dragging');
+          handle.closest('[data-tracker-category]')?.classList.add('tracker-category--dragging');
         });
         handle.addEventListener('dragend', () => {
-          handle.closest('[data-tracker-category]')?.classList.remove('opacity-50');
+          handle.closest('[data-tracker-category]')?.classList.remove('tracker-category--dragging');
+          dashboardTrackerGrid.classList.remove('tracker-grid--dragging');
+          clearTrackerDropTargets();
           draggedId = '';
         });
       });
@@ -2196,12 +2254,17 @@ function runBootSequence() {
         section.addEventListener('dragover', event => {
           if (!draggedId) return;
           event.preventDefault();
-          section.classList.add('ring-1', 'ring-terminal');
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+          clearTrackerDropTargets();
+          section.classList.add('tracker-category--drop-target');
         });
-        section.addEventListener('dragleave', () => section.classList.remove('ring-1', 'ring-terminal'));
+        section.addEventListener('dragleave', event => {
+          if (section.contains(event.relatedTarget)) return;
+          section.classList.remove('tracker-category--drop-target');
+        });
         section.addEventListener('drop', event => {
           event.preventDefault();
-          section.classList.remove('ring-1', 'ring-terminal');
+          clearTrackerDropTargets();
           const sourceId = event.dataTransfer?.getData('text/plain') || draggedId;
           const targetId = section.dataset.trackerCategory || '';
           if (!sourceId || !targetId || sourceId === targetId) return;
@@ -2212,10 +2275,12 @@ function runBootSequence() {
           const [moved] = categories.splice(sourceIndex, 1);
           categories.splice(targetIndex, 0, moved);
           setTrackerSortMode('custom');
-          dashboardTrackerState.categories = categories;
-          persistCurrentTrackerOrder();
-          renderDashboardTrackerCards();
-          updateDashboardCountdowns();
+          animateTrackerReorder(() => {
+            dashboardTrackerState.categories = categories;
+            persistCurrentTrackerOrder();
+            renderDashboardTrackerCards();
+            updateDashboardCountdowns();
+          });
         });
       });
     }
