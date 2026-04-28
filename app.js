@@ -25,9 +25,20 @@ const API_BASE_URL = normalizeApiBase(
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
   API_BASE
 );
+const MARKET_PROXY_URL = normalizeApiBase(
+  window.MARKET_PROXY_URL ||
+  window.ORBITER_MARKET_PROXY_URL ||
+  document.querySelector('meta[name="orbiter-market-proxy-url"]')?.content ||
+  ''
+);
 
 function buildApiUrl(path) {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+function buildMarketProxyUrl(path) {
+  if (!MARKET_PROXY_URL) throw new Error('Market proxy required');
+  return `${MARKET_PROXY_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function hydrateApiLinks() {
@@ -2724,23 +2735,31 @@ function runBootSequence() {
     }
 
     async function fetchMarketJson(path) {
-      const url = apiUrl(path);
-      logRequest('market backend', url);
+      const url = buildMarketProxyUrl(path);
+      logRequest('market proxy', url);
       const response = await fetch(url, { cache: path.includes('/orders/') ? 'no-store' : 'force-cache' });
-      logResponse('market backend', response);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const json = await parseJsonResponse(response, 'market backend');
-      marketState.activeSource = json?.source || 'backend';
+      logResponse('market proxy', response);
+      if (!response.ok) throw new Error(`market proxy HTTP ${response.status} from ${url}`);
+      const json = await parseJsonResponse(response, 'market proxy');
+      marketState.activeSource = json?.source || 'cloudflare-worker';
       return json;
     }
 
     async function ensureMarketCatalog() {
+      if (!MARKET_PROXY_URL) {
+        marketState.catalog = [];
+        marketState.loaded = false;
+        marketState.failed = true;
+        marketState.error = new Error('Market proxy required');
+        setMarketStatus('Market proxy required');
+        throw marketState.error;
+      }
       if (marketState.loaded) return marketState.catalog;
       if (marketState.loading && marketState.loadPromise) return marketState.loadPromise;
       marketState.loading = true;
       marketState.failed = false;
       marketState.error = null;
-      setMarketStatus('Catalog sync...');
+      setMarketStatus('Catalog sync via market proxy...');
 
       marketState.loadPromise = (async () => {
         const data = await fetchMarketJson('/api/market/search?q=');
@@ -2770,16 +2789,18 @@ function runBootSequence() {
       try {
         return await marketState.loadPromise;
       } catch (error) {
-        const reason = error?.message?.includes('HTTP')
-          ? 'bad endpoint or HTTP error'
+        const reason = error?.message === 'Market proxy required'
+          ? 'Market proxy required'
+          : error?.message?.includes('HTTP')
+            ? 'market proxy endpoint or HTTP error'
           : error?.message?.includes('parse error')
             ? 'parse error'
-            : 'network or CORS blocked';
+            : 'network/CORS/proxy blocked';
         marketState.catalog = [];
         marketState.loaded = false;
         marketState.failed = true;
         marketState.error = error;
-        setMarketStatus(`Catalog failed: ${reason}`);
+        setMarketStatus(reason === 'Market proxy required' ? reason : `Catalog failed: ${reason}`);
         logClientError('market catalog fetch', error);
         throw error;
       } finally {
@@ -2858,7 +2879,10 @@ function runBootSequence() {
       if (!items.length) {
         if (!marketState.loaded || marketState.failed) {
           const reason = marketState.error?.message || 'catalog did not finish loading';
-          marketResults.innerHTML = `<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Catalog failed: cannot search "${marketNorm(query)}". Reason: ${reason}</div>`;
+          const text = reason === 'Market proxy required'
+            ? 'Market proxy required'
+            : `Catalog failed: cannot search "${marketNorm(query)}". Reason: ${reason}`;
+          marketResults.innerHTML = `<div class="border border-terminal/25 p-3 text-sm text-green-200/80">${text}</div>`;
           return;
         }
         marketResults.innerHTML = `<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Empty result: no v2 market item name matched "${marketNorm(query)}" in ${marketState.catalog.length} loaded items.</div>`;
@@ -3257,11 +3281,13 @@ function runBootSequence() {
         renderFilteredMarketOrders();
         setMarketStatus(`Item live (${marketState.activeSource})`);
       } catch (error) {
-        const reason = error?.message?.includes('HTTP')
-          ? 'bad endpoint or HTTP error'
+        const reason = error?.message === 'Market proxy required'
+          ? 'Market proxy required'
+          : error?.message?.includes('HTTP')
+            ? 'market proxy endpoint or HTTP error'
           : error?.message?.includes('parse error')
             ? 'parse error'
-            : 'network or CORS blocked';
+            : 'network/CORS/proxy blocked';
         marketSelectedMeta.textContent = `Unable to load item data: ${reason}.`;
         marketState.sellOrders = [];
         marketState.buyOrders = [];
@@ -3269,7 +3295,7 @@ function runBootSequence() {
         renderOrderBook(marketBuyOrders, [], 'Order fetch failed.');
         renderMarketStats(null);
         setMarketOrdersUpdated(null);
-        setMarketStatus(`Item failed: ${reason}`);
+        setMarketStatus(reason === 'Market proxy required' ? reason : `Item failed: ${reason}`);
         logClientError('market item load', error, { item: item?.url_name || '' });
       }
     }
@@ -3289,7 +3315,7 @@ function runBootSequence() {
       } catch (error) {
         renderMarketResults([], query);
         hideMarketAutocomplete();
-        setMarketStatus('Search failed: catalog failed');
+        setMarketStatus(error?.message === 'Market proxy required' ? 'Market proxy required' : 'Search failed: catalog failed');
         logClientError('market search catalog gate', error, { query });
         return;
       }
@@ -3417,6 +3443,10 @@ function runBootSequence() {
       else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncMarketUiToViewport);
     }
     setMarketActiveSide(marketUi.activeSide);
+    if (!MARKET_PROXY_URL) {
+      setMarketStatus('Market proxy required');
+      logClientError('market config', new Error('Market proxy required'));
+    }
 
     const codexSearchInput = document.getElementById('codexSearchInput');
     const codexSuggestions = document.getElementById('codexSuggestions');
