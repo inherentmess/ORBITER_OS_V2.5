@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "autopush": "node scripts/autopush.mjs"
+    "autopush": "node scripts/autopush.mjs",
+    "worker:deploy": "cd cloudflare-worker && npx wrangler deploy",
+    "worker:deploy:cmd": "cd cloudflare-worker && \"C:\\Program Files\\nodejs\\npx.cmd\" wrangler deploy",
+    "worker:check": "cd cloudflare-worker && npx wrangler deploy --dry-run"
   },
   "engines": {
     "node": ">=18"
