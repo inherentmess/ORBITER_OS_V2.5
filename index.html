@@ -5,6 +5,18 @@
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <meta name="orbiter-api-base" content="https://orbiter-os.up.railway.app">
   <title>Orbiter OS // Warframe Terminal</title>
+  <script>
+    (function () {
+      try {
+        var params = new URLSearchParams(window.location.search);
+        var value = (params.get('embed') || '').toLowerCase();
+        var enabled = value === 'true' || value === '1' || value === 'yes';
+        if (!enabled) return;
+        window.ORBITER_EMBED_MODE = true;
+        document.documentElement.classList.add('embed-mode');
+      } catch {}
+    })();
+  </script>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700;900&display=swap" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -304,6 +316,7 @@
 
     /* Trackers */
     .tracker-control-bar {
+      position: relative;
       display: flex;
       flex-wrap: wrap;
       align-items: flex-end;
@@ -313,6 +326,96 @@
     .tracker-control-copy {
       flex: 1 1 320px;
       min-width: 0;
+    }
+    .tracker-drag-hint {
+      margin-top: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(121, 247, 168, 0.74);
+    }
+    .tracker-drag-hint-icon {
+      display: inline-flex;
+      width: 16px;
+      justify-content: center;
+      color: rgba(121, 247, 168, 0.92);
+      font-weight: 700;
+    }
+    .tracker-drag-tooltip {
+      position: absolute;
+      right: 14px;
+      top: 10px;
+      max-width: min(280px, calc(100% - 28px));
+      padding: 8px 10px;
+      border: 1px solid rgba(74, 222, 128, 0.78);
+      background: rgba(0, 0, 0, 0.88);
+      color: rgba(200, 255, 217, 0.92);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms ease;
+      z-index: 3;
+    }
+    .tracker-drag-tooltip::before {
+      content: "";
+      position: absolute;
+      right: 20px;
+      top: -6px;
+      width: 10px;
+      height: 10px;
+      background: rgba(0, 0, 0, 0.88);
+      border-left: 1px solid rgba(74, 222, 128, 0.78);
+      border-top: 1px solid rgba(74, 222, 128, 0.78);
+      transform: rotate(45deg);
+    }
+    .tracker-drag-tooltip.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .tracker-drag-tooltip.is-fading {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+
+    /* Embed mode (?embed=true): compact iframe-friendly layout. */
+    html.embed-mode,
+    html.embed-mode body {
+      overflow: auto !important;
+      max-width: 100%;
+    }
+    html.embed-mode .boot-overlay,
+    html.embed-mode .crt-overlay,
+    html.embed-mode .scanlines,
+    html.embed-mode .app-nav {
+      display: none !important;
+    }
+    html.embed-mode .app-shell {
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+      padding-top: 0 !important;
+    }
+    html.embed-mode .app-main {
+      height: auto !important;
+      min-height: 0 !important;
+      overflow-y: auto !important;
+      padding-bottom: 12px !important;
+    }
+    html.embed-mode .app-header {
+      position: static !important;
+      top: auto !important;
+      z-index: 1 !important;
+      padding: 8px 12px !important;
+      gap: 8px !important;
+      border-bottom-width: 1px !important;
+    }
+    html.embed-mode .app-main > .p-4 {
+      padding: 12px !important;
     }
     .tracker-control-field {
       flex: 0 1 420px;
@@ -387,6 +490,11 @@
       min-height: 40px;
       touch-action: manipulation;
     }
+    .tracker-drag-handle span {
+      font-size: 14px;
+      letter-spacing: 0.05em;
+      line-height: 1;
+    }
     .tracker-category-header {
       display: flex;
       flex-direction: column;
@@ -435,6 +543,7 @@
         flex-direction: column;
         align-items: stretch;
       }
+      .tracker-drag-tooltip { right: 10px; top: 8px; max-width: calc(100% - 20px); }
       .tracker-card-grid { grid-template-columns: 1fr; gap: 12px; }
       .tracker-drag-handle { display: none; }
       .tracker-move-btn { flex: 1 1 0; padding: 9px 10px; }
@@ -590,6 +699,7 @@
             <div class="tracker-control-copy">
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Category Order</div>
               <p class="text-xs text-green-200/70 mt-1">Drag category headers, use move buttons, or choose a sort mode.</p>
+              <div class="tracker-drag-hint"><span class="tracker-drag-hint-icon">≡</span>Drag to reorder</div>
             </div>
             <div class="tracker-control-field">
               <label class="tracker-control-label" for="trackerSortMode">Sort Order</label>
@@ -603,6 +713,7 @@
               <button id="trackerResetOrderBtn" class="tracker-action-btn terminal-link" type="button">Reset Order</button>
               </div>
             </div>
+            <div id="trackerDragTooltip" class="tracker-drag-tooltip">Hold and drag to reorder</div>
           </div>
 
           <div id="dashboardTrackerGrid" class="space-y-5">

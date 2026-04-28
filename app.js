@@ -3,6 +3,18 @@ const sections = document.querySelectorAll('.content-section');
 const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
+
+function detectEmbedMode() {
+  if (window.ORBITER_EMBED_MODE) return true;
+  try {
+    const value = (new URLSearchParams(window.location.search).get('embed') || '').toLowerCase();
+    return value === 'true' || value === '1' || value === 'yes';
+  } catch {
+    return false;
+  }
+}
+
+const EMBED_MODE = detectEmbedMode();
 function normalizeApiBase(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
@@ -162,6 +174,13 @@ function runBootSequence() {
   const hintEl = document.getElementById('bootHint');
   const continueBtn = document.getElementById('bootContinueBtn');
   const closeBtn = document.getElementById('bootCloseBtn');
+  if (EMBED_MODE) {
+    if (overlay) {
+      overlay.classList.add('hidden');
+      overlay.remove();
+    }
+    return;
+  }
   if (!overlay || !linesEl) return;
   if (sessionStorage.getItem('orbiter_boot_closed') === '1' || isMobileOrTouch()) {
     sessionStorage.setItem('orbiter_boot_closed', '1');
@@ -417,6 +436,7 @@ function runBootSequence() {
         ensureMarketCatalog().catch(error => logClientError('market catalog preload', error));
       }
       if (sectionName === 'trackers') {
+        maybeShowTrackerDragTooltip();
         refreshDashboardTrackers();
       }
       if (sectionName === 'codex') {
@@ -559,10 +579,12 @@ function runBootSequence() {
 
     const dashboardTrackerGrid = document.getElementById('dashboardTrackerGrid');
     const dashboardTrackerStatus = document.getElementById('dashboardTrackerStatus');
+    const trackerDragTooltip = document.getElementById('trackerDragTooltip');
     const trackerSortMode = document.getElementById('trackerSortMode');
     const trackerResetOrderBtn = document.getElementById('trackerResetOrderBtn');
     const TRACKER_ORDER_KEY = 'orbiter_tracker_category_order';
     const TRACKER_SORT_KEY = 'orbiter_tracker_sort_mode';
+    const TRACKER_DRAG_TOOLTIP_SEEN_KEY = 'orbiter_tracker_drag_tooltip_seen';
     const trackerDefaultOrder = ['environments', 'missions', 'bounties', 'syndicate-missions', 'utility'];
     const dashboardTrackerState = {
       categories: [],
@@ -627,6 +649,23 @@ function runBootSequence() {
         renderDashboardTrackerCards();
         updateDashboardCountdowns();
       });
+    }
+
+    let trackerDragTooltipShown = false;
+    function maybeShowTrackerDragTooltip() {
+      if (!trackerDragTooltip || trackerDragTooltipShown) return;
+      trackerDragTooltipShown = true;
+      try {
+        if (localStorage.getItem(TRACKER_DRAG_TOOLTIP_SEEN_KEY) === '1') return;
+        localStorage.setItem(TRACKER_DRAG_TOOLTIP_SEEN_KEY, '1');
+      } catch {}
+      trackerDragTooltip.classList.add('is-visible');
+      window.setTimeout(() => {
+        trackerDragTooltip.classList.add('is-fading');
+      }, 2200);
+      window.setTimeout(() => {
+        trackerDragTooltip.classList.remove('is-visible', 'is-fading');
+      }, 2700);
     }
 
     function ensureDashboardNodeLookup() {
@@ -2111,7 +2150,7 @@ function runBootSequence() {
       return `
         <div class="tracker-category-header">
           <div class="flex items-start gap-3 min-w-0">
-            <button class="tracker-drag-handle border border-terminal/50 px-2 py-1 text-xs text-terminal/80 hover:bg-terminal hover:text-black cursor-grab" type="button" draggable="true" data-tracker-drag="${escapeHtml(category.id)}" aria-label="Drag ${escapeHtml(category.title)}">drag</button>
+            <button class="tracker-drag-handle border border-terminal/50 px-2 py-1 text-xs text-terminal/80 hover:bg-terminal hover:text-black cursor-grab" type="button" draggable="true" data-tracker-drag="${escapeHtml(category.id)}" aria-label="Drag ${escapeHtml(category.title)}"><span aria-hidden="true">≡</span></button>
             <div class="min-w-0">
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Tracker Category</div>
               <h4 class="text-lg font-bold break-words">${escapeHtml(category.title)}</h4>
