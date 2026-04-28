@@ -1,7 +1,14 @@
 const WARFRAME_MARKET_BASE = 'https://api.warframe.market/v2';
 
 function corsHeaders(request) {
-  const origin = request.headers.get('Origin') || '*';
+  let origin = '*';
+  try {
+    if (request && request.headers && typeof request.headers.get === 'function') {
+      origin = request.headers.get('Origin') || '*';
+    }
+  } catch (error) {
+    console.error('[market-proxy] cors header read failed', error?.message || String(error));
+  }
   return {
     'access-control-allow-origin': origin,
     'access-control-allow-methods': 'GET, OPTIONS',
@@ -104,7 +111,7 @@ async function handleSearch(url) {
   const upstream = `${WARFRAME_MARKET_BASE}/items`;
   const result = await fetchJson(upstream);
   if (!result.ok) {
-    return json(url, { error: result.error, upstreamUrl: result.upstreamUrl || upstream, source: 'cloudflare-worker', items: [] }, result.status);
+    return json(null, { error: result.error, upstreamUrl: result.upstreamUrl || upstream, source: 'cloudflare-worker', items: [] }, result.status);
   }
 
   const rawItems = result.data?.data || result.data?.payload?.items || [];
@@ -113,7 +120,7 @@ async function handleSearch(url) {
     ? allItems
     : allItems.filter(item => item.item_name.toLowerCase().includes(q) || item.url_name.toLowerCase().includes(q));
 
-  return json(url, {
+  return json(null, {
     source: 'cloudflare-worker',
     count: filtered.length,
     items: filtered
@@ -158,14 +165,14 @@ async function handleOrders(requestUrl, itemUrlName) {
 
 export default {
   async fetch(request) {
-    if (request.method === 'OPTIONS') {
-      return json(request, { ok: true }, 204, { 'cache-control': 'no-store' });
-    }
-    if (request.method !== 'GET') {
-      return json(request, { error: 'method_not_allowed' }, 405);
-    }
-
     try {
+      if (request.method === 'OPTIONS') {
+        return json(request, { ok: true }, 204, { 'cache-control': 'no-store' });
+      }
+      if (request.method !== 'GET') {
+        return json(request, { error: 'method_not_allowed' }, 405);
+      }
+
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, '');
       console.log(`[market-proxy] incoming route: ${path} query=${url.search}`);
@@ -185,6 +192,10 @@ export default {
         routes: ['/api/market/search?q=', '/api/market/orders/:item']
       });
     } catch (error) {
+      console.error('[market-proxy] unhandled exception', {
+        message: error?.message || String(error),
+        stack: error?.stack || 'no_stack'
+      });
       return json(request, { error: `worker_error: ${error.message}`, source: 'cloudflare-worker' }, 500);
     }
   }
