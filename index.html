@@ -4,6 +4,20 @@
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <meta name="orbiter-api-base" content="https://orbiter-os.up.railway.app">
+  <meta name="description" content="ORBITER OS terminal companion for Warframe with Trackers, Market, Arsenal, and Codex."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:title" content="ORBITER OS // Warframe Terminal"/>
+  <meta property="og:description" content="Trackers, Market, Arsenal, and Codex in a retro green-on-black terminal UI."/>
+  <meta property="og:url" content="https://inherentmess.github.io/ORBITER_OS_V2.5/"/>
+  <meta property="og:image" content="https://inherentmess.github.io/ORBITER_OS_V2.5/preview.png"/>
+  <meta property="og:image:width" content="1200"/>
+  <meta property="og:image:height" content="630"/>
+  <meta property="og:image:alt" content="ORBITER OS Warframe terminal interface preview"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="ORBITER OS // Warframe Terminal"/>
+  <meta name="twitter:description" content="Trackers, Market, Arsenal, and Codex in a retro green-on-black terminal UI."/>
+  <meta name="twitter:url" content="https://inherentmess.github.io/ORBITER_OS_V2.5/"/>
+  <meta name="twitter:image" content="https://inherentmess.github.io/ORBITER_OS_V2.5/preview.png"/>
   <title>Orbiter OS // Warframe Terminal</title>
   <script>
     (function () {
@@ -517,15 +531,6 @@
       position: relative;
       z-index: 2;
     }
-    .tracker-detail-panel { border-color: rgba(74, 222, 128, 0.58); }
-    .tracker-detail-panel--missions-rotations { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.12); }
-    .tracker-detail-panel--syndicates-bounties { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.15); }
-    .tracker-detail-panel--environment-cycles { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.10); }
-    .tracker-detail-panel--fissures { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.18); }
-    .tracker-detail-panel--invasions { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.18); }
-    .tracker-detail-panel--archimedea { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.2); }
-    .tracker-modal__panel { width: min(1040px, calc(100% - 20px)); }
-    .tracker-modal__list { padding: 12px; overflow: auto; flex: 1; }
     .tracker-card {
       min-width: 0;
       padding: 16px;
@@ -566,7 +571,6 @@
       .tracker-card-grid { grid-template-columns: 1fr; gap: 12px; }
       .tracker-drag-handle { display: none; }
       .tracker-move-btn { flex: 1 1 0; padding: 9px 10px; }
-      .tracker-modal__list { padding: 10px; }
     }
   </style>
 </head>
@@ -1030,24 +1034,6 @@
 
       <div id="marketModalList" class="terminal-modal__list">
         <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select an item to view orders.</div>
-      </div>
-    </div>
-  </div>
-
-  <div id="trackerModal" class="terminal-modal" data-open="0" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Tracker details">
-    <div class="terminal-modal__backdrop"></div>
-    <div class="terminal-modal__panel tracker-modal__panel">
-      <div class="terminal-modal__header">
-        <div>
-          <div class="terminal-modal__title" id="trackerModalTitle">Tracker Details</div>
-          <div id="trackerModalSub" class="terminal-modal__sub">Select a tracker card to inspect details.</div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="trackerModalClose" class="terminal-modal__close">close</button>
-        </div>
-      </div>
-      <div id="trackerModalBody" class="tracker-modal__list">
-        <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select a tracker card to view details.</div>
       </div>
     </div>
   </div>
