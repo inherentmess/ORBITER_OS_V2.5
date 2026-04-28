@@ -2560,6 +2560,33 @@ function runBootSequence() {
 
     function bindDashboardTrackerEvents() {
       bindTrackerOrderingEvents();
+      if (dashboardTrackerGrid && dashboardTrackerGrid.dataset.delegatedBound !== '1') {
+        dashboardTrackerGrid.dataset.delegatedBound = '1';
+        dashboardTrackerGrid.addEventListener('click', async (event) => {
+          const selectBtn = event.target.closest('[data-dashboard-detail-select]');
+          if (selectBtn) {
+            dashboardTrackerState.selectedDetailId = selectBtn.dataset.dashboardDetailSelect || '';
+            dashboardTrackerState.selectedDetailCategoryId = selectBtn.dataset.dashboardDetailCategory || '';
+            renderDashboardTrackerCards();
+            updateDashboardCountdowns();
+            openTrackerModal(dashboardTrackerState.selectedDetailCategoryId, dashboardTrackerState.selectedDetailId);
+            return;
+          }
+
+          const closeBtn = event.target.closest('[data-dashboard-detail-close]');
+          if (closeBtn) {
+            const scrollRoot = document.querySelector('main');
+            const savedScrollTop = scrollRoot ? scrollRoot.scrollTop : 0;
+            const detailEl = closeBtn.closest('[data-dashboard-detail]');
+            await animateDetailPopout(detailEl);
+            dashboardTrackerState.selectedDetailId = '';
+            dashboardTrackerState.selectedDetailCategoryId = '';
+            renderDashboardTrackerCards();
+            updateDashboardCountdowns();
+            if (scrollRoot) scrollRoot.scrollTop = savedScrollTop;
+          }
+        });
+      }
       dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-select]').forEach(button => {
         button.addEventListener('click', () => {
           dashboardTrackerState.selectedDetailId = button.dataset.dashboardDetailSelect || '';
@@ -2781,8 +2808,17 @@ function runBootSequence() {
         const data = await fetchMarketJson('/api/market/search?q=');
         const rawItems = Array.isArray(data?.items)
           ? data.items
-          : (Array.isArray(data?.data) ? data.data : []);
+          : (Array.isArray(data?.data?.items)
+            ? data.data.items
+            : (Array.isArray(data?.data) ? data.data : []));
+        const detectedPath = Array.isArray(data?.items)
+          ? 'items'
+          : (Array.isArray(data?.data?.items)
+            ? 'data.items'
+            : (Array.isArray(data?.data) ? 'data' : 'none'));
         logJson('market catalog raw response', data);
+        console.log('[orbiter] market catalog top-level response keys', Object.keys(data || {}));
+        console.log('[orbiter] market catalog detected item array path', detectedPath);
         console.log('[orbiter] market catalog usable source rows', rawItems.length);
         if (!Array.isArray(rawItems)) {
           throw new Error('bad endpoint shape: expected search response items[]');
@@ -2790,14 +2826,16 @@ function runBootSequence() {
         marketState.catalog = rawItems
           .map(item => ({
             item_name: item.item_name || item.name || item?.i18n?.en?.name || item.title || item.slug || item.url_name,
-            url_name: item.url_name || item.slug,
+            url_name: item.item_url_name || item.url_name || item.slug || item.id,
             norm_name: marketNorm(item.item_name || item.name || item?.i18n?.en?.name || item.title || item.slug || item.url_name)
           }))
           .filter(item => item.item_name && item.url_name)
           .sort((a, b) => a.item_name.localeCompare(b.item_name));
         console.log('[orbiter] market catalog usable mapped items', marketState.catalog.length);
+        console.log('[orbiter] market catalog first usable item sample', marketState.catalog[0] || null);
         if (!marketState.catalog.length) {
-          throw new Error('empty result: market item dataset returned zero usable items');
+          const diag = data?.diagnostic || {};
+          throw new Error(`empty result: market item dataset returned zero usable items (${diag.detectedPath || detectedPath || 'unknown path'})`);
         }
         marketState.loaded = true;
         marketState.failed = false;

@@ -1039,6 +1039,25 @@
     </div>
   </div>
 
+  <div id="trackerModal" class="terminal-modal" data-open="0" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Tracker details">
+    <div class="terminal-modal__backdrop"></div>
+    <div class="terminal-modal__panel">
+      <div class="terminal-modal__header">
+        <div>
+          <div class="terminal-modal__title">Tracker Detail</div>
+          <div id="trackerModalTitle" class="terminal-modal__sub">Awaiting selection</div>
+          <div id="trackerModalSub" class="terminal-modal__sub">Select a tracker card to inspect details.</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="trackerModalClose" class="terminal-modal__close">close</button>
+        </div>
+      </div>
+      <div id="trackerModalBody" class="terminal-modal__list">
+        <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select a tracker card to view details.</div>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js" defer></script>
 
 </body>

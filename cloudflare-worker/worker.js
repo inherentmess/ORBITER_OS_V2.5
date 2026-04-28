@@ -68,9 +68,27 @@ function normalizeSearchItems(items = []) {
   return items
     .map(item => ({
       item_name: item?.item_name || item?.name || item?.i18n?.en?.name || item?.title || item?.slug || item?.url_name || '',
-      url_name: item?.url_name || item?.slug || ''
+      url_name: item?.item_url_name || item?.url_name || item?.slug || item?.id || '',
+      thumb: item?.thumb || item?.i18n?.en?.thumb || item?.i18n?.en?.icon || ''
     }))
     .filter(item => item.item_name && item.url_name);
+}
+
+function detectItemArrayPaths(payload) {
+  const paths = [
+    ['payload.items', payload?.payload?.items],
+    ['payload.item', payload?.payload?.item],
+    ['payload', payload?.payload],
+    ['data.payload.items', payload?.data?.payload?.items],
+    ['data.items', payload?.data?.items],
+    ['items', payload?.items],
+    ['data', payload?.data]
+  ];
+  const detected = paths.find(([, value]) => Array.isArray(value));
+  return {
+    path: detected ? detected[0] : 'none',
+    items: detected ? detected[1] : []
+  };
 }
 
 function normalizeOrders(payload = {}, itemName = '') {
@@ -114,9 +132,27 @@ async function handleSearch(url) {
     return json(null, { error: result.error, upstreamUrl: result.upstreamUrl || upstream, source: 'cloudflare-worker', items: [] }, result.status);
   }
 
-  const rawItems = result.data?.data || result.data?.payload?.items || [];
+  const topLevelKeys = Object.keys(result?.data || {});
+  const detected = detectItemArrayPaths(result.data);
+  const rawItems = detected.items;
   const allItems = normalizeSearchItems(rawItems);
+  console.log(`[market-proxy] search top-level keys=${topLevelKeys.join(',')}`);
+  console.log(`[market-proxy] search detected item array path=${detected.path}`);
   console.log(`[market-proxy] search source rows=${rawItems.length} usable=${allItems.length} query="${q}"`);
+  console.log('[market-proxy] search first usable item sample', allItems[0] || null);
+  if (!allItems.length) {
+    return json(null, {
+      error: 'catalog_zero_usable_items',
+      source: 'cloudflare-worker',
+      items: [],
+      diagnostic: {
+        detectedPath: detected.path,
+        topLevelKeys,
+        sourceCount: Array.isArray(rawItems) ? rawItems.length : 0,
+        firstSourceItem: Array.isArray(rawItems) && rawItems.length ? rawItems[0] : null
+      }
+    }, 200);
+  }
   const filtered = !q
     ? allItems
     : allItems.filter(item => item.item_name.toLowerCase().includes(q) || item.url_name.toLowerCase().includes(q));
