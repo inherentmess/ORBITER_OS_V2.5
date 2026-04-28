@@ -1578,6 +1578,21 @@ function runBootSequence() {
       return { id, title, entries, source, expiresAt: tennoSoonestEnd(entries), type: 'generic' };
     }
 
+    function hasRenderableDetail(detail) {
+      if (!detail || typeof detail !== 'object') return false;
+      if ((detail.entries || []).length || (detail.rows || []).length || detail.row) return true;
+      if (detail.rawSummary && typeof detail.rawSummary === 'object' && Object.keys(detail.rawSummary).length) return true;
+      const ignored = new Set(['id', 'title', 'source', 'expiresAt', 'entries', 'rows', 'row', 'type', 'rawSummary']);
+      return Object.keys(detail).some(key => {
+        if (ignored.has(key)) return false;
+        const value = detail[key];
+        if (value === null || value === undefined || value === '') return false;
+        if (Array.isArray(value)) return value.length > 0;
+        if (typeof value === 'object') return Object.keys(value).length > 0;
+        return true;
+      });
+    }
+
     function compactCategory(id, cards = [], details = []) {
       const placeholderPattern = /\b(unavailable|unknown|no data|no .*returned|empty)\b/i;
       const usefulCards = cards
@@ -1586,7 +1601,10 @@ function runBootSequence() {
         .filter(card => card.expiresAt || card.hideTimer);
       if (!usefulCards.length) return null;
       const usefulIds = new Set(usefulCards.map(card => card.id));
-      const usefulDetails = details.filter(detail => usefulIds.has(detail.id) && ((detail.entries || []).length || (detail.rows || []).length || detail.row));
+      const usefulDetails = details
+        .filter(Boolean)
+        .filter(detail => usefulIds.has(detail.id))
+        .filter(hasRenderableDetail);
       return { ...trackerCategory(id, usefulCards), details: usefulDetails };
     }
 
@@ -2043,7 +2061,25 @@ function runBootSequence() {
     }
 
     function renderGenericEntryDetailPanel(detail) {
-      if (!detail.entries?.length) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">The source returned no mission/tier/reward rows for this section right now.</div>';
+      if (!detail.entries?.length) {
+        const fallbackFields = Object.entries(detail || {})
+          .filter(([key]) => !['id', 'title', 'source', 'expiresAt', 'entries', 'rows', 'row', 'type'].includes(key))
+          .filter(([, value]) => value !== null && value !== undefined && value !== '')
+          .slice(0, 10);
+        if (!fallbackFields.length) {
+          return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">The source returned no mission/tier/reward rows for this section right now.</div>';
+        }
+        return `
+          <div class="border border-terminal/25 p-4 text-sm text-green-200/75">
+            <div class="uppercase text-[10px] tracking-[0.18em] text-terminal/70 mb-2">Available Fields</div>
+            <div class="grid sm:grid-cols-2 gap-2">
+              ${fallbackFields.map(([key, value]) => `
+                <div><span class="text-terminal/80">${escapeHtml(dashboardToken(key))}:</span> ${escapeHtml(typeof value === 'object' ? JSON.stringify(value) : String(value))}</div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
       return `
         <div class="grid lg:grid-cols-2 gap-3">
           ${detail.entries.map(entry => `
@@ -2126,7 +2162,7 @@ function runBootSequence() {
     function renderInlineSelectedDetailPanel(category, detail) {
       const timerText = detail.expiresAt ? ` // ${formatDashboardCountdown(detail.expiresAt)}` : '';
       return `
-        <div class="md:col-span-2 xl:col-span-3">
+        <div class="tracker-inline-detail md:col-span-2 xl:col-span-3">
           <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
             <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
               <div>
@@ -2143,7 +2179,10 @@ function runBootSequence() {
     }
 
     function isInteractiveCategory(category) {
-      return Array.isArray(category.details) && category.details.length > 0;
+      if (!category || category.error) return false;
+      if (category.id === 'missions') return Array.isArray(category.cards) && category.cards.length > 0;
+      if (Array.isArray(category.details) && category.details.length > 0) return true;
+      return Array.isArray(category.cards) && category.cards.some(card => card?.selectable);
     }
 
     function renderTrackerCategoryHeader(category) {
@@ -2169,6 +2208,8 @@ function runBootSequence() {
       const forceSelectable = category.id === 'missions';
       const inlineDetail = category.id === 'missions';
       const detail = inlineDetail ? selectedDetail(category) : null;
+      const selectedCategory = dashboardTrackerState.selectedDetailCategoryId === category.id;
+      const selectedId = dashboardTrackerState.selectedDetailId || '';
       const hint = inlineDetail && !detail
         ? '<div class="panel-card p-5 text-sm text-green-200/75">Select a card below to inspect detailed rows for that section.</div>'
         : '';
@@ -2179,7 +2220,8 @@ function runBootSequence() {
           ${!category.error ? hint : ''}
           ${!category.error && category.cards.length ? `<div class="tracker-card-grid">${category.cards.map(card => {
             const cardHtml = (forceSelectable || card.selectable) ? renderInteractiveSummaryCard(category.id, card) : renderDashboardCard(card);
-            if (inlineDetail && detail && detail.id === card.id) return cardHtml + renderInlineSelectedDetailPanel(category, detail);
+            const showInlineForCard = inlineDetail && selectedCategory && selectedId === card.id;
+            if (showInlineForCard && detail) return cardHtml + renderInlineSelectedDetailPanel(category, detail);
             return cardHtml;
           }).join('')}</div>` : ''}
           ${!category.error && !inlineDetail ? renderInteractiveDetailPanel(category) : ''}
