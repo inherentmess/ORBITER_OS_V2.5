@@ -111,7 +111,7 @@ const accordionMql = typeof window.matchMedia === 'function' ? window.matchMedia
 const touchMql = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)') : null;
 const isMobileOrTouch = () => Boolean(accordionMql?.matches || touchMql?.matches || navigator.maxTouchPoints > 0);
 const sectionAccordionState = {
-  enabled: Boolean(accordionMql?.matches),
+  enabled: false,
   bodies: new Map(),
   toggles: new Map()
 };
@@ -355,7 +355,7 @@ function runBootSequence() {
     }
 
     function syncAccordionMode() {
-      const shouldEnable = Boolean(accordionMql?.matches);
+      const shouldEnable = false;
       if (shouldEnable === sectionAccordionState.enabled) return;
       sectionAccordionState.enabled = shouldEnable;
 
@@ -554,6 +554,7 @@ function runBootSequence() {
       selectedDetailId: '',
       source: '',
       syncedAt: null,
+      lastFetchAt: 0,
       lastData: null
     };
 
@@ -1038,7 +1039,6 @@ function runBootSequence() {
       const nowMs = dashboardNowMs(worldstate);
       const zariman = findSyndicate(worldstate, 'ZarimanSyndicate');
       return trackerCategory('environments', [
-        cycleTrackerCard('cetus', 'Plains of Eidolon / Earth', [{ name: 'Day', seconds: 6000 }, { name: 'Night', seconds: 3000 }], 9000, 0, nowMs, 'Earth open-world cycle computed from browse.wf oracle time.'),
         cycleTrackerCard('vallis', 'Orb Vallis', [{ name: 'Warm', seconds: 400 }, { name: 'Cold', seconds: 1200 }], 1600, 0, nowMs, 'Vallis warm/cold cycle computed from browse.wf oracle time.'),
         cycleTrackerCard('cambion', 'Cambion Drift', [{ name: 'Fass', seconds: 4500 }, { name: 'Vome', seconds: 4500 }], 9000, 0, nowMs, 'Cambion cycle computed from browse.wf oracle time.'),
         cycleTrackerCard('duviri', 'Duviri', [{ name: 'Joy', seconds: 8640 }, { name: 'Anger', seconds: 8640 }, { name: 'Envy', seconds: 8640 }, { name: 'Sorrow', seconds: 8640 }, { name: 'Fear', seconds: 8640 }], 43200, 0, nowMs, 'Duviri spiral computed from browse.wf oracle time.'),
@@ -1055,7 +1055,6 @@ function runBootSequence() {
       const hardFissures = activeMissions.filter(item => item.Hard);
       const voidStorms = activeBrowseItems(Array.isArray(worldstate.VoidStorms) ? worldstate.VoidStorms : []);
       const invasions = (Array.isArray(worldstate.Invasions) ? worldstate.Invasions : []).filter(item => !item.Completed);
-      const alert = firstActive(alerts);
       const normalFissure = firstActive(normalFissures);
       const hardFissure = firstActive(hardFissures);
       const voidStorm = firstActive(voidStorms);
@@ -1063,15 +1062,6 @@ function runBootSequence() {
       const baro = Array.isArray(worldstate.VoidTraders) ? worldstate.VoidTraders[0] || {} : {};
       const sortie = Array.isArray(worldstate.Sorties) ? worldstate.Sorties[0] || {} : {};
       const archon = Array.isArray(worldstate.LiteSorties) ? worldstate.LiteSorties[0] || {} : {};
-      const arbitration = parseArbitrationFromArbys(data?.arbysText, nowMs) || {};
-      if (!arbitration.nodeId) {
-        console.warn('[orbiter] arbitration unavailable: arbys.txt missing or no current row', {
-          hasArbysText: Boolean((data?.arbysText || '').trim()),
-          sample: String(data?.arbysText || '').split(/\r?\n/).slice(0, 3)
-        });
-      } else {
-        console.info('[orbiter] arbitration parsed', arbitration);
-      }
       const spIncursions = parseSpIncursions(data?.spIncursionsText, nowMs);
       const baroActive = isBaroActive(baro);
       const event = firstActiveGoal(worldstate);
@@ -1080,7 +1070,6 @@ function runBootSequence() {
       const detailHardFissures = parseFissureDetail('fissures-hard', 'Void Fissures (Steel Path)', hardFissures, 'worldState ActiveMissions');
       const detailInvasions = parseInvasionDetail(invasions);
       const detailVoidStorms = parseVoidStormDetail(voidStorms);
-      const detailArbitration = parseArbitrationDetail(data?.arbysText, nowMs);
       const detailAlerts = parseAlertsDetail(alerts);
       const detailEvents = parseEventsDetail(Array.isArray(worldstate.Goals) ? worldstate.Goals : []);
       const detailSortie = parseSortieDetail(sortie);
@@ -1090,13 +1079,6 @@ function runBootSequence() {
       const detailBaro = parseBaroDetail(baro);
 
       return trackerCategory('missions', [
-        trackerCard('arbitration', 'Activity', 'Arbitration', arbitration.nodeId ? 'Active' : 'Unavailable', arbitration.expiresAt || '', arbitration.nodeId ? [
-          arbitration.location || 'Location unknown',
-          arbitration.missionType ? dashboardToken(arbitration.missionType) : 'Type unknown',
-          arbitration.activation ? `Started ${arbitration.activation}` : '',
-          'Source browse.wf/arbys.txt'
-        ].filter(Boolean).join(' // ') : 'No arbitration schedule row available from browse.wf/arbys.txt.', { selectable: true }),
-        trackerCard('alerts', 'Activity', 'Alerts', `${alerts.length} active`, soonestExpiry(alerts), alert ? [alert.MissionInfo?.location || alert.Node, dashboardToken(alert.MissionInfo?.missionType), dashboardToken(alert.MissionInfo?.faction)].filter(Boolean).join(' // ') : 'No active alerts returned by oracle.browse.wf.', { selectable: true }),
         trackerCard('events', 'Events', 'Events', event ? dashboardToken(event.Tag || event.Desc || 'Active') : 'None active', worldstateExpiry(event), event ? [event.Node, `${event.Count ?? 0}/${event.Goal ?? '?'}`].filter(Boolean).join(' // ') : 'No active Goals entries returned.', { selectable: true }),
         trackerCard('sortie', 'Daily', 'Sortie', dashboardToken(sortie.Boss || sortie.Faction || 'Active'), worldstateExpiry(sortie), `${sortie.Variants?.length || 0} missions // ${dashboardToken(sortie.Reward || 'Reward table unknown')}`, { selectable: true }),
         trackerCard('archon', 'Weekly', 'Archon Hunt', dashboardToken(archon.Boss || 'Active'), worldstateExpiry(archon), `${archon.Missions?.length || 0} missions // ${dashboardToken(archon.Reward || 'Reward table unknown')}`, { selectable: true }),
@@ -1107,7 +1089,7 @@ function runBootSequence() {
         trackerCard('fissures-hard', 'Steel Path', 'Void Fissures (Steel Path)', `${hardFissures.length} active`, soonestExpiry(hardFissures), hardFissure ? [dashboardToken(hardFissure.Modifier), dashboardToken(hardFissure.MissionType), hardFissure.Node].filter(Boolean).join(' // ') : 'No Steel Path fissures returned.', { selectable: true }),
         trackerCard('void-storms', 'Railjack', 'Void Storms (Railjack)', `${voidStorms.length} active`, soonestExpiry(voidStorms), voidStorm ? [dashboardToken(voidStorm.ActiveMissionTier), voidStorm.Node].filter(Boolean).join(' // ') : 'No active Void Storms returned.', { selectable: true }),
         trackerCard('invasions', 'Star Chart', 'Invasions', `${invasions.length} active`, '', invasion ? [invasion.Node, dashboardToken(invasion.Faction), 'vs', dashboardToken(invasion.DefenderFaction)].filter(Boolean).join(' ') : 'No active invasions returned by oracle.browse.wf.', { selectable: true, hideTimer: true })
-      ], '', { details: [detailArbitration, detailAlerts, detailEvents, detailSortie, detailArchon, detailSpIncursions, detailWeekly, detailBaro, detailNormalFissures, detailHardFissures, detailInvasions, detailVoidStorms] });
+      ], '', { details: [detailAlerts, detailEvents, detailSortie, detailArchon, detailSpIncursions, detailWeekly, detailBaro, detailNormalFissures, detailHardFissures, detailInvasions, detailVoidStorms] });
     }
 
     function mergeUniqueEntries(entries = []) {
@@ -1482,7 +1464,6 @@ function runBootSequence() {
         { id: 'missions', map: mapMissionRotationTrackers },
         { id: 'bounties', map: mapBountyTrackers },
         { id: 'syndicate-missions', map: mapSyndicateMissionTrackers },
-        { id: 'endgame', map: mapEndgameTrackers },
         { id: 'utility', map: mapUtilityTrackers }
       ].map(entry => {
         try {
@@ -1587,8 +1568,9 @@ function runBootSequence() {
       const dailyDeals = tennoData(data, 'dailydeals');
       const factionProjects = tennoData(data, 'factionprojects');
 
-      const cycleTitles = { cetus: 'Cetus / Plains', earth: 'Earth', fortuna: 'Orb Vallis' };
+      const cycleTitles = { earth: 'Earth', fortuna: 'Orb Vallis' };
       const cycleCards = daynight.map(row => {
+        if (row.id === 'cetus') return null;
         const cycle = cycleFromTenno(row) || {};
         const title = cycleTitles[row.id] || dashboardToken(row.id);
         return cycle.expiresAt && title ? statusCard(`cycle-${row.id}`, 'Cycle', title, cycle.state, cycle.expiresAt, `Tenno Tools cycle id: ${row.id}`) : null;
@@ -1669,11 +1651,11 @@ function runBootSequence() {
     }
 
     function loadingDashboardCategories(message) {
-      return dashboardCategoryDefs.map(def => trackerCategory(def.id, [], message));
+      return [];
     }
 
     function unavailableDashboardCategories(reason) {
-      return dashboardCategoryDefs.map(def => trackerCategory(def.id, [], reason));
+      return [];
     }
 
     function categoryExpiryMs(category) {
@@ -1684,7 +1666,7 @@ function runBootSequence() {
     }
 
     function orderDashboardCategories(categories = []) {
-      const visible = categories.filter(category => category?.error || category?.cards?.length);
+      const visible = categories.filter(category => !category?.error && category?.cards?.length);
       const defaultIndex = id => {
         const index = trackerDefaultOrder.indexOf(id);
         return index >= 0 ? index : trackerDefaultOrder.length;
@@ -1728,12 +1710,12 @@ function runBootSequence() {
 
     function renderDashboardCard(card) {
       const timerLine = card.hideTimer ? '' : `
-          <div class="text-terminal mt-3 text-2xl font-black" data-dashboard-countdown="${escapeHtml(card.id)}">${formatDashboardCountdown(card.expiresAt)}</div>
+          <div class="tracker-timer text-terminal mt-3 font-black" data-dashboard-countdown="${escapeHtml(card.id)}">${formatDashboardCountdown(card.expiresAt)}</div>
       `;
       return `
-        <div class="panel-card p-5">
+        <div class="tracker-card panel-card">
           <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">${escapeHtml(card.label)}</div>
-          <div class="text-lg font-bold">${escapeHtml(card.title)}</div>
+          <div class="tracker-card-title font-bold">${escapeHtml(card.title)}</div>
           ${timerLine}
           <div class="text-sm text-green-200/90 mt-2">${escapeHtml(card.state)}</div>
           <p class="text-xs text-green-200/70 mt-3 leading-5">${escapeHtml(card.detail)}</p>
@@ -1744,11 +1726,11 @@ function runBootSequence() {
     function renderInteractiveSummaryCard(categoryId, card) {
       const selected = dashboardTrackerState.selectedDetailCategoryId === categoryId && dashboardTrackerState.selectedDetailId === card.id;
       const selectedClasses = selected ? ' bg-terminal text-black shadow-[0_0_24px_rgba(66,245,139,0.28)]' : ' hover:bg-terminal hover:text-black';
-      const timerLine = card.hideTimer ? '' : `<div class="mt-3 text-2xl font-black">${formatDashboardCountdown(card.expiresAt)}</div>`;
+      const timerLine = card.hideTimer ? '' : `<div class="tracker-timer mt-3 font-black" data-dashboard-countdown="${escapeHtml(card.id)}">${formatDashboardCountdown(card.expiresAt)}</div>`;
       return `
-        <button class="panel-card p-5 text-left transition-colors${selectedClasses}" type="button" data-dashboard-detail-select="${escapeHtml(card.id)}" data-dashboard-detail-category="${escapeHtml(categoryId)}">
+        <button class="tracker-card panel-card text-left transition-colors${selectedClasses}" type="button" data-dashboard-detail-select="${escapeHtml(card.id)}" data-dashboard-detail-category="${escapeHtml(categoryId)}">
           <div class="uppercase text-[10px] tracking-[0.25em] mb-2 ${selected ? 'text-black/70' : 'text-terminal/70'}">${escapeHtml(card.label)}</div>
-          <div class="text-lg font-bold">${escapeHtml(card.title)}</div>
+          <div class="tracker-card-title font-bold">${escapeHtml(card.title)}</div>
           ${timerLine}
           <div class="text-sm mt-2 ${selected ? 'text-black/80' : 'text-green-200/90'}">${escapeHtml(card.state)}</div>
           <p class="text-xs mt-3 leading-5 ${selected ? 'text-black/70' : 'text-green-200/70'}">${escapeHtml(card.detail)}</p>
@@ -2109,7 +2091,7 @@ function runBootSequence() {
 
     function renderTrackerCategoryHeader(category) {
       return `
-        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-2 border-b border-terminal/35 pb-2">
+        <div class="tracker-category-header">
           <div class="flex items-start gap-3 min-w-0">
             <button class="tracker-drag-handle border border-terminal/50 px-2 py-1 text-xs text-terminal/80 hover:bg-terminal hover:text-black cursor-grab" type="button" draggable="true" data-tracker-drag="${escapeHtml(category.id)}" aria-label="Drag ${escapeHtml(category.title)}">drag</button>
             <div class="min-w-0">
@@ -2118,8 +2100,8 @@ function runBootSequence() {
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <button class="terminal-link border border-terminal/50 px-2 py-1 text-[10px] uppercase tracking-widest" type="button" data-tracker-move="${escapeHtml(category.id)}" data-direction="up">Up</button>
-            <button class="terminal-link border border-terminal/50 px-2 py-1 text-[10px] uppercase tracking-widest" type="button" data-tracker-move="${escapeHtml(category.id)}" data-direction="down">Down</button>
+            <button class="tracker-move-btn terminal-link border border-terminal/50 px-3 py-2 text-[10px] uppercase tracking-widest" type="button" data-tracker-move="${escapeHtml(category.id)}" data-direction="up">Up</button>
+            <button class="tracker-move-btn terminal-link border border-terminal/50 px-3 py-2 text-[10px] uppercase tracking-widest" type="button" data-tracker-move="${escapeHtml(category.id)}" data-direction="down">Down</button>
             <div class="text-[10px] uppercase tracking-[0.18em] text-terminal/60">${escapeHtml(category.source)}</div>
           </div>
         </div>
@@ -2138,7 +2120,7 @@ function runBootSequence() {
           ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
           ${!category.error ? hint : ''}
-          ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(card => {
+          ${!category.error && category.cards.length ? `<div class="tracker-card-grid">${category.cards.map(card => {
             const cardHtml = (forceSelectable || card.selectable) ? renderInteractiveSummaryCard(category.id, card) : renderDashboardCard(card);
             if (inlineDetail && detail && detail.id === card.id) return cardHtml + renderInlineSelectedDetailPanel(category, detail);
             return cardHtml;
@@ -2156,7 +2138,7 @@ function runBootSequence() {
           ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
           ${!category.error && !category.cards.length ? '<div class="panel-card p-5 text-sm text-green-200/75">No world-state data returned for this category.</div>' : ''}
-          ${!category.error && category.cards.length ? `<div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4">${category.cards.map(renderDashboardCard).join('')}</div>` : ''}
+          ${!category.error && category.cards.length ? `<div class="tracker-card-grid">${category.cards.map(renderDashboardCard).join('')}</div>` : ''}
         </section>
       `;
     }
@@ -2167,7 +2149,7 @@ function runBootSequence() {
         trackerSortMode.value = dashboardTrackerState.sortMode;
       }
       if (!dashboardTrackerState.categories?.length) {
-        dashboardTrackerGrid.innerHTML = '<div class="panel-card p-5 text-sm text-green-200/80">World-state tracker data is unavailable.</div>';
+        dashboardTrackerGrid.innerHTML = '<div class="panel-card p-5 text-sm text-green-200/80">No valid active tracker sections are available right now.</div>';
         return;
       }
       dashboardTrackerGrid.innerHTML = dashboardTrackerState.categories.map(renderTrackerCategory).join('');
@@ -2285,6 +2267,23 @@ function runBootSequence() {
     }
 
     async function refreshDashboardTrackers() {
+      const now = Date.now();
+      const refreshAge = now - (dashboardTrackerState.lastFetchAt || 0);
+      if ((dashboardTrackerState.lastData || dashboardTrackerState.lastFetchAt) && refreshAge < 60000) {
+        if (dashboardTrackerState.lastData) {
+          setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(dashboardTrackerState.lastData));
+          renderDashboardTrackerCards();
+          updateDashboardCountdowns();
+          if (dashboardTrackerState.syncedAt) {
+            setDashboardTrackerStatus(`Live via ${dashboardTrackerState.source || 'Tenno Tools'} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
+          }
+        } else {
+          renderDashboardTrackerCards();
+          setDashboardTrackerStatus('Tenno Tools unavailable');
+        }
+        return;
+      }
+
       setDashboardTrackerStatus('Syncing Tenno Tools...');
       ensureDashboardNodeLookup().then(() => {
         if (!dashboardTrackerState.lastData) return;
@@ -2296,6 +2295,7 @@ function runBootSequence() {
       setDashboardCategories(loadingDashboardCategories('Loading Tenno Tools data for this category...'));
       renderDashboardTrackerCards();
       try {
+        dashboardTrackerState.lastFetchAt = Date.now();
         const result = await fetchDashboardWorldstateJson();
         setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(result.data));
         dashboardTrackerState.source = result.source;
