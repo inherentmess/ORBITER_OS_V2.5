@@ -1,4 +1,5 @@
-const WARFRAME_MARKET_BASE = 'https://api.warframe.market/v2';
+const WM_V1_BASE = 'https://api.warframe.market/v1';
+const WM_V2_BASE = 'https://api.warframe.market/v2';
 
 function corsHeaders(request) {
   let origin = '*';
@@ -63,32 +64,46 @@ async function fetchJson(upstreamUrl) {
   }
 }
 
-function normalizeSearchItems(items = []) {
+function detectItemArrayPaths(payload) {
+  const top = payload || {};
+  const paths = [
+    ['payload.items', top?.payload?.items],
+    ['payload.item', top?.payload?.item],
+    ['payload', top?.payload],
+    ['data.payload.items', top?.data?.payload?.items],
+    ['data.items', top?.data?.items],
+    ['items', top?.items],
+    ['data', top?.data]
+  ];
+  const detected = paths.find(([, value]) => Array.isArray(value));
+  return {
+    path: detected ? detected[0] : 'none',
+    items: detected ? detected[1] : [],
+    topLevelKeys: Object.keys(top),
+    payloadKeys: Object.keys(top?.payload || {}),
+    itemsType: Array.isArray(top?.payload?.items)
+  };
+}
+
+function normalizeCatalogItems(items = []) {
   if (!Array.isArray(items)) return [];
   return items
     .map(item => ({
       item_name: item?.item_name || item?.name || item?.i18n?.en?.name || item?.title || item?.slug || item?.url_name || '',
       url_name: item?.item_url_name || item?.url_name || item?.slug || item?.id || '',
-      thumb: item?.thumb || item?.i18n?.en?.thumb || item?.i18n?.en?.icon || ''
+      id: item?.id || item?.url_name || item?.slug || '',
+      thumb: item?.thumb || item?.i18n?.en?.thumb || item?.i18n?.en?.icon || null
     }))
-    .filter(item => item.item_name && item.url_name);
+    .filter(item => item.item_name || item.url_name);
 }
 
-function detectItemArrayPaths(payload) {
-  const paths = [
-    ['payload.items', payload?.payload?.items],
-    ['payload.item', payload?.payload?.item],
-    ['payload', payload?.payload],
-    ['data.payload.items', payload?.data?.payload?.items],
-    ['data.items', payload?.data?.items],
-    ['items', payload?.items],
-    ['data', payload?.data]
-  ];
-  const detected = paths.find(([, value]) => Array.isArray(value));
-  return {
-    path: detected ? detected[0] : 'none',
-    items: detected ? detected[1] : []
-  };
+function normalizeSearchItems(items = []) {
+  return normalizeCatalogItems(items).map(item => ({
+    item_name: item.item_name,
+    url_name: item.url_name,
+    id: item.id,
+    thumb: item.thumb
+  }));
 }
 
 function normalizeOrders(payload = {}, itemName = '') {
@@ -124,9 +139,183 @@ function normalizeOrders(payload = {}, itemName = '') {
   return { sellOrders, buyOrders };
 }
 
-async function handleSearch(url) {
+async function fetchCatalogFromUpstream() {
+  const v1Url = `${WM_V1_BASE}/items`;
+  const v1 = await fetchJson(v1Url);
+  if (v1.ok) {
+    const detectedV1 = detectItemArrayPaths(v1.data);
+    const normalizedV1 = normalizeCatalogItems(detectedV1.items);
+    if (normalizedV1.length) {
+      return {
+        ok: true,
+        source: 'cloudflare-worker:v1',
+        upstreamUrl: v1Url,
+        detectedPath: detectedV1.path,
+        topLevelKeys: detectedV1.topLevelKeys,
+        payloadKeys: detectedV1.payloadKeys,
+        itemsType: detectedV1.itemsType,
+        items: normalizedV1
+      };
+    }
+  }
+
+  const v2Url = `${WM_V2_BASE}/items`;
+  const v2 = await fetchJson(v2Url);
+  if (v2.ok) {
+    const detectedV2 = detectItemArrayPaths(v2.data);
+    const normalizedV2 = normalizeCatalogItems(detectedV2.items);
+    if (normalizedV2.length) {
+      return {
+        ok: true,
+        source: 'cloudflare-worker:v2-fallback',
+        upstreamUrl: v2Url,
+        detectedPath: detectedV2.path,
+        topLevelKeys: detectedV2.topLevelKeys,
+        payloadKeys: detectedV2.payloadKeys,
+        itemsType: detectedV2.itemsType,
+        items: normalizedV2
+      };
+    }
+    return {
+      ok: false,
+      status: 200,
+      error: 'catalog_parse_failed',
+      source: 'cloudflare-worker:v2-fallback',
+      upstreamUrl: v2Url,
+      diagnostic: {
+        topLevelKeys: detectedV2.topLevelKeys,
+        payloadKeys: detectedV2.payloadKeys,
+        itemsType: detectedV2.itemsType,
+        detectedPath: detectedV2.path,
+        sample: Array.isArray(detectedV2.items) && detectedV2.items.length ? detectedV2.items[0] : null
+      }
+    };
+  }
+
+  return {
+    ok: false,
+    status: Math.max(v1.status || 500, v2.status || 500),
+    error: v1.error || v2.error || 'upstream_catalog_failed',
+    source: 'cloudflare-worker',
+    upstreamUrl: `${v1Url} -> ${v2Url}`
+  };
+}
+
+async function handleItems(request) {
+  const result = await fetchCatalogFromUpstream();
+  if (!result.ok) {
+    return json(request, {
+      ok: false,
+      error: result.error || 'catalog_parse_failed',
+      source: result.source || 'cloudflare-worker',
+      upstreamUrl: result.upstreamUrl,
+      items: [],
+      diagnostic: result.diagnostic || null
+    }, result.status || 200);
+  }
+
+  console.log(`[market-proxy] catalog source=${result.source} upstream=${result.upstreamUrl} detectedPath=${result.detectedPath} usable=${result.items.length}`);
+  console.log('[market-proxy] catalog first usable item sample', result.items[0] || null);
+  return json(request, {
+    ok: true,
+    source: result.source,
+    upstreamUrl: result.upstreamUrl,
+    items: result.items.map(item => ({
+      item_name: item.item_name,
+      url_name: item.url_name,
+      id: item.id,
+      thumb: item.thumb
+    }))
+  });
+}
+
+async function handleSearch(request, url) {
   const q = (url.searchParams.get('q') || '').trim().toLowerCase();
-  const upstream = `${WARFRAME_MARKET_BASE}/items`;
+  const catalog = await fetchCatalogFromUpstream();
+  if (!catalog.ok) {
+    return json(request, {
+      ok: false,
+      error: catalog.error || 'catalog_parse_failed',
+      source: catalog.source || 'cloudflare-worker',
+      upstreamUrl: catalog.upstreamUrl,
+      items: [],
+      diagnostic: catalog.diagnostic || null
+    }, catalog.status || 200);
+  }
+
+  const allItems = normalizeSearchItems(catalog.items);
+  const filtered = !q
+    ? allItems
+    : allItems.filter(item => String(item.item_name || '').toLowerCase().includes(q) || String(item.url_name || '').toLowerCase().includes(q));
+  console.log(`[market-proxy] search q="${q}" total=${allItems.length} matched=${filtered.length}`);
+  console.log('[market-proxy] search first usable item sample', filtered[0] || allItems[0] || null);
+  return json(request, {
+    ok: true,
+    source: catalog.source,
+    upstreamUrl: catalog.upstreamUrl,
+    count: filtered.length,
+    items: filtered
+  });
+}
+
+function normalizeOrdersFromV2(data = {}) {
+  return {
+    payload: {
+      orders: [
+        ...((data?.data?.sell || []).map(order => ({ ...order, order_type: 'sell' }))),
+        ...((data?.data?.buy || []).map(order => ({ ...order, order_type: 'buy' })))
+      ]
+    }
+  };
+}
+
+async function handleOrders(requestUrl, itemUrlName) {
+  if (!itemUrlName) {
+    return json(requestUrl, { error: 'missing_item', source: 'cloudflare-worker' }, 400);
+  }
+
+  const normalizedName = decodeURIComponent(String(itemUrlName || '')).trim().toLowerCase().replace(/\s+/g, '_');
+  const upstreamV1 = `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders`;
+  const resultV1 = await fetchJson(upstreamV1);
+  if (resultV1.ok) {
+    const payload = resultV1.data || {};
+    const normalized = normalizeOrders(payload, normalizedName.replace(/_/g, ' '));
+    return json(requestUrl, {
+      source: 'cloudflare-worker:v1',
+      upstreamUrl: upstreamV1,
+      item: normalizedName,
+      fetchedAt: new Date().toISOString(),
+      sellOrders: normalized.sellOrders,
+      buyOrders: normalized.buyOrders
+    });
+  }
+
+  const upstreamV2 = `${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}/top`;
+  const resultV2 = await fetchJson(upstreamV2);
+  if (!resultV2.ok) {
+    return json(requestUrl, {
+      error: resultV1.error || resultV2.error,
+      upstreamUrl: `${upstreamV1} -> ${upstreamV2}`,
+      source: 'cloudflare-worker',
+      sellOrders: [],
+      buyOrders: []
+    }, Math.max(resultV1.status || 500, resultV2.status || 500));
+  }
+
+  const normalized = normalizeOrders(normalizeOrdersFromV2(resultV2.data), normalizedName.replace(/_/g, ' '));
+  return json(requestUrl, {
+    source: 'cloudflare-worker:v2-fallback',
+    upstreamUrl: upstreamV2,
+    item: normalizedName,
+    fetchedAt: new Date().toISOString(),
+    sellOrders: normalized.sellOrders,
+    buyOrders: normalized.buyOrders
+  });
+}
+
+async function handleSearchLegacy(url) {
+  const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+  const upstream = `${WM_V2_BASE}/items`;
   const result = await fetchJson(upstream);
   if (!result.ok) {
     return json(null, { error: result.error, upstreamUrl: result.upstreamUrl || upstream, source: 'cloudflare-worker', items: [] }, result.status);
@@ -164,42 +353,6 @@ async function handleSearch(url) {
   });
 }
 
-async function handleOrders(requestUrl, itemUrlName) {
-  if (!itemUrlName) {
-    return json(requestUrl, { error: 'missing_item', source: 'cloudflare-worker' }, 400);
-  }
-
-  const normalizedName = decodeURIComponent(String(itemUrlName || '')).trim().toLowerCase().replace(/\s+/g, '_');
-  const upstream = `${WARFRAME_MARKET_BASE}/orders/item/${encodeURIComponent(normalizedName)}/top`;
-  const result = await fetchJson(upstream);
-  if (!result.ok) {
-    return json(requestUrl, {
-      error: result.error,
-      upstreamUrl: result.upstreamUrl || upstream,
-      source: 'cloudflare-worker',
-      sellOrders: [],
-      buyOrders: []
-    }, result.status);
-  }
-
-  const payload = {
-    payload: {
-      orders: [
-        ...((result.data?.data?.sell || []).map(order => ({ ...order, order_type: 'sell' }))),
-        ...((result.data?.data?.buy || []).map(order => ({ ...order, order_type: 'buy' })))
-      ]
-    }
-  };
-  const normalized = normalizeOrders(payload, normalizedName.replace(/_/g, ' '));
-  return json(requestUrl, {
-    source: 'cloudflare-worker',
-    item: normalizedName,
-    fetchedAt: new Date().toISOString(),
-    sellOrders: normalized.sellOrders,
-    buyOrders: normalized.buyOrders
-  });
-}
-
 export default {
   async fetch(request) {
     try {
@@ -214,8 +367,12 @@ export default {
       const path = url.pathname.replace(/\/+$/, '');
       console.log(`[market-proxy] incoming route: ${path} query=${url.search}`);
 
+      if (path === '/api/market/items') {
+        return handleItems(request);
+      }
+
       if (path === '/api/market/search') {
-        return handleSearch(url);
+        return handleSearch(request, url);
       }
 
       const orderMatch = path.match(/^\/api\/market\/orders\/([^/]+)$/);
@@ -226,7 +383,7 @@ export default {
       return json(request, {
         ok: true,
         source: 'cloudflare-worker',
-        routes: ['/api/market/search?q=', '/api/market/orders/:item']
+        routes: ['/api/market/items', '/api/market/search?q=', '/api/market/orders/:item']
       });
     } catch (error) {
       console.error('[market-proxy] unhandled exception', {

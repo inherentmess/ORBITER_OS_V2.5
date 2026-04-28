@@ -1836,8 +1836,10 @@ function runBootSequence() {
           <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">${escapeHtml(card.label)}</div>
           <div class="tracker-card-title font-bold">${escapeHtml(card.title)}</div>
           ${timerLine}
-          <div class="text-sm text-green-200/90 mt-2">${escapeHtml(card.state)}</div>
-          <p class="text-xs text-green-200/70 mt-3 leading-5">${escapeHtml(card.detail)}</p>
+          <div class="tracker-card-footer">
+            <div class="text-sm text-green-200/90 mt-2">${escapeHtml(card.state)}</div>
+            <p class="text-xs text-green-200/70 mt-3 leading-5">${escapeHtml(card.detail)}</p>
+          </div>
         </div>
       `;
     }
@@ -1851,8 +1853,10 @@ function runBootSequence() {
           <div class="uppercase text-[10px] tracking-[0.25em] mb-2 ${selected ? 'text-black/70' : 'text-terminal/70'}">${escapeHtml(card.label)}</div>
           <div class="tracker-card-title font-bold">${escapeHtml(card.title)}</div>
           ${timerLine}
-          <div class="text-sm mt-2 ${selected ? 'text-black/80' : 'text-green-200/90'}">${escapeHtml(card.state)}</div>
-          <p class="text-xs mt-3 leading-5 ${selected ? 'text-black/70' : 'text-green-200/70'}">${escapeHtml(card.detail)}</p>
+          <div class="tracker-card-footer">
+            <div class="text-sm mt-2 ${selected ? 'text-black/80' : 'text-green-200/90'}">${escapeHtml(card.state)}</div>
+            <p class="text-xs mt-3 leading-5 ${selected ? 'text-black/70' : 'text-green-200/70'}">${escapeHtml(card.detail)}</p>
+          </div>
         </button>
       `;
     }
@@ -2805,7 +2809,7 @@ function runBootSequence() {
       setMarketStatus('Catalog sync via market proxy...');
 
       marketState.loadPromise = (async () => {
-        const data = await fetchMarketJson('/api/market/search?q=');
+        const data = await fetchMarketJson('/api/market/items');
         const rawItems = Array.isArray(data?.items)
           ? data.items
           : (Array.isArray(data?.data?.items)
@@ -2850,6 +2854,8 @@ function runBootSequence() {
       } catch (error) {
         const reason = error?.message === 'Market proxy required'
           ? 'Market proxy required'
+          : error?.message?.includes('catalog_parse_failed') || error?.message?.includes('catalog_zero_usable_items')
+            ? (error?.message || 'catalog parse failed')
           : error?.message?.includes('HTTP')
             ? 'market proxy endpoint or HTTP error'
           : error?.message?.includes('parse error')
