@@ -482,7 +482,11 @@ function runBootSequence() {
       else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncAccordionMode);
     }
     syncAccordionMode();
-    navButtons.forEach(btn => btn.addEventListener('click', () => showSection(btn.dataset.section)));
+    navButtons.forEach(btn => btn.addEventListener('click', () => {
+      const targetSection = btn.dataset.section;
+      if (targetSection !== 'trackers' && typeof closeTrackerModal === 'function') closeTrackerModal();
+      showSection(targetSection);
+    }));
     showSection(currentSectionName);
 
     if (soundToggleBtn) {
@@ -505,6 +509,7 @@ function runBootSequence() {
       '#marketViewSellBtn',
       '#marketViewBuyBtn',
       '#marketModalClose',
+      '#trackerModalClose',
       '#marketModalTabSell',
       '#marketModalTabBuy',
       '#codexSearchBtn',
@@ -579,6 +584,11 @@ function runBootSequence() {
 
     const dashboardTrackerGrid = document.getElementById('dashboardTrackerGrid');
     const dashboardTrackerStatus = document.getElementById('dashboardTrackerStatus');
+    const trackerModal = document.getElementById('trackerModal');
+    const trackerModalTitle = document.getElementById('trackerModalTitle');
+    const trackerModalSub = document.getElementById('trackerModalSub');
+    const trackerModalBody = document.getElementById('trackerModalBody');
+    const trackerModalClose = document.getElementById('trackerModalClose');
     const trackerDragTooltip = document.getElementById('trackerDragTooltip');
     const trackerSortMode = document.getElementById('trackerSortMode');
     const trackerResetOrderBtn = document.getElementById('trackerResetOrderBtn');
@@ -596,6 +606,13 @@ function runBootSequence() {
       syncedAt: null,
       lastFetchAt: 0,
       lastData: null
+    };
+    const trackerModalState = {
+      open: false,
+      detailId: '',
+      categoryId: '',
+      detailType: '',
+      prevBodyOverflow: ''
     };
 
     const SOLNODE_LOOKUP_URL = 'https://raw.githubusercontent.com/WFCD/warframe-worldstate-data/master/data/solNodes.json';
@@ -2169,6 +2186,74 @@ function runBootSequence() {
       return renderDetailPanelByType(detail);
     }
 
+    function selectedDetailByIds(categoryId, detailId) {
+      if (!categoryId || !detailId) return { category: null, detail: null };
+      const category = (dashboardTrackerState.categories || []).find(item => item.id === categoryId) || null;
+      if (!category) return { category: null, detail: null };
+      const detail = selectedDetail(category);
+      return { category, detail };
+    }
+
+    function renderTrackerModalDetail() {
+      if (!trackerModalBody || !trackerModalTitle || !trackerModalSub) return;
+      const { category, detail } = selectedDetailByIds(trackerModalState.categoryId, trackerModalState.detailId);
+      if (!category || !detail) {
+        trackerModalTitle.textContent = 'Tracker Details';
+        trackerModalSub.textContent = 'Select a tracker card to inspect details.';
+        trackerModalBody.innerHTML = '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No tracker detail is currently selected.</div>';
+        return;
+      }
+      const guiType = resolveTrackerDetailGuiType(category, detail);
+      trackerModalState.detailType = guiType;
+      const timerText = detail.expiresAt ? ` // ${formatDashboardCountdown(detail.expiresAt)}` : '';
+      trackerModalTitle.textContent = detail.title || 'Tracker Details';
+      trackerModalSub.textContent = `${detail.source || category.source || 'Worldstate'}${timerText}`;
+      trackerModalBody.innerHTML = `<div class="tracker-detail-panel tracker-detail-panel--${escapeHtml(guiType)}">${renderTrackerDetailGui(category, detail)}</div>`;
+    }
+
+    function setTrackerModalOpen(open) {
+      if (!trackerModal) return Promise.resolve();
+      const wantOpen = Boolean(open);
+      if (trackerModalState.open === wantOpen) return Promise.resolve();
+      trackerModalState.open = wantOpen;
+
+      if (wantOpen) {
+        trackerModal.classList.add('is-visible');
+        trackerModal.setAttribute('aria-hidden', 'false');
+        trackerModalState.prevBodyOverflow = document.body.style.overflow || '';
+        document.body.style.overflow = 'hidden';
+        trackerModal.dataset.open = '0';
+        trackerModal.getBoundingClientRect();
+        trackerModal.dataset.open = '1';
+        return Promise.resolve();
+      }
+
+      trackerModal.dataset.open = '0';
+      trackerModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = trackerModalState.prevBodyOverflow;
+      return new Promise(resolve => {
+        const panel = trackerModal.querySelector('.terminal-modal__panel');
+        const done = () => {
+          if (panel) panel.removeEventListener('transitionend', done);
+          trackerModal.classList.remove('is-visible');
+          resolve();
+        };
+        if (panel) panel.addEventListener('transitionend', done);
+        window.setTimeout(done, 320);
+      });
+    }
+
+    function openTrackerModal(categoryId, detailId) {
+      trackerModalState.categoryId = categoryId || '';
+      trackerModalState.detailId = detailId || '';
+      renderTrackerModalDetail();
+      setTrackerModalOpen(true);
+    }
+
+    function closeTrackerModal() {
+      return setTrackerModalOpen(false);
+    }
+
     function renderDetailPanelByType(detail) {
       if (detail.type === 'summary') return renderSummaryOnlyDetailPanel(detail);
       if (detail.type === 'arbitration') return renderArbitrationDetailPanel(detail);
@@ -2279,25 +2364,13 @@ function runBootSequence() {
 
     function renderInteractiveCategory(category) {
       const forceSelectable = category.id === 'missions';
-      const inlineDetail = category.id === 'missions';
-      const detail = inlineDetail ? selectedDetail(category) : null;
-      const selectedCategory = dashboardTrackerState.selectedDetailCategoryId === category.id;
-      const selectedId = dashboardTrackerState.selectedDetailId || '';
-      const hint = inlineDetail && !detail
-        ? '<div class="panel-card p-5 text-sm text-green-200/75">Select a card below to inspect detailed rows for that section.</div>'
-        : '';
       return `
         <section class="tracker-category-shell space-y-3 transition-transform duration-200" data-tracker-category="${escapeHtml(category.id)}">
           ${renderTrackerCategoryHeader(category)}
           ${category.error ? `<div class="panel-card p-5 text-sm text-green-200/75">${escapeHtml(category.error)}</div>` : ''}
-          ${!category.error ? hint : ''}
           ${!category.error && category.cards.length ? `<div class="tracker-card-grid">${category.cards.map(card => {
-            const cardHtml = (forceSelectable || card.selectable) ? renderInteractiveSummaryCard(category.id, card) : renderDashboardCard(card);
-            const showInlineForCard = inlineDetail && selectedCategory && selectedId === card.id;
-            if (showInlineForCard && detail) return cardHtml + renderInlineSelectedDetailPanel(category, detail);
-            return cardHtml;
+            return (forceSelectable || card.selectable) ? renderInteractiveSummaryCard(category.id, card) : renderDashboardCard(card);
           }).join('')}</div>` : ''}
-          ${!category.error && !inlineDetail ? renderInteractiveDetailPanel(category) : ''}
         </section>
       `;
     }
@@ -2326,6 +2399,7 @@ function runBootSequence() {
       }
       dashboardTrackerGrid.innerHTML = dashboardTrackerState.categories.map(renderTrackerCategory).join('');
       bindDashboardTrackerEvents();
+      if (trackerModalState.open) renderTrackerModalDetail();
     }
 
     function animateTrackerReorder(applyChange) {
@@ -2461,15 +2535,11 @@ function runBootSequence() {
       bindTrackerOrderingEvents();
       dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-select]').forEach(button => {
         button.addEventListener('click', () => {
-          const scrollRoot = document.querySelector('main');
-          const savedScrollTop = scrollRoot ? scrollRoot.scrollTop : 0;
           dashboardTrackerState.selectedDetailId = button.dataset.dashboardDetailSelect || '';
           dashboardTrackerState.selectedDetailCategoryId = button.dataset.dashboardDetailCategory || '';
           renderDashboardTrackerCards();
-          const detailEl = dashboardTrackerGrid.querySelector(`[data-dashboard-detail="${cssEscapeValue(dashboardTrackerState.selectedDetailId)}"]`);
-          animateDetailPopin(detailEl);
           updateDashboardCountdowns();
-          if (scrollRoot) scrollRoot.scrollTop = savedScrollTop;
+          openTrackerModal(dashboardTrackerState.selectedDetailCategoryId, dashboardTrackerState.selectedDetailId);
         });
       });
       dashboardTrackerGrid.querySelectorAll('[data-dashboard-detail-close]').forEach(button => {
@@ -3332,9 +3402,15 @@ function runBootSequence() {
     if (marketModal) {
       // Close only via close button or Escape (no backdrop close).
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && marketModalState.open) closeMarketModal();
+        if (e.key === 'Escape') {
+          if (marketModalState.open) closeMarketModal();
+          if (trackerModalState.open) closeTrackerModal();
+        }
       });
     }
+    if (trackerModalClose) trackerModalClose.addEventListener('click', () => {
+      closeTrackerModal();
+    });
     if (accordionMql) {
       const syncMarketUiToViewport = () => setMarketActiveSide(marketUi.activeSide);
       if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncMarketUiToViewport);

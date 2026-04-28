@@ -524,6 +524,8 @@
     .tracker-detail-panel--fissures { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.18); }
     .tracker-detail-panel--invasions { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.18); }
     .tracker-detail-panel--archimedea { box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.2); }
+    .tracker-modal__panel { width: min(1040px, calc(100% - 20px)); }
+    .tracker-modal__list { padding: 12px; overflow: auto; flex: 1; }
     .tracker-card {
       min-width: 0;
       padding: 16px;
@@ -564,6 +566,7 @@
       .tracker-card-grid { grid-template-columns: 1fr; gap: 12px; }
       .tracker-drag-handle { display: none; }
       .tracker-move-btn { flex: 1 1 0; padding: 9px 10px; }
+      .tracker-modal__list { padding: 10px; }
     }
   </style>
 </head>
@@ -1027,6 +1030,24 @@
 
       <div id="marketModalList" class="terminal-modal__list">
         <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select an item to view orders.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="trackerModal" class="terminal-modal" data-open="0" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Tracker details">
+    <div class="terminal-modal__backdrop"></div>
+    <div class="terminal-modal__panel tracker-modal__panel">
+      <div class="terminal-modal__header">
+        <div>
+          <div class="terminal-modal__title" id="trackerModalTitle">Tracker Details</div>
+          <div id="trackerModalSub" class="terminal-modal__sub">Select a tracker card to inspect details.</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="trackerModalClose" class="terminal-modal__close">close</button>
+        </div>
+      </div>
+      <div id="trackerModalBody" class="tracker-modal__list">
+        <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select a tracker card to view details.</div>
       </div>
     </div>
   </div>
