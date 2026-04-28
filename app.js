@@ -752,20 +752,36 @@ function runBootSequence() {
     let dashboardWorldstateRequest = null;
 
     async function fetchDashboardWorldstateJson() {
-      if (!API_BASE_URL) {
-        throw new Error('API_BASE is not configured; set window.ORBITER_API_BASE_URL to your Railway backend URL');
-      }
       if (dashboardWorldstateRequest) return dashboardWorldstateRequest;
-      const url = apiUrl('/api/worldstate');
       dashboardWorldstateRequest = (async () => {
-        logRequest('dashboard backend worldstate', url);
-        const response = await fetch(url, { cache: 'no-store' });
-        logResponse('dashboard backend worldstate', response);
-        if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status} from ${url}`);
-        const json = await parseJsonResponse(response, 'dashboard backend worldstate');
-        if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
-        logJson('dashboard backend worldstate summary', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
-        return json;
+        const backendUrl = API_BASE_URL ? apiUrl('/api/worldstate') : '';
+        if (backendUrl) {
+          try {
+            logRequest('dashboard backend worldstate', backendUrl);
+            const response = await fetch(backendUrl, { cache: 'no-store' });
+            logResponse('dashboard backend worldstate', response);
+            if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status} from ${backendUrl}`);
+            const json = await parseJsonResponse(response, 'dashboard backend worldstate');
+            if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
+            logJson('dashboard backend worldstate summary', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
+            return json;
+          } catch (error) {
+            logClientError('dashboard backend worldstate', error, { backendUrl });
+          }
+        }
+
+        const fallbackUrl = 'https://api.tenno.tools/worldstate/pc';
+        logRequest('dashboard tenno.tools direct', fallbackUrl);
+        const fallbackResponse = await fetch(fallbackUrl, { cache: 'no-store', headers: { Accept: 'application/json' } });
+        logResponse('dashboard tenno.tools direct', fallbackResponse);
+        if (!fallbackResponse.ok) throw new Error(`tenno.tools HTTP ${fallbackResponse.status} from ${fallbackUrl}`);
+        const fallbackJson = await parseJsonResponse(fallbackResponse, 'dashboard tenno.tools direct');
+        if (!fallbackJson || typeof fallbackJson !== 'object') throw new Error('tenno.tools response missing object payload');
+        logJson('dashboard tenno.tools direct summary', { keys: Object.keys(fallbackJson || {}).slice(0, 20) });
+        return {
+          source: 'tenno.tools (direct fallback)',
+          data: fallbackJson
+        };
       })();
       try {
         return await dashboardWorldstateRequest;
@@ -2763,18 +2779,23 @@ function runBootSequence() {
 
       marketState.loadPromise = (async () => {
         const data = await fetchMarketJson('/api/market/search?q=');
-        const rawItems = data?.items || [];
+        const rawItems = Array.isArray(data?.items)
+          ? data.items
+          : (Array.isArray(data?.data) ? data.data : []);
+        logJson('market catalog raw response', data);
+        console.log('[orbiter] market catalog usable source rows', rawItems.length);
         if (!Array.isArray(rawItems)) {
           throw new Error('bad endpoint shape: expected search response items[]');
         }
         marketState.catalog = rawItems
           .map(item => ({
-            item_name: item.item_name || item.name || item.url_name,
-            url_name: item.url_name,
-            norm_name: marketNorm(item.item_name || item.name || item.url_name)
+            item_name: item.item_name || item.name || item?.i18n?.en?.name || item.title || item.slug || item.url_name,
+            url_name: item.url_name || item.slug,
+            norm_name: marketNorm(item.item_name || item.name || item?.i18n?.en?.name || item.title || item.slug || item.url_name)
           }))
           .filter(item => item.item_name && item.url_name)
           .sort((a, b) => a.item_name.localeCompare(b.item_name));
+        console.log('[orbiter] market catalog usable mapped items', marketState.catalog.length);
         if (!marketState.catalog.length) {
           throw new Error('empty result: market item dataset returned zero usable items');
         }

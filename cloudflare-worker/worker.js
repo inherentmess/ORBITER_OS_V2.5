@@ -67,8 +67,8 @@ function normalizeSearchItems(items = []) {
   if (!Array.isArray(items)) return [];
   return items
     .map(item => ({
-      item_name: item?.item_name || item?.name || item?.url_name || '',
-      url_name: item?.url_name || ''
+      item_name: item?.item_name || item?.name || item?.i18n?.en?.name || item?.title || item?.slug || item?.url_name || '',
+      url_name: item?.url_name || item?.slug || ''
     }))
     .filter(item => item.item_name && item.url_name);
 }
@@ -116,6 +116,7 @@ async function handleSearch(url) {
 
   const rawItems = result.data?.data || result.data?.payload?.items || [];
   const allItems = normalizeSearchItems(rawItems);
+  console.log(`[market-proxy] search source rows=${rawItems.length} usable=${allItems.length} query="${q}"`);
   const filtered = !q
     ? allItems
     : allItems.filter(item => item.item_name.toLowerCase().includes(q) || item.url_name.toLowerCase().includes(q));
