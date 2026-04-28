@@ -2098,6 +2098,77 @@ function runBootSequence() {
       `;
     }
 
+    function resolveTrackerDetailGuiType(category, detail) {
+      const categoryId = category?.id || '';
+      const detailId = detail?.id || '';
+      const detailType = detail?.type || '';
+      if (detailType === 'archimedea' || /archimedea/.test(detailId)) return 'archimedea';
+      if (detailType === 'invasions' || detailId === 'invasions') return 'invasions';
+      if (detailType === 'fissures' || detailId.startsWith('fissures-') || detailType === 'void-storms' || detailId === 'void-storms') return 'fissures';
+      if (categoryId === 'environments' || detailId.startsWith('cycle-') || detailId === 'zariman') return 'environment-cycles';
+      if (categoryId === 'bounties' || categoryId === 'syndicate-missions' || detailId.includes('bount') || detailId.includes('holdfast') || detailId.includes('cavia') || detailId.includes('hex') || detailId === 'nightwave' || detailId === 'events') return 'syndicates-bounties';
+      if (categoryId === 'missions') return 'missions-rotations';
+      return 'generic';
+    }
+
+    function renderMissionsDetailPanel(detail) {
+      if (!detail) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No mission detail selected.</div>';
+      if (detail.type === 'sortie') return renderSortieDetailPanel(detail);
+      if (detail.type === 'archon') return renderArchonDetailPanel(detail);
+      if (detail.type === 'events') return renderEventsDetailPanel(detail);
+      if (detail.type === 'alerts') return renderAlertsDetailPanel(detail);
+      if (detail.type === 'weekly') return renderWeeklyDetailPanel(detail);
+      if (detail.type === 'sp-incursions') return renderSpIncursionsDetailPanel(detail);
+      if (detail.type === 'baro') return renderBaroDetailPanel(detail);
+      if (detail.type === 'summary') return renderSummaryOnlyDetailPanel(detail);
+      return renderGenericEntryDetailPanel(detail);
+    }
+
+    function renderSyndicatesBountiesDetailPanel(detail) {
+      if (!detail) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No syndicate/bounty detail selected.</div>';
+      if (detail.type === 'events') return renderEventsDetailPanel(detail);
+      return renderGenericEntryDetailPanel(detail);
+    }
+
+    function renderEnvironmentCyclesDetailPanel(detail) {
+      if (!detail) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No environment cycle selected.</div>';
+      if (detail.type === 'summary') return renderSummaryOnlyDetailPanel(detail);
+      const rows = (detail.entries || detail.rows || []).map((row, index) => ({
+        id: row.id || `environment-${index}`,
+        name: row.name || row.node || detail.title || 'Cycle',
+        tier: row.tier || row.state || 'State unavailable',
+        factionLocation: row.factionLocation || row.location || '',
+        rewards: row.rewards || row.progress || 'Cycle data',
+        detail: row.detail || row.rawKeys || '',
+        expiresAt: row.expiresAt || detail.expiresAt || ''
+      }));
+      return renderGenericEntryDetailPanel({ ...detail, entries: rows });
+    }
+
+    function renderFissuresDetailPanel(detail) {
+      if (!detail) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No fissure detail selected.</div>';
+      if (detail.type === 'void-storms') return renderVoidStormDetailPanel(detail);
+      if (detail.type === 'fissures') return renderFissureDetailPanel(detail);
+      return renderGenericEntryDetailPanel(detail);
+    }
+
+    function renderInvasionsTrackerDetailPanel(detail) {
+      if (!detail) return '<div class="border border-terminal/25 p-4 text-sm text-green-200/75">No invasion detail selected.</div>';
+      if (detail.type === 'invasions') return renderInvasionDetailPanel(detail);
+      return renderGenericEntryDetailPanel(detail);
+    }
+
+    function renderTrackerDetailGui(category, detail) {
+      const guiType = resolveTrackerDetailGuiType(category, detail);
+      if (guiType === 'missions-rotations') return renderMissionsDetailPanel(detail);
+      if (guiType === 'syndicates-bounties') return renderSyndicatesBountiesDetailPanel(detail);
+      if (guiType === 'environment-cycles') return renderEnvironmentCyclesDetailPanel(detail);
+      if (guiType === 'fissures') return renderFissuresDetailPanel(detail);
+      if (guiType === 'invasions') return renderInvasionsTrackerDetailPanel(detail);
+      if (guiType === 'archimedea') return renderArchimedeaDetailPanel(detail);
+      return renderDetailPanelByType(detail);
+    }
+
     function renderDetailPanelByType(detail) {
       if (detail.type === 'summary') return renderSummaryOnlyDetailPanel(detail);
       if (detail.type === 'arbitration') return renderArbitrationDetailPanel(detail);
@@ -2144,8 +2215,9 @@ function runBootSequence() {
         return '<div class="panel-card p-5 text-sm text-green-200/75">Select a card above to inspect detailed mission rows for that section.</div>';
       }
       const timerText = detail.expiresAt ? ` // ${formatDashboardCountdown(detail.expiresAt)}` : '';
+      const guiType = resolveTrackerDetailGuiType(category, detail);
       return `
-        <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
+        <div class="panel-card p-5 space-y-4 tracker-detail-panel tracker-detail-panel--${escapeHtml(guiType)}" data-dashboard-detail="${escapeHtml(detail.id)}" data-dashboard-detail-type="${escapeHtml(guiType)}">
           <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
             <div>
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Selected Section</div>
@@ -2154,16 +2226,17 @@ function runBootSequence() {
             </div>
             <button class="terminal-link border border-terminal px-4 py-2 text-xs uppercase tracking-widest" type="button" data-dashboard-detail-close="${escapeHtml(category.id)}">Close Details</button>
           </div>
-          ${renderDetailPanelByType(detail)}
+          ${renderTrackerDetailGui(category, detail)}
         </div>
       `;
     }
 
     function renderInlineSelectedDetailPanel(category, detail) {
       const timerText = detail.expiresAt ? ` // ${formatDashboardCountdown(detail.expiresAt)}` : '';
+      const guiType = resolveTrackerDetailGuiType(category, detail);
       return `
         <div class="tracker-inline-detail md:col-span-2 xl:col-span-3">
-          <div class="panel-card p-5 space-y-4" data-dashboard-detail="${escapeHtml(detail.id)}">
+          <div class="panel-card p-5 space-y-4 tracker-detail-panel tracker-detail-panel--${escapeHtml(guiType)}" data-dashboard-detail="${escapeHtml(detail.id)}" data-dashboard-detail-type="${escapeHtml(guiType)}">
             <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
               <div>
                 <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Selected Section</div>
@@ -2172,7 +2245,7 @@ function runBootSequence() {
               </div>
               <button class="terminal-link border border-terminal px-4 py-2 text-xs uppercase tracking-widest" type="button" data-dashboard-detail-close="${escapeHtml(category.id)}">Close Details</button>
             </div>
-            ${renderDetailPanelByType(detail)}
+            ${renderTrackerDetailGui(category, detail)}
           </div>
         </div>
       `;
