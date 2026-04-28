@@ -111,7 +111,7 @@ const accordionMql = typeof window.matchMedia === 'function' ? window.matchMedia
 const touchMql = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)') : null;
 const isMobileOrTouch = () => Boolean(accordionMql?.matches || touchMql?.matches || navigator.maxTouchPoints > 0);
 const sectionAccordionState = {
-  enabled: false,
+  enabled: Boolean(accordionMql?.matches),
   bodies: new Map(),
   toggles: new Map()
 };
@@ -275,6 +275,23 @@ function runBootSequence() {
       console.log(`[orbiter] ${label} parsed JSON`, json);
     }
 
+    async function parseJsonResponse(response, label) {
+      const contentType = response.headers.get('content-type') || '';
+      console.log(`[orbiter] ${label} content-type`, contentType);
+      const text = await response.text();
+      if (!text.trim()) {
+        throw new Error(`empty response body from ${response.url || 'unknown URL'}`);
+      }
+      try {
+        const parsed = JSON.parse(text);
+        logJson(label, parsed);
+        return parsed;
+      } catch (error) {
+        const preview = text.slice(0, 200).replace(/\s+/g, ' ').trim();
+        throw new Error(`parse error: ${error.message}; preview="${preview}"`);
+      }
+    }
+
     function setSectionOpen(sectionName, open, { scrollIntoView = false } = {}) {
       const section = document.getElementById(`section-${sectionName}`);
       const body = sectionAccordionState.bodies.get(sectionName);
@@ -355,7 +372,7 @@ function runBootSequence() {
     }
 
     function syncAccordionMode() {
-      const shouldEnable = false;
+      const shouldEnable = Boolean(accordionMql?.matches);
       if (shouldEnable === sectionAccordionState.enabled) return;
       sectionAccordionState.enabled = shouldEnable;
 
@@ -444,6 +461,7 @@ function runBootSequence() {
       if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncAccordionMode);
       else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncAccordionMode);
     }
+    syncAccordionMode();
     navButtons.forEach(btn => btn.addEventListener('click', () => showSection(btn.dataset.section)));
     showSection(currentSectionName);
 
@@ -677,9 +695,9 @@ function runBootSequence() {
         const response = await fetch(url, { cache: 'no-store' });
         logResponse('dashboard backend worldstate', response);
         if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status} from ${url}`);
-        const json = await response.json();
+        const json = await parseJsonResponse(response, 'dashboard backend worldstate');
         if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
-        logJson('dashboard backend worldstate', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
+        logJson('dashboard backend worldstate summary', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
         return json;
       })();
       try {
@@ -2431,6 +2449,8 @@ function runBootSequence() {
       ordersUpdatedSource: '',
       suggestions: [],
       suggestionIndex: -1,
+      autocompleteVisible: false,
+      lastResults: [],
       selectedItem: null,
       // Raw orders are stored once per item selection; filters/sorts are applied locally.
       sellOrders: [],
@@ -2485,13 +2505,7 @@ function runBootSequence() {
       const response = await fetch(url, { cache: path.includes('/orders/') ? 'no-store' : 'force-cache' });
       logResponse('market backend', response);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      let json;
-      try {
-        json = await response.json();
-      } catch (error) {
-        throw new Error(`parse error: ${error.message}`);
-      }
-      logJson('market backend', json);
+      const json = await parseJsonResponse(response, 'market backend');
       marketState.activeSource = json?.source || 'backend';
       return json;
     }
@@ -2567,15 +2581,22 @@ function runBootSequence() {
       return starts.concat(includes).slice(0, limit);
     }
 
-    function hideMarketAutocomplete() {
+    function hideMarketAutocomplete(options = {}) {
+      const restoreResults = Boolean(options.restoreResults);
       marketState.suggestions = [];
       marketState.suggestionIndex = -1;
+      const wasVisible = marketState.autocompleteVisible;
+      marketState.autocompleteVisible = false;
+      if (!restoreResults || !wasVisible || !marketResults) return;
+      const query = marketItemSearch?.value || '';
+      renderMarketResults(marketState.lastResults || [], query);
     }
 
     function renderMarketAutocomplete(items) {
       if (!marketResults || !items.length) return hideMarketAutocomplete();
       marketState.suggestions = items;
       marketState.suggestionIndex = -1;
+      marketState.autocompleteVisible = true;
       marketResults.innerHTML = `
         <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Suggestions</div>
         <div class="space-y-2">
@@ -2604,6 +2625,8 @@ function runBootSequence() {
 
     function renderMarketResults(items, query = '') {
       if (!marketResults) return;
+      marketState.autocompleteVisible = false;
+      marketState.lastResults = Array.isArray(items) ? [...items] : [];
       if (!query.trim()) {
         marketResults.innerHTML = '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Search to load market results.</div>';
         return;
@@ -3006,7 +3029,7 @@ function runBootSequence() {
         const bestSell = applyPriceSort(sellOrders, 'price_asc', 'price_asc')[0]?.platinum;
         const bestBuy = applyPriceSort(buyOrders, 'price_desc', 'price_desc')[0]?.platinum;
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
-        marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p • Best buy ${bestBuy ?? '-'}p${spread !== null ? ` • Spread ${spread}p` : ''} • ${marketState.activeSource}`;
+        marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p | Best buy ${bestBuy ?? '-'}p${spread !== null ? ` | Spread ${spread}p` : ''} | ${marketState.activeSource}`;
         renderFilteredMarketOrders();
         setMarketStatus(`Item live (${marketState.activeSource})`);
       } catch (error) {
@@ -3082,7 +3105,7 @@ function runBootSequence() {
 
       marketItemSearch.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-          hideMarketAutocomplete();
+          hideMarketAutocomplete({ restoreResults: true });
           return;
         }
         if (!marketState.suggestions.length) {
@@ -3117,7 +3140,7 @@ function runBootSequence() {
         }
       });
 
-      marketItemSearch.addEventListener('blur', () => setTimeout(hideMarketAutocomplete, 150));
+      marketItemSearch.addEventListener('blur', () => setTimeout(() => hideMarketAutocomplete({ restoreResults: true }), 150));
     } else {
       logClientError('market bindings', new Error('Market controls missing'));
     }

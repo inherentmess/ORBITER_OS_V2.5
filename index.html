@@ -203,7 +203,7 @@
     pre, code { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     html, body { max-width: 100%; overflow-x: hidden; }
 
-    /* Mobile accordion behavior (section wrappers are created by app.js). */
+    /* Mobile accordion fallback (section wrappers are created by app.js only if enabled). */
     .section-toggle-btn { display: none; touch-action: manipulation; align-items: center; justify-content: center; gap: 10px; }
     .section-body { transition: max-height 240ms ease, opacity 200ms ease; overflow: hidden; }
     @media (max-width: 900px) {
@@ -236,7 +236,7 @@
         align-items: center;
         gap: 12px;
         padding: 8px 10px;
-        overflow-x: hidden;
+        overflow-x: visible;
         overflow-y: hidden;
       }
       .app-nav .mb-8 { margin-bottom: 0; }
@@ -254,6 +254,8 @@
         flex: 1 1 auto;
         padding-bottom: 4px;
       }
+      #navButtons::-webkit-scrollbar { height: 4px; }
+      #navButtons::-webkit-scrollbar-thumb { background: rgba(74, 222, 128, 0.6); }
       #navButtons .nav-btn {
         white-space: nowrap;
         flex: 0 0 auto;
@@ -298,6 +300,144 @@
       input, select, textarea { font-size: 16px !important; }
       .panel-card { padding: 16px !important; }
       #marketResults, #marketSellOrders, #marketBuyOrders { max-height: 45vh; }
+    }
+
+    /* Trackers */
+    .tracker-control-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .tracker-control-copy {
+      flex: 1 1 320px;
+      min-width: 0;
+    }
+    .tracker-control-field {
+      flex: 0 1 420px;
+      min-width: 260px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .tracker-control-label {
+      margin: 0;
+      line-height: 1;
+      color: rgba(74, 222, 128, 0.76);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .tracker-control-inputs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+    .tracker-select {
+      flex: 1 1 auto;
+      min-height: 42px;
+      min-width: 0;
+      width: 100%;
+      appearance: none;
+      background:
+        linear-gradient(45deg, transparent 50%, rgba(74, 222, 128, 0.9) 50%) calc(100% - 18px) calc(50% - 2px) / 6px 6px no-repeat,
+        linear-gradient(135deg, rgba(74, 222, 128, 0.9) 50%, transparent 50%) calc(100% - 13px) calc(50% - 2px) / 6px 6px no-repeat,
+        rgba(0,0,0,0.78);
+      border: 1px solid rgba(74, 222, 128, 0.78);
+      color: #79f7a8;
+      font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 9px 34px 9px 11px;
+      box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.12), 0 0 14px rgba(74, 222, 128, 0.08);
+      transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+    }
+    .tracker-select:focus-visible {
+      outline: none;
+      border-color: rgba(74, 222, 128, 1);
+      box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.18), 0 0 18px rgba(74, 222, 128, 0.18);
+    }
+    .tracker-action-btn {
+      flex: 0 0 auto;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px solid rgba(74, 222, 128, 0.78);
+      background: rgba(0, 0, 0, 0.72);
+      color: #79f7a8;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+    }
+    .tracker-action-btn:hover,
+    .tracker-action-btn:focus-visible {
+      outline: none;
+      background: rgba(74, 222, 128, 0.16);
+      border-color: rgba(74, 222, 128, 1);
+      box-shadow: 0 0 16px rgba(74, 222, 128, 0.22);
+      color: #c8ffd9;
+    }
+    .tracker-action-btn,
+    .tracker-move-btn,
+    .tracker-drag-handle {
+      min-height: 40px;
+      touch-action: manipulation;
+    }
+    .tracker-category-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-bottom: 1px solid rgba(74, 222, 128, 0.35);
+      padding-bottom: 10px;
+    }
+    .tracker-card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    .tracker-card {
+      min-width: 0;
+      padding: 16px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .tracker-card-title {
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+    .tracker-timer {
+      font-size: clamp(1.2rem, 6vw, 1.65rem);
+      line-height: 1.1;
+      word-break: keep-all;
+    }
+    @media (min-width: 768px) {
+      .tracker-category-header {
+        flex-direction: row;
+        align-items: flex-end;
+        justify-content: space-between;
+      }
+    }
+    @media (max-width: 640px) {
+      #section-trackers h1 { font-size: 1.65rem; line-height: 1.15; }
+      #section-trackers .panel-card { padding: 14px !important; }
+      .tracker-control-bar { align-items: stretch; gap: 10px; }
+      .tracker-control-copy { flex-basis: 100%; }
+      .tracker-control-field,
+      .tracker-control-label,
+      .tracker-control-inputs,
+      .tracker-select,
+      .tracker-action-btn { width: 100%; }
+      .tracker-control-inputs {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .tracker-card-grid { grid-template-columns: 1fr; gap: 12px; }
+      .tracker-drag-handle { display: none; }
+      .tracker-move-btn { flex: 1 1 0; padding: 9px 10px; }
     }
   </style>
 </head>
@@ -433,7 +573,7 @@
           <div>
             <div class="text-[10px] text-green-700 font-bold mb-3 tracking-[0.2em]">SECTION // TRACKERS</div>
             <h1 class="text-3xl font-black tracking-tight">World-State Trackers</h1>
-            <p class="text-sm text-green-300/80 mt-2 max-w-3xl">Live Warframe rotations from the backend worldstate proxy: alerts, fissures, sorties, Nightwave, invasions, and open-world cycles.</p>
+            <p class="text-sm text-green-300/80 mt-2 max-w-3xl">Live Warframe rotations from the backend worldstate proxy: fissures, sorties, Nightwave, invasions, bounties, vendors, and useful active cycles.</p>
           </div>
 
           <div class="panel-card p-5 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
@@ -446,20 +586,22 @@
             <div id="dashboardTrackerStatus" class="text-[10px] uppercase tracking-[0.2em] text-terminal/70">Awaiting sync</div>
           </div>
 
-          <div class="panel-card p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
+          <div class="panel-card p-4 tracker-control-bar">
+            <div class="tracker-control-copy">
               <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70">Category Order</div>
               <p class="text-xs text-green-200/70 mt-1">Drag category headers, use move buttons, or choose a sort mode.</p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <label class="text-[10px] uppercase tracking-[0.2em] text-terminal/70" for="trackerSortMode">Sort</label>
-              <select id="trackerSortMode" class="bg-black border border-terminal text-terminal text-xs uppercase tracking-widest px-3 py-2">
-                <option value="default">Default order</option>
+            <div class="tracker-control-field">
+              <label class="tracker-control-label" for="trackerSortMode">Sort Order</label>
+              <div class="tracker-control-inputs">
+              <select id="trackerSortMode" class="tracker-select">
+                <option value="default">Default</option>
+                <option value="custom">Custom</option>
                 <option value="alpha">Alphabetical</option>
-                <option value="expiry">Expiring soon</option>
-                <option value="custom">Custom order</option>
+                <option value="expiry">Expiring Soon</option>
               </select>
-              <button id="trackerResetOrderBtn" class="terminal-link border border-terminal px-3 py-2 text-xs uppercase tracking-widest" type="button">Reset</button>
+              <button id="trackerResetOrderBtn" class="tracker-action-btn terminal-link" type="button">Reset Order</button>
+              </div>
             </div>
           </div>
 
@@ -630,15 +772,6 @@
             </div>
           </div>
 
-          <div class="panel-card p-5">
-            <h3 class="text-lg font-bold mb-3">Behavior</h3>
-            <ul class="space-y-2 text-sm text-green-200/85">
-              <li>• Autocomplete is powered by the backend Warframe Market proxy</li>
-              <li>• Results and order books load in-page, no external embed required</li>
-              <li>• Backend API calls avoid browser CORS issues on PC and mobile</li>
-              <li>• Arsenal archive was left unchanged</li>
-            </ul>
-          </div>
         </section>
 
         <section id="section-codex" class="content-section hidden-panel space-y-6">
