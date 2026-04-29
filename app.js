@@ -29,6 +29,8 @@ const MARKET_PROXY_URL = normalizeApiBase('https://orbiter-market-proxy.jrque.wo
 const MARKET_DEBUG = (new URLSearchParams(window.location.search).get('market_debug') || '').toLowerCase() === '1'
   || localStorage.getItem('orbiter_market_debug') === '1';
 
+if (MARKET_DEBUG) console.log('[MARKET_DEBUG] market proxy base', MARKET_PROXY_URL || '(missing)');
+
 function buildApiUrl(path) {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
@@ -2942,18 +2944,33 @@ function runBootSequence() {
       ]);
     }
 
+    function getOrderStatus(order) {
+      return String(order?.user?.status || order?.status || '').toLowerCase().trim();
+    }
+
+    function getOrderType(order) {
+      const rawType = String(order?.order_type || '').toLowerCase().trim();
+      if (rawType === 'seller') return 'sell';
+      if (rawType === 'buyer') return 'buy';
+      return rawType;
+    }
+
+    function normalizeOrders(data) {
+      const rawOrders = getOrdersFromResponse(data);
+      return normalizeOrdersFromRaw(rawOrders);
+    }
+
     function normalizeOrdersFromRaw(rawOrders) {
-      const mapped = rawOrders.map(order => {
+      const mapped = (Array.isArray(rawOrders) ? rawOrders : []).map(order => {
         const userObj = (order && typeof order.user === 'object' && order.user !== null) ? order.user : {};
-        const status = String(userObj?.status || '').toLowerCase().trim();
+        const status = getOrderStatus(order);
         const platinumRaw = order?.platinum ?? order?.price ?? order?.price_platinum;
-        const rawSide = String(order?.order_type || '').toLowerCase().trim();
-        const normalizedSide = rawSide === 'seller' ? 'sell' : rawSide === 'buyer' ? 'buy' : rawSide;
+        const normalizedSide = getOrderType(order);
         return {
           ...order,
           user: typeof order?.user === 'string'
             ? { ingameName: order.user, status, platform: order?.platform || order?.user_platform || 'pc' }
-            : (order?.user || userObj),
+            : { ...userObj, status: String(userObj?.status || status).toLowerCase().trim() },
           order_type: normalizedSide,
           status,
           platinum: Number.isFinite(Number(platinumRaw)) ? Number(platinumRaw) : platinumRaw,
@@ -2967,12 +2984,18 @@ function runBootSequence() {
     }
 
     async function fetchMarketJson(path, options = {}) {
-      const url = buildMarketProxyUrl(path);
+      const withCacheBust = (() => {
+        if (!String(path).includes('/api/market/orders/')) return path;
+        const sep = path.includes('?') ? '&' : '?';
+        return `${path}${sep}_cb=${Date.now()}`;
+      })();
+      const url = buildMarketProxyUrl(withCacheBust);
+      if (MARKET_DEBUG) console.log('[MARKET_DEBUG] API URL', url);
       logRequest('market proxy', url);
       let response;
       try {
         response = await fetch(url, {
-          cache: path.includes('/orders/') ? 'no-store' : 'force-cache',
+          cache: 'no-store',
           signal: options.signal
         });
       } catch (error) {
@@ -3200,29 +3223,17 @@ function runBootSequence() {
       return htmlEscape(String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
     }
 
-    function renderOrderBook(target, orders, emptyText, action, options = {}) {
-      if (!target) return;
-      const renderStart = marketNow();
-      const cheapestId = options?.cheapestId || '';
-      if (!orders.length) {
-        target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
-        marketDebugLog('render-book', `target=${target.id || 'unknown'} rows=0 duration=${(marketNow() - renderStart).toFixed(1)}ms`);
-        return;
-      }
-      target.innerHTML = '';
+    function copyWhisper(order, actionOverride) {
+      const username = order?.user?.ingameName || order?.user?.ingame_name || order?.user || 'Unknown';
+      const price = Number(order?.platinum);
+      const action = actionOverride || (getOrderType(order) === 'buy' ? 'buy' : 'sell');
+      return copyMarketWhisper(action, username, price);
+    }
+
+    function renderOrderRows(orders, action, options = {}) {
       const fragment = document.createDocumentFragment();
-      const header = document.createElement('div');
-      header.className = 'market-order-head';
-      header.innerHTML = `
-        <span>Price</span>
-        <span>User</span>
-        <span>Qty</span>
-        <span>Rank</span>
-        <span>Platform</span>
-        <span>Copy</span>
-      `;
-      fragment.appendChild(header);
-      orders.forEach(order => {
+      const cheapestId = options?.cheapestId || '';
+      (orders || []).forEach(order => {
         const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
         const platform = String(order.user?.platform || order.platform || 'pc').toUpperCase();
         const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
@@ -3234,9 +3245,6 @@ function runBootSequence() {
         row.className = `market-order-row${cheapestId && cheapestId === uid ? ' market-order-row--best' : ''}`;
         row.setAttribute('role', 'button');
         row.setAttribute('tabindex', '0');
-        row.dataset.action = String(action || '');
-        row.dataset.user = String(username);
-        row.dataset.price = String(price);
 
         row.innerHTML = `
           <div class="market-order-cell market-order-cell--price market-order-row__value--price">${htmlEscape(price)}p</div>
@@ -3250,27 +3258,21 @@ function runBootSequence() {
         `;
 
         const doCopy = async () => {
-          const priceEl = null;
-          const originalPriceText = '';
           const nameEl = row.querySelector('.market-order-cell--user');
           const originalNameText = nameEl ? nameEl.textContent : '';
           if (nameEl) nameEl.textContent = '...';
           try {
-            await copyMarketWhisper(row.dataset.action, row.dataset.user, row.dataset.price);
-            if (priceEl) priceEl.textContent = 'Copied ✓';
+            await copyWhisper(order, action);
             row.classList.add('is-copied');
             if (nameEl) nameEl.textContent = 'Copied ✓';
             window.setTimeout(() => {
               row.classList.remove('is-copied');
               if (nameEl) nameEl.textContent = originalNameText;
-              if (priceEl) priceEl.textContent = originalPriceText;
             }, 1400);
           } catch {
-            if (priceEl) priceEl.textContent = 'Error';
             if (nameEl) nameEl.textContent = 'Error';
             window.setTimeout(() => {
               if (nameEl) nameEl.textContent = originalNameText;
-              if (priceEl) priceEl.textContent = originalPriceText;
             }, 1400);
           }
         };
@@ -3290,9 +3292,33 @@ function runBootSequence() {
             await doCopy();
           });
         }
-
         fragment.appendChild(row);
       });
+      return fragment;
+    }
+
+    function renderOrderBook(target, orders, emptyText, action, options = {}) {
+      if (!target) return;
+      const renderStart = marketNow();
+      if (!orders.length) {
+        target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
+        marketDebugLog('render-book', `target=${target.id || 'unknown'} rows=0 duration=${(marketNow() - renderStart).toFixed(1)}ms`);
+        return;
+      }
+      target.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      const header = document.createElement('div');
+      header.className = 'market-order-head';
+      header.innerHTML = `
+        <span>Price</span>
+        <span>User</span>
+        <span>Qty</span>
+        <span>Rank</span>
+        <span>Platform</span>
+        <span>Copy</span>
+      `;
+      fragment.appendChild(header);
+      fragment.appendChild(renderOrderRows(orders, action, options));
       target.appendChild(fragment);
       marketDebugLog('render-book', `target=${target.id || 'unknown'} rows=${orders.length} duration=${(marketNow() - renderStart).toFixed(1)}ms`);
     }
@@ -3386,14 +3412,18 @@ function runBootSequence() {
       });
     }
 
-    function orderStatus(order) {
-      const raw = order?.user?.status || order?.status || 'unknown';
-      return String(raw).toLowerCase();
-    }
-
     function applyStatusFilter(orders, statusValue) {
       void statusValue;
-      return orders.filter(order => String(order?.user?.status || '').toLowerCase().trim() === 'ingame');
+      return orders.filter(order => getOrderStatus(order) === 'ingame');
+    }
+
+    function filterOrders(orders, activeTab, filters = {}) {
+      const tab = activeTab === 'buy' ? 'buy' : 'sell';
+      const minInput = filters.minInput || null;
+      const maxInput = filters.maxInput || null;
+      const tabOrders = (orders || []).filter(order => order?.visible !== false && getOrderType(order) === tab);
+      const ingame = applyStatusFilter(tabOrders, 'ingame');
+      return applyPlatFilter(ingame, minInput, maxInput);
     }
 
     function applyPriceSort(orders, sortValue, defaultValue) {
@@ -3421,8 +3451,8 @@ function runBootSequence() {
       const value = String(sortValue || defaultValue || '').toLowerCase();
       const dir = value === 'price_desc' ? -1 : 1;
       return [...orders].sort((a, b) => {
-        const ar = statusRank(orderStatus(a));
-        const br = statusRank(orderStatus(b));
+        const ar = statusRank(getOrderStatus(a));
+        const br = statusRank(getOrderStatus(b));
         if (ar !== br) return ar - br;
 
         const ap = Number(a.platinum);
@@ -3434,27 +3464,23 @@ function runBootSequence() {
       });
     }
 
+    function sortOrders(orders, sortMode, defaultMode = 'price_asc') {
+      return applyPriceSort(orders, sortMode, defaultMode);
+    }
+
     function getMarketFilteredOrdersWithDebug(side) {
       const isBuy = side === 'buy';
       const status = isBuy ? (marketBuyStatus?.value || 'all') : (marketSellStatus?.value || 'all');
       const sort = isBuy ? (marketBuySort?.value || 'price_desc') : (marketSellSort?.value || 'price_asc');
       const minInput = isBuy ? marketBuyMin : marketSellMin;
       const maxInput = isBuy ? marketBuyMax : marketSellMax;
-      const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
+      const raw = marketState.rawOrders || [];
       const sideType = isBuy ? 'buy' : 'sell';
-      const sellStage = raw.filter(order => {
-        const type = String(order?.order_type || '').toLowerCase().trim();
-        return order?.visible !== false && type === 'sell';
-      });
-      const buyStage = raw.filter(order => {
-        const type = String(order?.order_type || '').toLowerCase().trim();
-        return order?.visible !== false && type === 'buy';
-      });
-      const typeStage = raw.filter(order => {
-        const type = String(order?.order_type || '').toLowerCase().trim();
-        return order?.visible !== false && type === sideType;
-      });
-      const ingameStage = applyStatusFilter(typeStage, status);
+      const sellStage = raw.filter(order => order?.visible !== false && getOrderType(order) === 'sell');
+      const buyStage = raw.filter(order => order?.visible !== false && getOrderType(order) === 'buy');
+      const filteredByTabAndIngame = filterOrders(raw, sideType, { minInput: null, maxInput: null });
+      const typeStage = sideType === 'buy' ? buyStage : sellStage;
+      const ingameStage = filteredByTabAndIngame;
       const statusStage = ingameStage;
       const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
       const regionPlatformStage = filteredByPlat;
@@ -3469,30 +3495,32 @@ function runBootSequence() {
         regionPlatform: regionPlatformStage.length,
         visible: regionPlatformStage.length
       };
-      console.log('[orbiter] market filter counts', {
-        side,
-        status,
-        min: minInput?.value ?? '',
-        max: maxInput?.value ?? '',
-        raw: debug.raw,
-        sell: debug.sell,
-        buy: debug.buy,
-        type: debug.type,
-        ingame: debug.ingame,
-        statusFiltered: debug.status,
-        priceFiltered: debug.price,
-        regionPlatformFiltered: debug.regionPlatform,
-        visible: debug.visible
-      });
+      if (MARKET_DEBUG) {
+        console.log('[MARKET_DEBUG] market filter counts', {
+          side,
+          status,
+          min: minInput?.value ?? '',
+          max: maxInput?.value ?? '',
+          raw: debug.raw,
+          sell: debug.sell,
+          buy: debug.buy,
+          type: debug.type,
+          ingame: debug.ingame,
+          statusFiltered: debug.status,
+          priceFiltered: debug.price,
+          regionPlatformFiltered: debug.regionPlatform,
+          visible: debug.visible
+        });
+      }
       if (String(status).toLowerCase() === 'all') {
-        // Show ingame first (then online/offline), while still sorting by price within each status group.
+        // Ingame-only rows still follow explicit sort mode.
         return {
-          orders: applyStatusThenPriceSort(regionPlatformStage, sort, isBuy ? 'price_desc' : 'price_asc'),
+          orders: sortOrders(regionPlatformStage, sort, isBuy ? 'price_desc' : 'price_asc'),
           debug
         };
       }
       return {
-        orders: applyPriceSort(regionPlatformStage, sort, isBuy ? 'price_desc' : 'price_asc'),
+        orders: sortOrders(regionPlatformStage, sort, isBuy ? 'price_desc' : 'price_asc'),
         debug
       };
     }
@@ -3618,12 +3646,12 @@ function runBootSequence() {
       const filteredBuy = buyResult.orders;
       marketDebugLog('filter', `sell=${filteredSell.length}/${marketState.sellOrders.length} buy=${filteredBuy.length}/${marketState.buyOrders.length} duration=${(marketNow() - filterStart).toFixed(1)}ms`);
       if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} ingame sellers of ${marketState.sellOrders.length} total orders`;
-      if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
+      if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} ingame buyers of ${marketState.buyOrders.length} total orders`;
       const activeDebug = marketUi.activeSide === 'buy' ? buyResult.debug : sellResult.debug;
 
       const cheapestOnline = applyPriceSort(
         filteredSell.filter(order => {
-          const s = orderStatus(order);
+          const s = getOrderStatus(order);
           return s === 'ingame';
         }),
         'price_asc',
@@ -3642,7 +3670,11 @@ function runBootSequence() {
       }
       marketDebugLog('render', `active=${marketUi.activeSide} duration=${(marketNow() - renderStart).toFixed(1)}ms`);
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
-      setMarketStatus(`Raw ${activeDebug.raw} -> Sell ${activeDebug.sell} -> Buy ${activeDebug.buy} -> Ingame ${activeDebug.ingame} -> Visible ${activeDebug.visible}`);
+      if (activeDebug.raw > 0 && filteredSell.length === 0 && filteredBuy.length === 0) {
+        setMarketStatus(`Orders fetched (${activeDebug.raw}) but filters hid all rows. Raw ${activeDebug.raw} -> Sell ${activeDebug.sell} -> Buy ${activeDebug.buy} -> Ingame ${activeDebug.ingame} -> Visible ${activeDebug.visible}`);
+      } else {
+        setMarketStatus(`Raw ${activeDebug.raw} -> Sell ${activeDebug.sell} -> Buy ${activeDebug.buy} -> Ingame ${activeDebug.ingame} -> Visible ${activeDebug.visible}`);
+      }
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.
@@ -3678,7 +3710,7 @@ function runBootSequence() {
       }
       const bestOnline = applyPriceSort(
         marketState.sellOrders.filter(order => {
-          const s = orderStatus(order);
+          const s = getOrderStatus(order);
           return s === 'ingame';
         }),
         'price_asc',
@@ -3706,16 +3738,20 @@ function runBootSequence() {
 
       const applyOrdersData = (ordersData, sourceLabel = '') => {
         const rawOrders = getOrdersFromResponse(ordersData);
-        console.log('[orbiter] market raw orders count', rawOrders.length);
-        console.log('[orbiter] market raw orders first 5', rawOrders.slice(0, 5));
+        if (MARKET_DEBUG) {
+          console.log('[MARKET_DEBUG] market raw orders count', rawOrders.length);
+          console.log('[MARKET_DEBUG] market raw orders first 3', rawOrders.slice(0, 3));
+        }
         const uniqType = [...new Set(rawOrders.map(o => String(o?.order_type || '').toLowerCase().trim()))];
         const uniqStatus = [...new Set(rawOrders.map(o => String(o?.user?.status || '').toLowerCase().trim()))];
         const uniqPlatform = [...new Set(rawOrders.map(o => String(o?.platform || o?.user?.platform || '').toLowerCase().trim()))];
         const uniqPlatinum = [...new Set(rawOrders.map(o => String(o?.platinum ?? o?.price ?? '')))].slice(0, 20);
-        console.log('[orbiter] market raw unique order_type', uniqType);
-        console.log('[orbiter] market raw unique user.status', uniqStatus);
-        console.log('[orbiter] market raw unique platform', uniqPlatform);
-        console.log('[orbiter] market raw unique platinum(sample)', uniqPlatinum);
+        if (MARKET_DEBUG) {
+          console.log('[MARKET_DEBUG] market raw unique order_type', uniqType);
+          console.log('[MARKET_DEBUG] market raw unique user.status', uniqStatus);
+          console.log('[MARKET_DEBUG] market raw unique platform', uniqPlatform);
+          console.log('[MARKET_DEBUG] market raw unique platinum(sample)', uniqPlatinum);
+        }
         const directSell = pickFirstArray([
           ordersData?.sellOrders,
           ordersData?.payload?.sellOrders,
@@ -3726,17 +3762,14 @@ function runBootSequence() {
           ordersData?.payload?.buyOrders,
           ordersData?.data?.payload?.buyOrders
         ]);
-        const rawCount = Number(ordersData?.rawCount);
-        const ingameCount = Number(ordersData?.ingameCount);
-        const hasWorkerCounts = Number.isFinite(rawCount) && Number.isFinite(ingameCount);
         const combinedDirect = [...directSell, ...directBuy];
         const sourceOrders = rawOrders.length ? rawOrders : combinedDirect;
-        const normalized = normalizeOrdersFromRaw(sourceOrders);
+        const normalized = normalizeOrders({ orders: sourceOrders });
         const sellOrders = normalized.sellOrders;
         const buyOrders = normalized.buyOrders;
         marketState.rawOrders = sourceOrders;
-        marketState.rawOrderCount = hasWorkerCounts ? rawCount : sourceOrders.length;
-        marketState.ingameOrderCount = hasWorkerCounts ? ingameCount : (sellOrders.length + buyOrders.length);
+        marketState.rawOrderCount = sourceOrders.length;
+        marketState.ingameOrderCount = (sellOrders.length + buyOrders.length);
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
         const fetchedAt = ordersData?.fetchedAt ? new Date(ordersData.fetchedAt) : new Date();
