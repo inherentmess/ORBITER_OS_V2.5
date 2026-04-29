@@ -260,6 +260,15 @@ async function handleSearch(request, url) {
 
 function normalizeOrdersFromV2(data = {}) {
   const top = data || {};
+  const pickArray = (candidates) => candidates.find(Array.isArray) || [];
+  const digArray = (node, path) => {
+    try {
+      return path.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), node);
+    } catch {
+      return undefined;
+    }
+  };
+
   const sell = [
     top?.data?.sell,
     top?.data?.sell_orders,
@@ -282,18 +291,60 @@ function normalizeOrdersFromV2(data = {}) {
     top?.orders
   ].find(Array.isArray) || [];
 
-  const ordersFromGeneric = genericOrders.map(order => {
+  // Additional v2 variants observed in different payload envelopes.
+  const sellAlt = pickArray([
+    digArray(top, 'data.sell.orders'),
+    digArray(top, 'data.sell.items'),
+    digArray(top, 'payload.sell.orders'),
+    digArray(top, 'payload.sell.items'),
+    digArray(top, 'sell.orders'),
+    digArray(top, 'sell.items')
+  ]);
+  const buyAlt = pickArray([
+    digArray(top, 'data.buy.orders'),
+    digArray(top, 'data.buy.items'),
+    digArray(top, 'payload.buy.orders'),
+    digArray(top, 'payload.buy.items'),
+    digArray(top, 'buy.orders'),
+    digArray(top, 'buy.items')
+  ]);
+  const genericAlt = pickArray([
+    digArray(top, 'data.payload.orders'),
+    digArray(top, 'payload.data.orders'),
+    digArray(top, 'payload.payload.orders'),
+    digArray(top, 'response.orders')
+  ]);
+
+  const mergedSell = [...sell, ...sellAlt];
+  const mergedBuy = [...buy, ...buyAlt];
+  const mergedGeneric = [...genericOrders, ...genericAlt];
+
+  const ordersFromGeneric = mergedGeneric.map(order => {
     const side = String(order?.order_type || order?.orderType || order?.type || order?.side || '').toLowerCase();
     if (side === 'seller') return { ...order, order_type: 'sell' };
     if (side === 'buyer') return { ...order, order_type: 'buy' };
     return { ...order, order_type: side };
   });
 
+  if (!mergedSell.length && !mergedBuy.length && !mergedGeneric.length) {
+    console.log('[market-proxy] v2 parser found no known arrays', {
+      topLevelKeys: Object.keys(top || {}),
+      dataKeys: Object.keys(top?.data || {}),
+      payloadKeys: Object.keys(top?.payload || {})
+    });
+  } else {
+    console.log('[market-proxy] v2 parser arrays', {
+      sell: mergedSell.length,
+      buy: mergedBuy.length,
+      generic: mergedGeneric.length
+    });
+  }
+
   return {
     payload: {
       orders: [
-        ...sell.map(order => ({ ...order, order_type: 'sell' })),
-        ...buy.map(order => ({ ...order, order_type: 'buy' })),
+        ...mergedSell.map(order => ({ ...order, order_type: 'sell' })),
+        ...mergedBuy.map(order => ({ ...order, order_type: 'buy' })),
         ...ordersFromGeneric
       ]
     }
