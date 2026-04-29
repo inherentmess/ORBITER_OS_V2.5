@@ -177,8 +177,9 @@
     .market-order-head,
     .market-order-row {
       width: 100%;
+      box-sizing: border-box;
       display: grid;
-      grid-template-columns: minmax(86px, 0.9fr) minmax(152px, 1.7fr) minmax(54px, 0.55fr) minmax(84px, 0.8fr) minmax(72px, 0.8fr) minmax(140px, 1.2fr) minmax(108px, 0.95fr);
+      grid-template-columns: minmax(78px, 0.8fr) minmax(146px, 1.55fr) minmax(52px, 0.48fr) minmax(102px, 0.9fr) minmax(66px, 0.6fr) minmax(118px, 0.95fr) minmax(98px, 0.78fr);
       align-items: center;
       column-gap: 10px;
     }
@@ -232,6 +233,8 @@
     }
     .market-order-cell--status {
       overflow: visible;
+      min-width: 0;
+      white-space: nowrap;
     }
     .market-order-cell--seen-rep {
       font-size: 11px;
@@ -241,7 +244,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 74px;
+      min-width: 82px;
       border-radius: 999px;
       border: 1px solid rgba(148, 163, 184, 0.55);
       background: rgba(100, 116, 139, 0.18);
@@ -325,7 +328,9 @@
     #marketBuyOrders,
     #marketModalList {
       overflow-y: auto;
-      overflow-x: hidden;
+      overflow-x: visible;
+      width: 100%;
+      box-sizing: border-box;
     }
     #marketSellOrders,
     #marketBuyOrders {
@@ -374,6 +379,96 @@
           "copy copy";
         min-height: 110px;
       }
+    }
+    /* Codex query/category theming */
+    #section-codex #codexSearchInput,
+    #section-codex #codexCategoryFilter,
+    #section-codex #codexSearchBtn,
+    #section-codex #codexOpenBtn,
+    #section-codex #codexPinBtn,
+    #section-codex .codex-chip {
+      background: rgba(0, 0, 0, 0.58);
+      color: #86efac;
+      border-color: rgba(74, 222, 128, 0.48);
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+    #section-codex #codexSearchInput::placeholder {
+      color: rgba(74, 222, 128, 0.45);
+    }
+    #section-codex #codexCategoryFilter {
+      -webkit-appearance: none;
+      appearance: none;
+      background-image:
+        linear-gradient(45deg, transparent 50%, rgba(74, 222, 128, 0.85) 50%),
+        linear-gradient(135deg, rgba(74, 222, 128, 0.85) 50%, transparent 50%);
+      background-position:
+        calc(100% - 18px) calc(50% - 3px),
+        calc(100% - 12px) calc(50% - 3px);
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      padding-right: 34px;
+    }
+    #section-codex #codexCategoryFilter option {
+      background: #031106;
+      color: #86efac;
+    }
+    #section-codex #codexSearchInput:focus,
+    #section-codex #codexCategoryFilter:focus,
+    #section-codex #codexSearchBtn:focus-visible,
+    #section-codex #codexOpenBtn:focus-visible,
+    #section-codex #codexPinBtn:focus-visible,
+    #section-codex .codex-chip:focus-visible {
+      outline: none;
+      border-color: rgba(74, 222, 128, 0.8);
+      box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.22), 0 0 14px rgba(74, 222, 128, 0.15);
+    }
+    #section-codex #codexSearchBtn:hover,
+    #section-codex #codexOpenBtn:hover,
+    #section-codex #codexPinBtn:hover,
+    #section-codex .codex-chip:hover {
+      background: rgba(74, 222, 128, 0.12);
+      color: #dcfce7;
+      border-color: rgba(74, 222, 128, 0.7);
+      transform: translateY(-1px);
+    }
+    #section-codex #codexCategoryFilter:hover,
+    #section-codex #codexSearchInput:hover {
+      border-color: rgba(74, 222, 128, 0.66);
+      background: rgba(0, 0, 0, 0.65);
+    }
+    #section-codex #codexSuggestions {
+      background: rgba(0, 0, 0, 0.96);
+      border-color: rgba(74, 222, 128, 0.42);
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45);
+    }
+    #section-codex .codex-suggestion,
+    #section-codex .codex-result,
+    #section-codex .codex-favorite-item {
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+    #section-codex .codex-suggestion:hover,
+    #section-codex .codex-result:hover,
+    #section-codex .codex-favorite-item:hover {
+      background: rgba(74, 222, 128, 0.1);
+      border-color: rgba(74, 222, 128, 0.58);
+    }
+    #section-codex .codex-suggestion.bg-terminal\/10 {
+      background: rgba(74, 222, 128, 0.12);
+      color: #dcfce7;
+      border-color: rgba(74, 222, 128, 0.6);
+    }
+    #section-codex .codex-open-result,
+    #section-codex .codex-load-result {
+      background: rgba(0, 0, 0, 0.48);
+      color: #86efac;
+      border-color: rgba(74, 222, 128, 0.45);
+      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    #section-codex .codex-open-result:hover,
+    #section-codex .codex-load-result:hover {
+      background: rgba(74, 222, 128, 0.12);
+      border-color: rgba(74, 222, 128, 0.72);
+      color: #dcfce7;
     }
     .tracker-timer {
       transition: color 180ms ease, text-shadow 180ms ease;
@@ -479,18 +574,20 @@
     .content-section {
       opacity: 1;
       transform: translateY(0);
+    }
+    html.boot-complete .content-section {
       transition: opacity 200ms ease, transform 200ms ease;
       will-change: opacity, transform;
     }
-    .content-section.section-enter {
+    html.boot-complete .content-section.section-enter {
       opacity: 0;
       transform: translateY(4px);
     }
-    .content-section.section-active {
+    html.boot-complete .content-section.section-active {
       opacity: 1;
       transform: translateY(0);
     }
-    .content-section.section-exit {
+    html.boot-complete .content-section.section-exit {
       opacity: 0;
       transform: translateY(4px);
       pointer-events: none;
@@ -1016,6 +1113,7 @@
           </div>
         </div>
         <div class="flex items-center justify-end gap-6">
+          <button id="fullscreenToggleBtn" class="border border-terminal/60 px-3 py-1.5 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black transition-none" aria-label="Fullscreen" aria-pressed="false" title="Fullscreen">Fullscreen</button>
           <button id="soundToggleBtn" class="material-symbols-outlined cursor-pointer hover:text-green-200" aria-label="Toggle sound" title="Toggle sound">volume_up</button>
           <button class="material-symbols-outlined cursor-pointer hover:text-green-200">settings</button>
           <button class="material-symbols-outlined cursor-pointer hover:text-green-200">notifications</button>
@@ -1339,6 +1437,31 @@
 
               <div class="mt-5 border border-terminal/25 p-4 bg-black/40 space-y-3">
                 <label for="codexSearchInput" class="uppercase tracking-[0.25em] text-[10px] text-terminal/70 block">Codex query</label>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <select id="codexCategoryFilter" class="bg-transparent border border-terminal px-4 py-3 text-sm text-terminal focus:outline-none focus:ring-0 md:col-span-1">
+                    <option value="all">category: all</option>
+                    <option value="warframes">warframes</option>
+                    <option value="weapons">weapons</option>
+                    <option value="mods">mods</option>
+                    <option value="resources">resources</option>
+                    <option value="relics">relics</option>
+                    <option value="prime parts">prime parts</option>
+                    <option value="missions">missions</option>
+                    <option value="damage types">damage types</option>
+                    <option value="status effects">status effects</option>
+                    <option value="factions">factions</option>
+                    <option value="bosses">bosses</option>
+                    <option value="companions">companions</option>
+                    <option value="arcanes">arcanes</option>
+                    <option value="syndicates">syndicates</option>
+                    <option value="open worlds">open worlds</option>
+                    <option value="quests">quests</option>
+                    <option value="farming locations">farming locations</option>
+                  </select>
+                  <div class="md:col-span-2 text-xs text-terminal/70 uppercase tracking-[0.2em] border border-terminal/20 px-3 py-3">
+                    lightweight wiki relay // lazy loaded // cached
+                  </div>
+                </div>
                 <div class="flex flex-col lg:flex-row gap-3">
                   <div class="flex-1 relative">
                     <input id="codexSearchInput" type="text" placeholder="search official warframe wiki" autocomplete="off" class="w-full bg-transparent border border-terminal px-4 py-3 text-sm text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
@@ -1346,6 +1469,7 @@
                   </div>
                   <button id="codexSearchBtn" class="border border-terminal px-5 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">load codex</button>
                   <button id="codexOpenBtn" class="border border-terminal px-5 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">open page</button>
+                  <button id="codexPinBtn" class="border border-terminal px-5 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">pin entry</button>
                 </div>
                 <div class="flex flex-wrap gap-2 text-xs">
                   <button class="codex-chip border border-terminal/30 px-3 py-1.5 hover:bg-terminal hover:text-black" data-query="The Lotus">The Lotus</button>
@@ -1367,11 +1491,16 @@
                 </div>
                 <p id="codexSummary" class="text-sm text-green-200/85 leading-7">Enter a topic and the terminal will search the official wiki, pull the best matching page, and summarize the intro here.</p>
                 <div id="codexMeta" class="mt-4 text-xs text-terminal/70 uppercase tracking-[0.2em]"></div>
+                <div id="codexFarmingInfo" class="mt-3 text-xs text-green-200/80 border border-terminal/20 p-3 hidden"></div>
               </div>
               <div class="panel-card p-5">
                 <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">SEARCH WINDOW</div>
                 <div id="codexResults" class="space-y-2 text-sm text-green-200/85">
                   <div class="border border-terminal/25 p-3">Search suggestions will appear here.</div>
+                </div>
+                <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mt-4 mb-2">PINNED ENTRIES</div>
+                <div id="codexFavorites" class="space-y-2 text-xs text-green-200/85">
+                  <div class="border border-terminal/25 p-3">No pinned entries yet.</div>
                 </div>
               </div>
             </div>

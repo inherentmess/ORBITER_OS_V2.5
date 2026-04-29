@@ -3,6 +3,7 @@ const sections = document.querySelectorAll('.content-section');
 const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
+const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
 
 function detectEmbedMode() {
   if (window.ORBITER_EMBED_MODE) return true;
@@ -15,6 +16,46 @@ function detectEmbedMode() {
 }
 
 const EMBED_MODE = detectEmbedMode();
+const FULLSCREEN_PREF_KEY = 'orbiterFullscreenPreferred';
+
+function isFullscreenActive() {
+  return Boolean(document.fullscreenElement);
+}
+
+function readFullscreenPreference() {
+  return localStorage.getItem(FULLSCREEN_PREF_KEY) === 'true';
+}
+
+function writeFullscreenPreference(value) {
+  localStorage.setItem(FULLSCREEN_PREF_KEY, value ? 'true' : 'false');
+}
+
+function updateFullscreenToggleUi() {
+  if (!fullscreenToggleBtn) return;
+  const active = isFullscreenActive();
+  const preferred = readFullscreenPreference();
+  fullscreenToggleBtn.textContent = active ? 'Exit Fullscreen' : 'Fullscreen';
+  fullscreenToggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  fullscreenToggleBtn.setAttribute('aria-label', active ? 'Exit Fullscreen' : 'Fullscreen');
+  fullscreenToggleBtn.setAttribute('title', preferred && !active ? 'Fullscreen preferred (click to enter)' : (active ? 'Exit Fullscreen' : 'Fullscreen'));
+}
+
+async function toggleFullscreen() {
+  if (EMBED_MODE) return;
+  try {
+    if (!isFullscreenActive()) {
+      await document.documentElement.requestFullscreen();
+      writeFullscreenPreference(true);
+    } else {
+      await document.exitFullscreen();
+      writeFullscreenPreference(false);
+    }
+  } catch (error) {
+    console.warn('[orbiter] fullscreen toggle blocked', error);
+  } finally {
+    updateFullscreenToggleUi();
+  }
+}
 function normalizeApiBase(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
@@ -159,6 +200,7 @@ const sectionAccordionState = {
 let mobileTrackerObserver = null;
 
 let currentSectionName = 'dashboard';
+let bootComplete = false;
 const sectionNames = Array.from(sections)
   .map(section => String(section.id || '').replace(/^section-/, ''))
   .filter(Boolean);
@@ -205,14 +247,22 @@ function runBootSequence() {
   const continueBtn = document.getElementById('bootContinueBtn');
   const closeBtn = document.getElementById('bootCloseBtn');
   if (EMBED_MODE) {
+    bootComplete = true;
+    document.documentElement.classList.add('boot-complete');
     if (overlay) {
       overlay.classList.add('hidden');
       overlay.remove();
     }
     return;
   }
-  if (!overlay || !linesEl) return;
+  if (!overlay || !linesEl) {
+    bootComplete = true;
+    document.documentElement.classList.add('boot-complete');
+    return;
+  }
   if (sessionStorage.getItem('orbiter_boot_closed') === '1') {
+    bootComplete = true;
+    document.documentElement.classList.add('boot-complete');
     overlay.classList.add('hidden');
     overlay.remove();
     return;
@@ -232,13 +282,18 @@ function runBootSequence() {
   ];
 
   let cancelled = false;
+  let closed = false;
+  let bootVisible = true;
   let lineIndex = 0;
   let charIndex = 0;
 
   const closeOverlay = () => {
-    if (cancelled) return;
+    if (cancelled || closed || !bootVisible) return;
+    bootVisible = false;
+    closed = true;
     cancelled = true;
     sessionStorage.setItem('orbiter_boot_closed', '1');
+    teardownInputHandlers();
 
     // Animate out via CSS, then remove only after it completes.
     overlay.classList.remove('opening');
@@ -247,6 +302,8 @@ function runBootSequence() {
       overlay.removeEventListener('animationend', finalize);
       overlay.classList.add('hidden');
       overlay.remove();
+      bootComplete = true;
+      document.documentElement.classList.add('boot-complete');
     };
     overlay.addEventListener('animationend', finalize);
     // Fallback in case animationend doesn't fire (older browsers / interrupted).
@@ -265,14 +322,28 @@ function runBootSequence() {
     if (e.type === 'touchstart') e.preventDefault();
     closeOverlay();
   };
-  overlay.addEventListener('touchstart', closeFromTap, { passive: false });
-  overlay.addEventListener('click', closeFromTap);
-  overlay.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+  const handleBootKey = (e) => {
+    const overlayVisible = overlay.isConnected && !overlay.classList.contains('hidden') && !closed && bootVisible;
+    if (!overlayVisible) return;
+    const isEnter = e.key === 'Enter' || e.code === 'Enter' || e.code === 'NumpadEnter';
+    if (isEnter) {
       e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       closeOverlay();
     }
-  });
+  };
+  const teardownInputHandlers = () => {
+    overlay.removeEventListener('touchstart', closeFromTap);
+    overlay.removeEventListener('click', closeFromTap);
+    overlay.removeEventListener('keydown', handleBootKey);
+    document.removeEventListener('keydown', handleBootKey, true);
+  };
+  overlay.addEventListener('touchstart', closeFromTap, { passive: false });
+  overlay.addEventListener('click', closeFromTap);
+  overlay.addEventListener('keydown', handleBootKey);
+  document.addEventListener('keydown', handleBootKey, true);
+  overlay.setAttribute('tabindex', '-1');
 
   Sound.play('boot', { cooldownMs: 5000 }).catch(() => {});
 
@@ -295,8 +366,7 @@ function runBootSequence() {
     if (lineIndex >= lines.length) {
       // Do not auto-hide; stay visible until the user presses Enter or clicks Continue/Close.
       setHint('press enter to continue');
-      if (continueBtn) continueBtn.focus();
-      else overlay.focus();
+      overlay.focus();
       return;
     }
     window.setTimeout(step, 140);
@@ -305,7 +375,7 @@ function runBootSequence() {
   overlay.classList.add('opening');
   overlay.addEventListener('animationend', () => overlay.classList.remove('opening'), { once: true });
   setHint('initializing audio (unlocks on interaction)');
-  try { overlay.focus(); } catch {}
+  try { overlay.focus({ preventScroll: true }); } catch { try { overlay.focus(); } catch {} }
   window.setTimeout(step, 120);
 }
 
@@ -454,7 +524,7 @@ function runBootSequence() {
       setupMobileTrackerAutoLoad();
     }
 
-    function showSection(sectionName) {
+function showSection(sectionName) {
       currentSectionName = sectionName || 'dashboard';
       navButtons.forEach(btn => btn.classList.toggle('nav-active', btn.dataset.section === sectionName));
 
@@ -463,7 +533,41 @@ function runBootSequence() {
         sectionNames.forEach(name => setSectionOpen(name, name === sectionName));
         setSectionOpen(sectionName, true, { scrollIntoView: true });
       } else {
-        sections.forEach(section => section.classList.toggle('hidden-panel', section.id !== `section-${sectionName}`));
+        const targetId = `section-${sectionName}`;
+        const targetSection = document.getElementById(targetId);
+        const activeSection = Array.from(sections).find(section => !section.classList.contains('hidden-panel'));
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const canAnimate = bootComplete
+          && !prefersReducedMotion
+          && targetSection
+          && activeSection
+          && activeSection !== targetSection;
+
+        if (!canAnimate) {
+          sections.forEach(section => {
+            section.classList.remove('section-enter', 'section-exit', 'section-active');
+            section.classList.toggle('hidden-panel', section.id !== targetId);
+          });
+        } else {
+          targetSection.classList.remove('hidden-panel');
+          targetSection.classList.remove('section-exit');
+          targetSection.classList.add('section-enter');
+
+          activeSection.classList.remove('section-enter');
+          activeSection.classList.add('section-exit');
+
+          requestAnimationFrame(() => {
+            targetSection.classList.add('section-active');
+            targetSection.classList.remove('section-enter');
+          });
+
+          window.setTimeout(() => {
+            activeSection.classList.add('hidden-panel');
+            activeSection.classList.remove('section-exit', 'section-enter', 'section-active');
+            targetSection.classList.remove('section-enter', 'section-exit');
+            targetSection.classList.add('section-active');
+          }, 220);
+        }
       }
 
       if (searchInput) searchInput.value = '';
@@ -553,6 +657,14 @@ function runBootSequence() {
         if (!nextMuted) Sound.play('click', { cooldownMs: 0 }).catch(() => {});
       });
     }
+    updateFullscreenToggleUi();
+    if (fullscreenToggleBtn) {
+      fullscreenToggleBtn.addEventListener('click', async () => {
+        await toggleFullscreen();
+      });
+    }
+    document.addEventListener('fullscreenchange', updateFullscreenToggleUi);
+    document.addEventListener('fullscreenerror', updateFullscreenToggleUi);
 
     // Subtle click sounds only for primary terminal actions.
     const CLICK_SELECTOR = [
@@ -4318,53 +4430,43 @@ function runBootSequence() {
     const codexMeta = document.getElementById('codexMeta');
     const codexResults = document.getElementById('codexResults');
     const codexPageLink = document.getElementById('codexPageLink');
+    const codexCategoryFilter = document.getElementById('codexCategoryFilter');
+    const codexFarmingInfo = document.getElementById('codexFarmingInfo');
+    const codexPinBtn = document.getElementById('codexPinBtn');
+    const codexFavorites = document.getElementById('codexFavorites');
     let codexSuggestionsCache = [];
+    let codexSearchResultsCache = [];
     let codexActiveTitle = '';
+    let codexActiveUrl = '';
+    let codexActiveCategory = 'uncategorized';
     let codexSearchTimer;
+    let codexSearchAbortController = null;
+    let codexActiveSuggestIndex = -1;
+    const CODEX_CACHE_KEY = 'orbiter_codex_cache_v1';
+    const CODEX_FAVORITES_KEY = 'orbiter_codex_favorites_v1';
+    const CODEX_SEARCH_TTL_MS = 10 * 60 * 1000;
+    const CODEX_ENTRY_TTL_MS = 24 * 60 * 60 * 1000;
+    const codexMemoryCache = {
+      search: new Map(),
+      entry: new Map()
+    };
 
-    function codexApiBase() {
-      return 'https://wiki.warframe.com/api.php';
+    function buildCodexWorkerSearchUrl(query) {
+      const q = String(query || '').trim();
+      return buildMarketProxyUrl(`/api/wiki/search?q=${encodeURIComponent(q)}`);
     }
 
-    function buildCodexUrl(params) {
-      const search = new URLSearchParams({
-        format: 'json',
-        origin: '*',
-        ...params
-      });
-      return `${codexApiBase()}?${search.toString()}`;
-    }
-
-    function codexApiCandidates(url) {
-      return [
-        { source: 'direct', url },
-        { source: 'proxy:corsproxy', url: `https://corsproxy.io/?${encodeURIComponent(url)}` },
-        { source: 'proxy:allorigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` }
-      ];
-    }
-
-    async function fetchCodexJson(url) {
-      let lastError = null;
-      for (const candidate of codexApiCandidates(url)) {
-        try {
-          logRequest(`codex ${candidate.source}`, candidate.url);
-          const response = await fetch(candidate.url, { headers: { Accept: 'application/json' } });
-          logResponse(`codex ${candidate.source}`, response);
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          let json;
-          try {
-            json = await response.json();
-          } catch (error) {
-            throw new Error(`parse error: ${error.message}`);
-          }
-          logJson(`codex ${candidate.source}`, json);
-          return json;
-        } catch (error) {
-          console.warn(`[orbiter] codex fetch candidate failed: ${candidate.source}`, error);
-          lastError = error;
-        }
+    async function fetchCodexJson(query, signal) {
+      const url = buildCodexWorkerSearchUrl(query);
+      logRequest('codex worker search', url);
+      const response = await fetch(url, { headers: { Accept: 'application/json' }, signal, cache: 'no-store' });
+      logResponse('codex worker search', response);
+      const json = await response.json();
+      logJson('codex worker search', json);
+      if (!response.ok || json?.ok === false) {
+        throw new Error(`HTTP ${response.status}`);
       }
-      throw lastError || new Error('Codex API unavailable');
+      return json;
     }
 
     function codexPageUrl(title) {
@@ -4377,7 +4479,90 @@ function runBootSequence() {
       return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
     }
 
-    function setCodexState({ title, summary, meta, url, loading = false }) {
+    function safeParseJson(value, fallback) {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return fallback;
+      }
+    }
+
+    function getCodexCategory(title = '', snippet = '') {
+      const text = `${String(title || '')} ${String(snippet || '')}`.toLowerCase();
+      const rules = [
+        ['warframes', ['warframe', 'prime frame']],
+        ['weapons', ['weapon', 'rifle', 'pistol', 'shotgun', 'bow', 'melee']],
+        ['mods', ['mod', 'aura', 'exilus']],
+        ['resources', ['resource', 'alloy plate', 'ferrite', 'argon']],
+        ['relics', ['relic', 'lith', 'meso', 'neo', 'axi']],
+        ['prime parts', ['prime part', 'blueprint', 'prime set']],
+        ['missions', ['mission', 'node', 'sortie', 'bounty']],
+        ['damage types', ['damage type', 'viral', 'corrosive', 'slash', 'heat']],
+        ['status effects', ['status effect', 'proc']],
+        ['factions', ['faction', 'grineer', 'corpus', 'infested', 'sentient']],
+        ['bosses', ['boss', 'assassination']],
+        ['companions', ['companion', 'sentinel', 'kubrow', 'kavat']],
+        ['arcanes', ['arcane']],
+        ['syndicates', ['syndicate']],
+        ['open worlds', ['open world', 'cetus', 'fortuna', 'deimos', 'duviri']],
+        ['quests', ['quest']],
+        ['farming locations', ['drop', 'farm', 'farming', 'location']]
+      ];
+      for (const [category, terms] of rules) {
+        if (terms.some(term => text.includes(term))) return category;
+      }
+      return 'uncategorized';
+    }
+
+    function getCodexCacheBucket(type) {
+      const raw = safeParseJson(localStorage.getItem(CODEX_CACHE_KEY), { search: {}, entry: {} });
+      if (!raw[type] || typeof raw[type] !== 'object') raw[type] = {};
+      return raw;
+    }
+
+    function setCodexCacheBucket(type, key, value) {
+      const raw = getCodexCacheBucket(type);
+      raw[type][key] = value;
+      localStorage.setItem(CODEX_CACHE_KEY, JSON.stringify(raw));
+    }
+
+    function getCodexCached(type, key, ttlMs) {
+      const mem = codexMemoryCache[type].get(key);
+      const now = Date.now();
+      if (mem && now - mem.timestamp <= ttlMs) return mem.data;
+      const raw = getCodexCacheBucket(type);
+      const disk = raw[type][key];
+      if (disk && now - Number(disk.timestamp || 0) <= ttlMs) {
+        codexMemoryCache[type].set(key, { timestamp: Number(disk.timestamp || now), data: disk.data });
+        return disk.data;
+      }
+      return null;
+    }
+
+    function setCodexCached(type, key, data) {
+      const payload = { timestamp: Date.now(), data };
+      codexMemoryCache[type].set(key, payload);
+      setCodexCacheBucket(type, key, payload);
+    }
+
+    function loadCodexFavorites() {
+      const parsed = safeParseJson(localStorage.getItem(CODEX_FAVORITES_KEY), []);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+
+    function saveCodexFavorites(items) {
+      localStorage.setItem(CODEX_FAVORITES_KEY, JSON.stringify(items.slice(0, 30)));
+    }
+
+    function detectFarmingInfo(entry = {}) {
+      const text = `${entry.extract || ''} ${entry.snippet || ''}`.replace(/\s+/g, ' ').trim();
+      const bits = [];
+      if (/drop|drops|dropped|reward|bounty|rotation|farm/i.test(text)) bits.push('Drop/Farm data referenced in summary.');
+      if (/mission|node|planet|open world|survival|defense|excavation/i.test(text)) bits.push('Mission/location hints detected.');
+      return bits.join(' ');
+    }
+
+    function setCodexState({ title, summary, meta, url, loading = false, farmingInfo = '' }) {
       codexTitle.textContent = title || (loading ? 'Loading...' : 'Awaiting query');
       codexSummary.textContent = summary || (loading ? 'Querying official wiki...' : 'Enter a topic and the terminal will search the official wiki, pull the best matching page, and summarize the intro here.');
       codexMeta.textContent = meta || '';
@@ -4386,6 +4571,16 @@ function runBootSequence() {
         codexPageLink.classList.remove('hidden');
       } else {
         codexPageLink.classList.add('hidden');
+      }
+      if (codexFarmingInfo) {
+        const info = String(farmingInfo || '').trim();
+        if (info) {
+          codexFarmingInfo.textContent = `Farming / drop info: ${info}`;
+          codexFarmingInfo.classList.remove('hidden');
+        } else {
+          codexFarmingInfo.textContent = '';
+          codexFarmingInfo.classList.add('hidden');
+        }
       }
     }
 
@@ -4396,13 +4591,38 @@ function runBootSequence() {
         return;
       }
       codexResults.innerHTML = items.map(item => `
-        <button class="codex-result w-full text-left border border-terminal/25 p-3 hover:bg-terminal hover:text-black" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <div class="font-bold">${item.title || 'Untitled'}</div>
-          <div class="text-xs opacity-80 mt-1">${item.snippet || 'Open this result in the codex panel.'}</div>
-        </button>
+        <div class="codex-result border border-terminal/25 p-3 space-y-2" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
+          <div class="flex items-center justify-between gap-2">
+            <div class="font-bold">${item.title || 'Untitled'}</div>
+            <div class="text-[10px] uppercase tracking-[0.2em] text-terminal/70">${item.category || 'uncategorized'}</div>
+          </div>
+          <div class="text-xs opacity-85">${item.snippet || 'Open this result in the codex panel.'}</div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="codex-open-result border border-terminal px-3 py-1.5 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black" data-url="${(item.url || '').replace(/"/g, '&quot;')}">Open Wiki</button>
+            <button type="button" class="codex-load-result border border-terminal px-3 py-1.5 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black" data-title="${(item.title || '').replace(/"/g, '&quot;')}">Load Summary</button>
+          </div>
+        </div>
       `).join('');
-      codexResults.querySelectorAll('.codex-result').forEach(btn => {
-        btn.addEventListener('click', () => loadCodexEntry(btn.dataset.title || ''));
+      codexResults.querySelectorAll('.codex-result').forEach(card => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.codex-open-result') || e.target.closest('.codex-load-result')) return;
+          loadCodexEntry(card.dataset.title || '');
+        });
+      });
+      codexResults.querySelectorAll('.codex-open-result').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const url = btn.dataset.url || '';
+          if (url) window.open(url, '_blank', 'noopener,noreferrer');
+        });
+      });
+      codexResults.querySelectorAll('.codex-load-result').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          loadCodexEntry(btn.dataset.title || '');
+        });
       });
     }
 
@@ -4411,6 +4631,7 @@ function runBootSequence() {
         codexSuggestions.classList.add('hidden');
         codexSuggestions.innerHTML = '';
       }
+      codexActiveSuggestIndex = -1;
     }
 
     function renderCodexSuggestions(items = []) {
@@ -4421,11 +4642,12 @@ function runBootSequence() {
         return;
       }
       codexSuggestions.innerHTML = items.map(item => `
-        <button class="codex-suggestion w-full text-left px-4 py-3 border-b border-terminal/20 last:border-b-0 hover:bg-terminal hover:text-black" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
+        <button class="codex-suggestion w-full text-left px-4 py-3 border-b border-terminal/20 last:border-b-0 hover:bg-terminal hover:text-black${item.__active ? ' bg-terminal/10' : ''}" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
           <div class="font-bold text-sm">${item.title || 'Untitled'}</div>
           <div class="text-xs opacity-80 mt-1">${item.snippet || 'Official wiki result'}</div>
         </button>
       `).join('');
+      if (codexActiveSuggestIndex < 0 && items.length) codexActiveSuggestIndex = 0;
       codexSuggestions.classList.remove('hidden');
       codexSuggestions.querySelectorAll('.codex-suggestion').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -4436,6 +4658,46 @@ function runBootSequence() {
       });
     }
 
+    function filterCodexByCategory(items = []) {
+      const selected = String(codexCategoryFilter?.value || 'all').toLowerCase();
+      if (selected === 'all') return items;
+      return items.filter(item => String(item.category || '').toLowerCase() === selected);
+    }
+
+    function renderCodexFavorites() {
+      if (!codexFavorites) return;
+      const favorites = loadCodexFavorites();
+      if (!favorites.length) {
+        codexFavorites.innerHTML = '<div class="border border-terminal/25 p-3">No pinned entries yet.</div>';
+        return;
+      }
+      codexFavorites.innerHTML = favorites.map(item => `
+        <button type="button" class="codex-favorite-item w-full text-left border border-terminal/25 p-2 hover:bg-terminal hover:text-black" data-title="${(item.title || '').replace(/"/g, '&quot;')}">
+          <div class="font-bold">${item.title || 'Untitled'}</div>
+          <div class="text-[10px] uppercase tracking-[0.2em] opacity-75">${item.category || 'uncategorized'}</div>
+        </button>
+      `).join('');
+      codexFavorites.querySelectorAll('.codex-favorite-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const title = btn.dataset.title || '';
+          if (codexSearchInput) codexSearchInput.value = title;
+          loadCodexEntry(title);
+        });
+      });
+    }
+
+    function pinActiveCodexEntry() {
+      const title = String(codexActiveTitle || '').trim();
+      if (!title) return;
+      const current = loadCodexFavorites();
+      const next = [
+        { title, category: codexActiveCategory || 'uncategorized', url: codexActiveUrl || codexPageUrl(title) },
+        ...current.filter(item => String(item.title || '').toLowerCase() !== title.toLowerCase())
+      ].slice(0, 30);
+      saveCodexFavorites(next);
+      renderCodexFavorites();
+    }
+
     async function searchCodexSuggestions(query) {
       const q = (query || '').trim();
       if (!q) {
@@ -4444,24 +4706,40 @@ function runBootSequence() {
         return [];
       }
       try {
-        const url = buildCodexUrl({
-          action: 'query',
-          list: 'search',
-          srsearch: q,
-          srlimit: '6'
-        });
-        const data = await fetchCodexJson(url);
-        const items = (data?.query?.search || []).map(entry => ({
-          title: entry.title,
-          snippet: stripHtml(entry.snippet || '')
-        }));
-        if (!items.length) {
-          console.warn('[orbiter] codex suggestions empty result', { query: q, data });
+        const categoryKey = String(codexCategoryFilter?.value || 'all').toLowerCase();
+        const cacheKey = `${categoryKey}::${q.toLowerCase()}`;
+        const cached = getCodexCached('search', cacheKey, CODEX_SEARCH_TTL_MS);
+        if (cached) {
+          const cachedItems = filterCodexByCategory(cached);
+          codexSearchResultsCache = cachedItems;
+          renderCodexSuggestions(cachedItems);
+          renderCodexResults(cachedItems);
+          return cachedItems;
         }
-        renderCodexSuggestions(items);
-        renderCodexResults(items);
-        return items;
+        if (codexSearchAbortController) codexSearchAbortController.abort();
+        codexSearchAbortController = new AbortController();
+        const data = await fetchCodexJson(q, codexSearchAbortController.signal);
+        const items = (Array.isArray(data?.items) ? data.items : []).map(entry => {
+          const title = entry.title;
+          const snippet = stripHtml(entry.snippet || '');
+          return {
+            title,
+            snippet,
+            category: getCodexCategory(title, snippet),
+            url: entry.url || codexPageUrl(title)
+          };
+        });
+        setCodexCached('search', cacheKey, items);
+        const filteredItems = filterCodexByCategory(items);
+        codexSearchResultsCache = filteredItems;
+        if (!filteredItems.length) {
+          console.warn('[orbiter] codex suggestions empty result', { query: q, data, category: categoryKey });
+        }
+        renderCodexSuggestions(filteredItems);
+        renderCodexResults(filteredItems);
+        return filteredItems;
       } catch (error) {
+        if (error?.name === 'AbortError') return [];
         hideCodexSuggestions();
         renderCodexResults([]);
         logClientError('codex suggestions fetch', error, { query: q });
@@ -4478,17 +4756,45 @@ function runBootSequence() {
       setCodexState({ loading: true });
       hideCodexSuggestions();
       try {
-        let title = q;
-        const searchUrl = buildCodexUrl({
-          action: 'query',
-          list: 'search',
-          srsearch: q,
-          srlimit: '1'
-        });
-        const searchData = await fetchCodexJson(searchUrl);
-        const top = searchData?.query?.search?.[0];
+        const entryCacheKey = q.toLowerCase();
+        const cachedEntry = getCodexCached('entry', entryCacheKey, CODEX_ENTRY_TTL_MS);
+        if (cachedEntry) {
+          codexActiveTitle = cachedEntry.title;
+          codexActiveUrl = cachedEntry.url;
+          codexActiveCategory = cachedEntry.category || getCodexCategory(cachedEntry.title, cachedEntry.summary);
+          setCodexState({
+            title: cachedEntry.title,
+            summary: cachedEntry.summary,
+            meta: cachedEntry.meta,
+            url: cachedEntry.url,
+            farmingInfo: cachedEntry.farmingInfo || ''
+          });
+          return;
+        }
+        const workerData = await fetchCodexJson(q);
+        const top = workerData?.summary || null;
         if (top?.title) {
-          title = top.title;
+          const finalTitle = top.title;
+          const extract = String(top.extract || '').trim();
+          const category = getCodexCategory(finalTitle, extract);
+          const farmingInfo = detectFarmingInfo({ extract });
+          codexActiveTitle = finalTitle;
+          codexActiveUrl = top.url || codexPageUrl(finalTitle);
+          codexActiveCategory = category;
+          if (!extract) {
+            console.warn('[orbiter] codex summary empty extract', { title: finalTitle, data: workerData });
+          }
+          const entryPayload = {
+            title: finalTitle,
+            summary: extract || `The official wiki returned the page "${finalTitle}" but did not include an intro extract.`,
+            meta: extract ? `SOURCE // OFFICIAL WARFRAME WIKI INTRO // ${category.toUpperCase()}` : `SOURCE // EMPTY EXTRACT // ${category.toUpperCase()}`,
+            url: top.url || codexPageUrl(finalTitle),
+            category,
+            farmingInfo
+          };
+          setCodexCached('entry', entryCacheKey, entryPayload);
+          setCodexState(entryPayload);
+          return;
         } else {
           setCodexState({
             title: 'No codex result',
@@ -4496,44 +4802,9 @@ function runBootSequence() {
             meta: 'SOURCE // EMPTY SEARCH RESULT',
             url: ''
           });
-          console.warn('[orbiter] codex entry empty result', { query: q, data: searchData });
+          console.warn('[orbiter] codex entry empty result', { query: q, data: workerData });
           return;
         }
-
-        const summaryUrl = buildCodexUrl({
-          action: 'query',
-          prop: 'extracts',
-          exintro: '1',
-          explaintext: '1',
-          redirects: '1',
-          titles: title
-        });
-        const summaryData = await fetchCodexJson(summaryUrl);
-        const pages = summaryData?.query?.pages || {};
-        const pageEntries = Object.entries(pages);
-        const [pageId, page] = pageEntries[0] || [];
-        if (!page || pageId === '-1' || page.missing || page.invalid) {
-          setCodexState({
-            title: 'Missing wiki page',
-            summary: `The official wiki API found "${title}" in search, but the extracts query returned a missing or invalid page.`,
-            meta: 'SOURCE // MISSING PAGE',
-            url: ''
-          });
-          console.warn('[orbiter] codex missing page', { title, pageId, page, data: summaryData });
-          return;
-        }
-        const finalTitle = page.title || title;
-        const extract = (page.extract || '').trim();
-        codexActiveTitle = finalTitle;
-        if (!extract) {
-          console.warn('[orbiter] codex summary empty extract', { title: finalTitle, data: summaryData });
-        }
-        setCodexState({
-          title: finalTitle,
-          summary: extract || `The official wiki returned the page "${finalTitle}" but did not include an intro extract.`,
-          meta: extract ? 'SOURCE // OFFICIAL WARFRAME WIKI INTRO' : 'SOURCE // EMPTY EXTRACT',
-          url: codexPageUrl(finalTitle)
-        });
       } catch (error) {
         const reason = error?.message?.includes('HTTP')
           ? 'bad endpoint or HTTP error'
@@ -4554,10 +4825,27 @@ function runBootSequence() {
       codexSearchInput.addEventListener('input', () => {
         clearTimeout(codexSearchTimer);
         const q = codexSearchInput.value;
-        codexSearchTimer = setTimeout(() => searchCodexSuggestions(q), 220);
+        codexSearchTimer = setTimeout(() => searchCodexSuggestions(q), 260);
       });
       codexSearchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'ArrowDown') {
+          const next = Math.min(codexActiveSuggestIndex + 1, codexSuggestionsCache.length - 1);
+          codexActiveSuggestIndex = next;
+          renderCodexSuggestions(codexSuggestionsCache.map((item, idx) => ({ ...item, __active: idx === codexActiveSuggestIndex })));
+          e.preventDefault();
+        } else if (e.key === 'ArrowUp') {
+          const prev = Math.max(codexActiveSuggestIndex - 1, 0);
+          codexActiveSuggestIndex = prev;
+          renderCodexSuggestions(codexSuggestionsCache.map((item, idx) => ({ ...item, __active: idx === codexActiveSuggestIndex })));
+          e.preventDefault();
+        } else if (e.key === 'Enter' && codexSuggestionsCache.length && codexActiveSuggestIndex >= 0) {
+          e.preventDefault();
+          const active = codexSuggestionsCache[codexActiveSuggestIndex];
+          if (active?.title) {
+            codexSearchInput.value = active.title;
+            loadCodexEntry(active.title);
+          }
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           loadCodexEntry(codexSearchInput.value);
         } else if (e.key === 'Escape') {
@@ -4578,12 +4866,33 @@ function runBootSequence() {
       }
       window.open(codexPageUrl(title), '_blank', 'noopener,noreferrer');
     });
+    if (codexPinBtn) codexPinBtn.addEventListener('click', pinActiveCodexEntry);
+    if (codexCategoryFilter) {
+      codexCategoryFilter.addEventListener('change', () => {
+        const q = (codexSearchInput?.value || '').trim();
+        if (!q) {
+          renderCodexResults([]);
+          return;
+        }
+        const key = `${String(codexCategoryFilter.value || 'all').toLowerCase()}::${q.toLowerCase()}`;
+        const cached = getCodexCached('search', key, CODEX_SEARCH_TTL_MS);
+        if (cached) {
+          const filtered = filterCodexByCategory(cached);
+          codexSearchResultsCache = filtered;
+          renderCodexSuggestions(filtered);
+          renderCodexResults(filtered);
+          return;
+        }
+        searchCodexSuggestions(q);
+      });
+    }
     document.querySelectorAll('.codex-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         if (codexSearchInput) codexSearchInput.value = chip.dataset.query || '';
         loadCodexEntry(chip.dataset.query || '');
       });
     });
+    renderCodexFavorites();
 
 
     setupSubtabs();

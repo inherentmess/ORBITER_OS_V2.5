@@ -1,5 +1,6 @@
 const WM_V1_BASE = 'https://api.warframe.market/v1';
 const WM_V2_BASE = 'https://api.warframe.market/v2';
+const WIKI_API_BASE = 'https://wiki.warframe.com/api.php';
 
 function corsHeaders(request) {
   return {
@@ -110,6 +111,113 @@ async function fetchJson(upstreamUrl) {
   } catch (error) {
     return { ok: false, status: 502, error: `upstream_parse_error: ${error.message}`, upstreamUrl };
   }
+}
+
+async function fetchWikiJson(params = {}) {
+  const query = new URLSearchParams({
+    format: 'json',
+    ...params
+  });
+  const upstreamUrl = `${WIKI_API_BASE}?${query.toString()}`;
+  console.log(`[wiki-proxy] upstream request: ${upstreamUrl}`);
+  const response = await fetch(upstreamUrl, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'ORBITER-OS-Wiki-Proxy/1.0 (+https://orbiter-market-proxy.jrque.workers.dev)',
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  });
+  console.log(`[wiki-proxy] upstream response: ${response.status} ${upstreamUrl}`);
+  const text = await response.text();
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      error: `wiki_upstream_http_${response.status}`,
+      upstreamUrl,
+      body: text.slice(0, 300)
+    };
+  }
+  if (!text.trim()) {
+    return { ok: false, status: 502, error: 'wiki_upstream_empty_body', upstreamUrl };
+  }
+  try {
+    return { ok: true, status: 200, data: JSON.parse(text), upstreamUrl };
+  } catch (error) {
+    return { ok: false, status: 502, error: `wiki_upstream_parse_error: ${error.message}`, upstreamUrl };
+  }
+}
+
+function stripHtmlSnippet(value = '') {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function wikiPageUrl(title = '') {
+  return `https://wiki.warframe.com/w/${encodeURIComponent(String(title || '').replace(/\s+/g, '_'))}`;
+}
+
+async function handleWikiSearch(request, url) {
+  const q = (url.searchParams.get('q') || '').trim();
+  if (!q) {
+    return json(request, { ok: true, query: '', source: 'cloudflare-worker', items: [], summary: null });
+  }
+
+  const searchResult = await fetchWikiJson({
+    action: 'query',
+    list: 'search',
+    srsearch: q,
+    srlimit: '8'
+  });
+  if (!searchResult.ok) {
+    return json(request, {
+      ok: false,
+      error: searchResult.error,
+      source: 'cloudflare-worker',
+      upstreamUrl: searchResult.upstreamUrl,
+      items: [],
+      summary: null
+    }, searchResult.status || 502);
+  }
+
+  const rows = Array.isArray(searchResult?.data?.query?.search) ? searchResult.data.query.search : [];
+  const items = rows.map(entry => ({
+    title: entry?.title || '',
+    snippet: stripHtmlSnippet(entry?.snippet || ''),
+    url: wikiPageUrl(entry?.title || '')
+  }));
+
+  let summary = null;
+  const topTitle = items[0]?.title || '';
+  if (topTitle) {
+    const summaryResult = await fetchWikiJson({
+      action: 'query',
+      prop: 'extracts',
+      exintro: '1',
+      explaintext: '1',
+      redirects: '1',
+      titles: topTitle
+    });
+    if (summaryResult.ok) {
+      const pages = summaryResult?.data?.query?.pages || {};
+      const firstPage = Object.values(pages)[0] || null;
+      if (firstPage && !firstPage.missing && !firstPage.invalid) {
+        summary = {
+          title: firstPage.title || topTitle,
+          extract: String(firstPage.extract || '').trim(),
+          url: wikiPageUrl(firstPage.title || topTitle)
+        };
+      }
+    }
+  }
+
+  return json(request, {
+    ok: true,
+    source: 'cloudflare-worker',
+    query: q,
+    items,
+    summary
+  }, 200, { 'cache-control': 'public, max-age=30' });
 }
 
 function detectItemArrayPaths(payload) {
@@ -632,6 +740,10 @@ export default {
         return handleSearch(request, url);
       }
 
+      if (path === '/api/wiki/search') {
+        return handleWikiSearch(request, url);
+      }
+
       const orderMatch = path.match(/^\/(?:api\/)?market\/orders\/([^/]+)$/);
       if (orderMatch) {
         return cacheRoute(request, {
@@ -652,6 +764,7 @@ export default {
           '/api/market/items',
           '/api/market/search?q=',
           '/api/market/orders/:url_name',
+          '/api/wiki/search?q=',
           '/market/items',
           '/market/search?q=',
           '/market/orders/:url_name'
