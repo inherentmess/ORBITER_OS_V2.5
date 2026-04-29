@@ -2921,9 +2921,10 @@ function runBootSequence() {
 
     function getOrdersFromResponse(data) {
       return pickFirstArray([
-        data?.data?.payload?.orders,
-        data?.payload?.orders,
         data?.orders,
+        data?.payload?.orders,
+        data?.data?.payload?.orders,
+        data?.data?.orders,
         Array.isArray(data) ? data : null
       ]);
     }

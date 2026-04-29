@@ -11,6 +11,16 @@ function corsHeaders(request) {
   };
 }
 
+function preflight(request) {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders(request),
+      'cache-control': 'no-store'
+    }
+  });
+}
+
 function json(request, data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -507,7 +517,7 @@ export default {
   async fetch(request) {
     try {
       if (request.method === 'OPTIONS') {
-        return json(request, { ok: true }, 204, { 'cache-control': 'no-store' });
+        return preflight(request);
       }
       if (request.method !== 'GET') {
         return json(request, { error: 'method_not_allowed' }, 405);
@@ -531,17 +541,19 @@ export default {
       }
 
       return json(request, {
-        ok: true,
+        ok: false,
+        error: 'not_found',
         source: 'cloudflare-worker',
+        orders: [],
         routes: [
           '/api/market/items',
           '/api/market/search?q=',
-          '/api/market/orders/:item',
+          '/api/market/orders/:url_name',
           '/market/items',
           '/market/search?q=',
-          '/market/orders/:item'
+          '/market/orders/:url_name'
         ]
-      });
+      }, 404);
     } catch (error) {
       console.error('[market-proxy] unhandled exception', {
         message: error?.message || String(error),
