@@ -174,6 +174,30 @@ function cleanWikiHtmlToText(value = '') {
     .trim();
 }
 
+function decodeEntities(text = '') {
+  const named = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&nbsp;': ' '
+  };
+  let out = String(text || '');
+  Object.entries(named).forEach(([k, v]) => {
+    out = out.split(k).join(v);
+  });
+  out = out.replace(/&#(\d+);/g, (_, num) => {
+    const code = Number(num);
+    return Number.isFinite(code) ? String.fromCharCode(code) : _;
+  });
+  out = out.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+    const code = parseInt(hex, 16);
+    return Number.isFinite(code) ? String.fromCharCode(code) : _;
+  });
+  return out;
+}
+
 function wikiPageUrl(title = '') {
   return `https://wiki.warframe.com/w/${encodeURIComponent(String(title || '').replace(/\s+/g, '_'))}`;
 }
@@ -315,37 +339,48 @@ async function handleWikiPage(request, url) {
       .trim()
       .slice(0, 1800);
 
+    const skipSectionNames = new Set([
+      'gallery',
+      'media',
+      'references',
+      'patch history',
+      'changelog',
+      'notes and references'
+    ]);
+
     let normalizedSections = sections
       .map(section => ({
         title: String(section?.line || '').trim(),
         number: String(section?.number || ''),
         line: String(section?.line || '').trim(),
-        index: Number(section?.index || 0),
+        index: String(section?.index || '').trim(),
         level: Number(section?.level || section?.toclevel || 0),
         anchor: String(section?.anchor || '').trim(),
         content: ''
       }))
-      .filter(section => section.line)
-      .slice(0, 40);
+      .filter(section => section.line && section.index)
+      .filter(section => !skipSectionNames.has(section.title.toLowerCase()))
+      .slice(0, 12);
 
     normalizedSections = await Promise.all(normalizedSections.map(async (section) => {
-      const idx = Number(section?.index || 0);
-      if (!Number.isFinite(idx) || idx <= 0) return section;
+      const idx = String(section?.index || '').trim();
+      if (!idx) return section;
       const sectionResult = await fetchWikiJson({
         action: 'parse',
         page: resolvedTitle,
         prop: 'text',
-        section: String(idx),
+        section: idx,
         redirects: '1'
       });
       if (!sectionResult.ok) return section;
       const sectionHtml = String(sectionResult?.data?.parse?.text?.['*'] || '');
-      const sectionText = cleanWikiHtmlToText(sectionHtml).slice(0, 2800);
+      const sectionText = decodeEntities(cleanWikiHtmlToText(sectionHtml)).slice(0, 2800);
       return {
         ...section,
         content: sectionText
       };
-    }));
+    }))
+      .filter(section => String(section?.content || '').trim().length > 0);
 
     const importantTerms = ['acquisition', 'drop', 'drops', 'farming', 'abilities', 'stats', 'build', 'notes', 'tips'];
     const importantSections = normalizedSections
@@ -363,12 +398,18 @@ async function handleWikiPage(request, url) {
       .filter(Boolean)
       .slice(0, 12);
 
-    page = {
-      title: resolvedTitle,
-      url: wikiPageUrl(resolvedTitle),
-      sections: normalizedSections,
-      importantSections,
-      links: normalizedLinks,
+      page = {
+        title: resolvedTitle,
+        url: wikiPageUrl(resolvedTitle),
+        sections: normalizedSections.map(section => ({
+          title: section.title,
+          index: section.index,
+          content: section.content,
+          number: section.number,
+          anchor: section.anchor
+        })),
+        importantSections,
+        links: normalizedLinks,
       images: normalizedImages,
       html: html.slice(0, 20000),
       plainText

@@ -4829,7 +4829,7 @@ function showSection(sectionName) {
           });
 
         let content = normalizeCodexText(meta?.content || '');
-        if (heading) {
+        if (!content && heading) {
           let node = heading.nextElementSibling;
           const chunks = [];
           while (node) {
@@ -4883,7 +4883,7 @@ function showSection(sectionName) {
             .slice(0, 14);
           const sectionHtml = paragraphs.length
             ? paragraphs.map(p => `<p class="mb-2">${htmlEscape(p)}</p>`).join('')
-            : '<p>No section details available.</p>';
+            : '<p>No details available for this section.</p>';
           return `
             <li class="codex-accordion-item" data-section-key="${htmlEscape(section.key)}">
               <button type="button" class="codex-load-result codex-detail-chip codex-accordion-trigger w-full" data-section-key="${htmlEscape(section.key)}" aria-expanded="false">
@@ -5083,6 +5083,14 @@ function showSection(sectionName) {
         const pageData = await fetchCodexJson(buildCodexWorkerPageUrl(q), undefined, 'codex worker page');
         console.log('[CODEX PAGE DEBUG FULL JSON]', pageData);
         const details = pageData?.page || pageData?.payload?.page || null;
+        if (details?.sections && Array.isArray(details.sections)) {
+          console.log('[CODEX] section content audit', details.sections.map(s => ({
+            title: s?.title || s?.line || '',
+            index: s?.index ?? '',
+            hasContent: !!String(s?.content || '').trim(),
+            length: String(s?.content || '').trim().length
+          })));
+        }
         if (!details) {
           if (openModal) {
             renderCodexEntryModal({
