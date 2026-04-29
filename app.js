@@ -4768,19 +4768,58 @@ function showSection(sectionName) {
       codexPageDetails.innerHTML = '';
     }
 
+    function decodeHtmlEntities(value = '') {
+      const textarea = document.createElement('textarea');
+      textarea.innerHTML = String(value || '');
+      return textarea.value || '';
+    }
+
+    function normalizeCodexText(value = '') {
+      const decoded = decodeHtmlEntities(String(value || ''));
+      return decoded
+        .replace(/\[edit\]/gi, ' ')
+        .replace(/\[edit\s*\|\s*edit source\]/gi, ' ')
+        .replace(/\[\d+\]/g, ' ')
+        .replace(/Contents/gi, ' ')
+        .replace(/You'?re not supposed to be in here\.?/gi, ' ')
+        .replace(/article\/section contains spoilers\.?/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function isCodexJunkText(value = '') {
+      const text = normalizeCodexText(value).toLowerCase();
+      if (!text) return true;
+      const junkPatterns = [
+        /^contents?$/,
+        /^navigation$/,
+        /^references?$/,
+        /^see also$/,
+        /^external links?$/,
+        /^categories?$/,
+        /^you'?re not supposed to be in here\.?$/,
+        /^article\/section contains spoilers\.?/
+      ];
+      return junkPatterns.some(rx => rx.test(text));
+    }
+
     function extractSectionsFromParsedHtml(details) {
       const html = String(details?.html || '').trim();
       const metadataSections = Array.isArray(details?.sections) ? details.sections : [];
-      if (!html || !metadataSections.length) return [];
+      if (!metadataSections.length) return [];
 
       const container = document.createElement('div');
-      container.innerHTML = html;
-
-      // Remove noisy layout-heavy elements before text extraction.
-      container.querySelectorAll('script, style, table, nav, .mw-editsection, .navbox, .toc, .reference, .reflist').forEach(el => el.remove());
+      if (html) {
+        container.innerHTML = html;
+        // Remove noisy layout-heavy elements before text extraction.
+        container.querySelectorAll('script, style, table, nav, .mw-editsection, .navbox, .toc, .reference, .reflist, .hatnote, .noprint, .portable-infobox, .thumb, .gallery').forEach(el => el.remove());
+      }
 
       const normalized = metadataSections.map((meta, idx) => {
-        const title = String(meta?.line || '').replace(/\[edit\]/gi, '').trim();
+        const title = normalizeCodexText(meta?.line || '');
+        if (isCodexJunkText(title)) {
+          return null;
+        }
         const anchor = String(meta?.anchor || '').trim();
         const heading =
           (anchor ? container.querySelector(`#${cssEscapeValue(anchor)}`)?.closest('h2, h3, h4') : null)
@@ -4789,30 +4828,41 @@ function showSection(sectionName) {
             return text === title.toLowerCase();
           });
 
-        let content = '';
+        let content = normalizeCodexText(meta?.content || '');
         if (heading) {
           let node = heading.nextElementSibling;
           const chunks = [];
           while (node) {
             const tag = (node.tagName || '').toUpperCase();
             if (tag === 'H2' || tag === 'H3' || tag === 'H4') break;
-            const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
-            if (text) chunks.push(text);
+            if (tag === 'TABLE' || tag === 'NAV') {
+              node = node.nextElementSibling;
+              continue;
+            }
+            const text = normalizeCodexText(node.textContent || '');
+            if (!isCodexJunkText(text) && text.length > 1) chunks.push(text);
             node = node.nextElementSibling;
           }
-          content = chunks.join(' ').trim();
+          const extracted = chunks.join('\n\n').trim();
+          if (extracted) content = extracted;
         }
-        if (!content && String(details?.plainText || '').trim()) {
-          content = String(details.plainText).slice(0, 1800);
+        // Keep sections strictly scoped; no whole-page fallback blob here.
+        if (!content) {
+          console.log('[CODEX] missing section content', {
+            sectionTitle: title,
+            sectionIndex: meta?.index ?? '',
+            sectionObject: meta
+          });
         }
         return {
           key: `section-${idx}`,
           title: title || `Section ${idx + 1}`,
           number: String(meta?.number || ''),
-          content: content.slice(0, 2200),
+          index: String(meta?.index || ''),
+          content: content.slice(0, 2400),
           anchor
         };
-      });
+      }).filter(Boolean);
 
       return normalized.filter(section => section.title);
     }
@@ -4821,11 +4871,30 @@ function showSection(sectionName) {
       const extractedSections = extractSectionsFromParsedHtml(details).slice(0, 14);
       const importantSections = Array.isArray(details?.importantSections) ? details.importantSections.slice(0, 8) : [];
       const links = Array.isArray(details?.links) ? details.links.slice(0, 12) : [];
-      const images = Array.isArray(details?.images) ? details.images.slice(0, 8) : [];
-      const plainText = String(details?.plainText || '').trim();
+      const plainText = '';
       const sectionRows = extractedSections.length
         ? extractedSections.map(section => {
-          return `<li><button type="button" class="codex-load-result codex-detail-chip" data-section-key="${htmlEscape(section.key)}">${htmlEscape(section.number ? `${section.number} ` : '')}${htmlEscape(section.title)}</button></li>`;
+          const safeTitle = htmlEscape(section.title);
+          const safeLabel = htmlEscape(section.number ? `${section.number} ${section.title}` : section.title);
+          const paragraphs = String(section.content || '')
+            .split(/\n{2,}/)
+            .map(part => normalizeCodexText(part))
+            .filter(Boolean)
+            .slice(0, 14);
+          const sectionHtml = paragraphs.length
+            ? paragraphs.map(p => `<p class="mb-2">${htmlEscape(p)}</p>`).join('')
+            : '<p>No section details available.</p>';
+          return `
+            <li class="codex-accordion-item" data-section-key="${htmlEscape(section.key)}">
+              <button type="button" class="codex-load-result codex-detail-chip codex-accordion-trigger w-full" data-section-key="${htmlEscape(section.key)}" aria-expanded="false">
+                ${safeLabel}
+              </button>
+              <div class="codex-accordion-panel hidden mt-2 border border-terminal/20 p-3 text-xs text-green-200/85 leading-7" data-section-panel="${htmlEscape(section.key)}" aria-hidden="true">
+                <div class="font-bold mb-2">${safeTitle}</div>
+                ${sectionHtml}
+              </div>
+            </li>
+          `;
         }).join('')
         : '';
 
@@ -4837,19 +4906,11 @@ function showSection(sectionName) {
         ? links.map(linkTitle => `<li><button type="button" class="codex-load-result codex-detail-chip" data-title="${htmlEscape(linkTitle)}">${htmlEscape(linkTitle)}</button></li>`).join('')
         : '<li class="codex-detail-chip">—</li>';
 
-      const imageRows = images.length
-        ? images.map(name => {
-          const filePage = `https://wiki.warframe.com/wiki/File:${encodeURIComponent(name.replace(/ /g, '_'))}`;
-          return `<li><a class="codex-detail-chip" href="${filePage}" target="_blank" rel="noopener noreferrer">${htmlEscape(name)}</a></li>`;
-        }).join('')
-        : '<li class="codex-detail-chip">—</li>';
-
       const sectionsBlock = extractedSections.length
         ? `
         <div class="codex-detail-group">
           <div class="codex-detail-title">Sections</div>
           <ul class="codex-detail-list">${sectionRows}</ul>
-          <div id="codexSectionContent" class="mt-2 border border-terminal/20 p-3 text-xs text-green-200/85 leading-6">Select a section to view details.</div>
         </div>`
         : `
         <div class="codex-detail-group">
@@ -4867,10 +4928,6 @@ function showSection(sectionName) {
         <div class="codex-detail-group">
           <div class="codex-detail-title">Related Links</div>
           <ul class="codex-detail-list">${linkRows}</ul>
-        </div>
-        <div class="codex-detail-group">
-          <div class="codex-detail-title">Images</div>
-          <ul class="codex-detail-list">${imageRows}</ul>
         </div>
         ${plainText ? `<div class="codex-detail-group"><div class="codex-detail-title">Page Notes</div><div class="text-xs text-green-200/80 leading-6">${htmlEscape(plainText)}</div></div>` : ''}
       `,
@@ -4946,24 +5003,36 @@ function showSection(sectionName) {
         </div>
         ${detailData.html}
       `;
-      const sectionLookup = new Map((detailData.sections || []).map(section => [section.key, section]));
-      const sectionContentEl = codexEntryModalBody.querySelector('#codexSectionContent');
-      const sectionBtns = codexEntryModalBody.querySelectorAll('.codex-detail-chip[data-section-key]');
+      const sectionBtns = codexEntryModalBody.querySelectorAll('.codex-accordion-trigger[data-section-key]');
+      const sectionPanels = codexEntryModalBody.querySelectorAll('.codex-accordion-panel[data-section-panel]');
+      const closeAllSections = () => {
+        sectionBtns.forEach(b => {
+          b.classList.remove('bg-terminal/10');
+          b.setAttribute('aria-expanded', 'false');
+        });
+        sectionPanels.forEach(panel => {
+          panel.classList.add('hidden');
+          panel.style.maxHeight = '0px';
+          panel.setAttribute('aria-hidden', 'true');
+        });
+      };
       sectionBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           const key = btn.dataset.sectionKey || '';
-          const section = sectionLookup.get(key);
-          const titleText = section?.title || 'Section';
-          const contentText = section?.content || '';
-          sectionBtns.forEach(b => b.classList.remove('bg-terminal/10'));
+          const panel = codexEntryModalBody.querySelector(`.codex-accordion-panel[data-section-panel="${cssEscapeValue(key)}"]`);
+          if (!panel) return;
+          const currentlyOpen = btn.getAttribute('aria-expanded') === 'true';
+          closeAllSections();
+          if (currentlyOpen) return;
           btn.classList.add('bg-terminal/10');
-          if (sectionContentEl) {
-            sectionContentEl.textContent = contentText ? `${titleText}: ${contentText}` : `${titleText}: No section details available.`;
-          }
+          btn.setAttribute('aria-expanded', 'true');
+          panel.classList.remove('hidden');
+          panel.setAttribute('aria-hidden', 'false');
+          panel.style.maxHeight = `${panel.scrollHeight}px`;
         });
       });
-      if (sectionBtns.length && sectionContentEl) {
+      if (sectionBtns.length) {
         sectionBtns[0].click();
       }
       codexEntryModalBody.querySelectorAll('.codex-load-result[data-title]').forEach(btn => {
@@ -5148,10 +5217,11 @@ function showSection(sectionName) {
         </button>
       `).join('');
       codexFavorites.querySelectorAll('.codex-favorite-item').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
           const title = btn.dataset.title || '';
           if (codexSearchInput) codexSearchInput.value = title;
-          loadCodexEntry(title);
+          await loadCodexEntry(title);
+          loadCodexPageDetails(title, { openModal: true });
         });
       });
       updateCodexPinButtonState();

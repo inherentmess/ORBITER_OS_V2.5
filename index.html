@@ -771,20 +771,49 @@
       padding: 10px;
     }
     #codexEntryModalBody .codex-detail-list {
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, max-content));
       gap: 8px;
+      justify-content: start;
     }
     #codexEntryModalBody .codex-detail-chip {
-      width: 100%;
+      width: auto;
       min-height: 34px;
       justify-content: flex-start;
       border-radius: 2px;
       padding: 7px 9px;
       line-height: 1.35;
       transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+      text-align: left;
     }
     #codexEntryModalBody .codex-detail-chip:hover {
       box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.2) inset;
+    }
+    #codexEntryModalBody .codex-accordion-item {
+      list-style: none;
+    }
+    #codexEntryModalBody .codex-accordion-trigger {
+      width: 100%;
+      justify-content: flex-start;
+      text-align: left;
+    }
+    #codexEntryModalBody .codex-accordion-panel {
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      transform: translateY(-2px);
+      transition: max-height 220ms ease, opacity 180ms ease, transform 180ms ease;
+      background: rgba(0, 0, 0, 0.58);
+    }
+    #codexEntryModalBody .codex-accordion-panel[aria-hidden="false"] {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    #codexSectionContent {
+      background: rgba(0, 0, 0, 0.58);
+      border-color: rgba(74, 222, 128, 0.34) !important;
+    }
+    #codexSectionContent p:last-child {
+      margin-bottom: 0;
     }
     @media (max-width: 900px) {
       .terminal-modal__panel { margin: 0; width: 100%; height: 100dvh; }
@@ -1797,7 +1826,6 @@
                     <input id="codexSearchInput" type="text" placeholder="search official warframe wiki" autocomplete="off" class="w-full bg-transparent border border-terminal px-4 py-3 text-sm text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
                     <div id="codexSuggestions" class="hidden absolute top-full left-0 right-0 mt-2 border border-terminal bg-black z-20 max-h-72 overflow-y-auto"></div>
                   </div>
-                  <button id="codexSearchBtn" class="border border-terminal px-5 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">load codex</button>
                   <button id="codexOpenBtn" title="View full entry inside ORBITER OS" class="border border-terminal px-5 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">open in codex</button>
                   <button id="codexPinBtn" class="border border-terminal px-5 py-3 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">pin entry</button>
                 </div>

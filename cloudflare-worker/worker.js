@@ -153,6 +153,27 @@ function stripHtmlSnippet(value = '') {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function cleanWikiHtmlToText(value = '') {
+  return String(value || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<table[\s\S]*?<\/table>/gi, ' ')
+    .replace(/<div[^>]*class="[^"]*(?:toc|mw-editsection|navbox|hatnote|reflist|reference)[^"]*"[^>]*>[\s\S]*?<\/div>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\[edit\s*\|\s*edit source\]/gi, ' ')
+    .replace(/\[edit\]/gi, ' ')
+    .replace(/\[\d+\]/g, ' ')
+    .replace(/article\/section contains spoilers\.?/gi, ' ')
+    .replace(/You'?re not supposed to be in here\.?/gi, ' ')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
 function wikiPageUrl(title = '') {
   return `https://wiki.warframe.com/w/${encodeURIComponent(String(title || '').replace(/\s+/g, '_'))}`;
 }
@@ -294,16 +315,37 @@ async function handleWikiPage(request, url) {
       .trim()
       .slice(0, 1800);
 
-    const normalizedSections = sections
+    let normalizedSections = sections
       .map(section => ({
+        title: String(section?.line || '').trim(),
         number: String(section?.number || ''),
         line: String(section?.line || '').trim(),
         index: Number(section?.index || 0),
         level: Number(section?.level || section?.toclevel || 0),
-        anchor: String(section?.anchor || '').trim()
+        anchor: String(section?.anchor || '').trim(),
+        content: ''
       }))
       .filter(section => section.line)
       .slice(0, 40);
+
+    normalizedSections = await Promise.all(normalizedSections.map(async (section) => {
+      const idx = Number(section?.index || 0);
+      if (!Number.isFinite(idx) || idx <= 0) return section;
+      const sectionResult = await fetchWikiJson({
+        action: 'parse',
+        page: resolvedTitle,
+        prop: 'text',
+        section: String(idx),
+        redirects: '1'
+      });
+      if (!sectionResult.ok) return section;
+      const sectionHtml = String(sectionResult?.data?.parse?.text?.['*'] || '');
+      const sectionText = cleanWikiHtmlToText(sectionHtml).slice(0, 2800);
+      return {
+        ...section,
+        content: sectionText
+      };
+    }));
 
     const importantTerms = ['acquisition', 'drop', 'drops', 'farming', 'abilities', 'stats', 'build', 'notes', 'tips'];
     const importantSections = normalizedSections
