@@ -3738,20 +3738,8 @@ function runBootSequence() {
 
       const applyOrdersData = (ordersData, sourceLabel = '') => {
         const rawOrders = getOrdersFromResponse(ordersData);
-        if (MARKET_DEBUG) {
-          console.log('[MARKET_DEBUG] market raw orders count', rawOrders.length);
-          console.log('[MARKET_DEBUG] market raw orders first 3', rawOrders.slice(0, 3));
-        }
-        const uniqType = [...new Set(rawOrders.map(o => String(o?.order_type || '').toLowerCase().trim()))];
-        const uniqStatus = [...new Set(rawOrders.map(o => String(o?.user?.status || '').toLowerCase().trim()))];
         const uniqPlatform = [...new Set(rawOrders.map(o => String(o?.platform || o?.user?.platform || '').toLowerCase().trim()))];
         const uniqPlatinum = [...new Set(rawOrders.map(o => String(o?.platinum ?? o?.price ?? '')))].slice(0, 20);
-        if (MARKET_DEBUG) {
-          console.log('[MARKET_DEBUG] market raw unique order_type', uniqType);
-          console.log('[MARKET_DEBUG] market raw unique user.status', uniqStatus);
-          console.log('[MARKET_DEBUG] market raw unique platform', uniqPlatform);
-          console.log('[MARKET_DEBUG] market raw unique platinum(sample)', uniqPlatinum);
-        }
         const directSell = pickFirstArray([
           ordersData?.sellOrders,
           ordersData?.payload?.sellOrders,
@@ -3767,7 +3755,40 @@ function runBootSequence() {
         const normalized = normalizeOrders({ orders: sourceOrders });
         const sellOrders = normalized.sellOrders;
         const buyOrders = normalized.buyOrders;
-        marketState.rawOrders = sourceOrders;
+        const normalizedRows = [...sellOrders, ...buyOrders];
+        const orderTypeCounts = sourceOrders.reduce((acc, order) => {
+          const type = getOrderType(order) || '(empty)';
+          acc[type] = (acc[type] || 0) + 1;
+          return acc;
+        }, {});
+        const statusCounts = sourceOrders.reduce((acc, order) => {
+          const status = getOrderStatus(order) || '(empty)';
+          acc[status] = (acc[status] || 0) + 1;
+          return acc;
+        }, {});
+        const sellIngameCount = sourceOrders.filter(order => {
+          return getOrderType(order) === 'sell' && getOrderStatus(order) === 'ingame';
+        }).length;
+        const firstFiveSell = sourceOrders
+          .filter(order => getOrderType(order) === 'sell')
+          .slice(0, 5)
+          .map(order => ({
+            user: order?.user?.ingameName || order?.user?.ingame_name || order?.user || 'Unknown',
+            status: getOrderStatus(order),
+            order_type: getOrderType(order),
+            platinum: order?.platinum ?? order?.price ?? null
+          }));
+        console.log('[MARKET] total raw orders', sourceOrders.length);
+        console.log('[MARKET] counts by order_type', orderTypeCounts);
+        console.log('[MARKET] counts by user.status', statusCounts);
+        console.log('[MARKET] count of sell + ingame orders', sellIngameCount);
+        console.log('[MARKET] first 5 sell orders with user.status', firstFiveSell);
+        if (MARKET_DEBUG) {
+          console.log('[MARKET_DEBUG] market raw orders first 3', sourceOrders.slice(0, 3));
+          console.log('[MARKET_DEBUG] market raw unique platform', uniqPlatform);
+          console.log('[MARKET_DEBUG] market raw unique platinum(sample)', uniqPlatinum);
+        }
+        marketState.rawOrders = normalizedRows;
         marketState.rawOrderCount = sourceOrders.length;
         marketState.ingameOrderCount = (sellOrders.length + buyOrders.length);
         marketState.sellOrders = sellOrders;
