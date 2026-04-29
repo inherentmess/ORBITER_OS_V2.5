@@ -2814,12 +2814,14 @@ function runBootSequence() {
           'unknown'
         ).toLowerCase();
         const platinumRaw = order?.platinum ?? order?.price ?? order?.price_platinum;
+        const rawSide = String(order?.order_type || order?.orderType || order?.type || order?.side || '').toLowerCase().trim();
+        const normalizedSide = rawSide === 'seller' ? 'sell' : rawSide === 'buyer' ? 'buy' : rawSide;
         return {
           ...order,
           user: typeof order?.user === 'string'
             ? { ingameName: order.user, status, platform: order?.platform || order?.user_platform || 'pc' }
             : (order?.user || userObj),
-          order_type: order?.order_type || order?.type || '',
+          order_type: normalizedSide,
           status,
           platinum: Number.isFinite(Number(platinumRaw)) ? Number(platinumRaw) : platinumRaw,
           visible: order?.visible !== false
@@ -3469,6 +3471,11 @@ function runBootSequence() {
           const normalized = normalizeOrdersFromRaw(rawOrders);
           sellOrders = normalized.sellOrders;
           buyOrders = normalized.buyOrders;
+          console.log('[orbiter] market orders fallback parse', {
+            rawOrders: rawOrders.length,
+            sell: sellOrders.length,
+            buy: buyOrders.length
+          });
         }
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
@@ -3478,7 +3485,11 @@ function runBootSequence() {
         const bestBuy = applyPriceSort(buyOrders, 'price_desc', 'price_desc')[0]?.platinum;
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
         marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p | Best buy ${bestBuy ?? '-'}p${spread !== null ? ` | Spread ${spread}p` : ''} | ${marketState.activeSource}`;
-        setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
+        if (!sellOrders.length && !buyOrders.length) {
+          setMarketStatus('orders fetch ok but parsed 0 sell/buy | check worker payload shape');
+        } else {
+          setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
+        }
         renderFilteredMarketOrders();
       } catch (error) {
         const httpStatus = Number(error?.httpStatus || 0);
