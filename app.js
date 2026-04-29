@@ -2756,7 +2756,11 @@ function runBootSequence() {
       favorites: [],
       autoRefreshEnabled: localStorage.getItem(MARKET_AUTO_REFRESH_KEY) === '1',
       autoRefreshIntervalMs: Number(localStorage.getItem(MARKET_AUTO_REFRESH_INTERVAL_KEY) || 45000) || 45000,
-      autoRefreshTimer: 0
+      autoRefreshTimer: 0,
+      ordersCache: new Map(),
+      ordersCacheTtlMs: 25000,
+      ordersAbortController: null,
+      inputDebounceTimer: 0
     };
 
     const marketUi = {
@@ -2949,12 +2953,15 @@ function runBootSequence() {
       };
     }
 
-    async function fetchMarketJson(path) {
+    async function fetchMarketJson(path, options = {}) {
       const url = buildMarketProxyUrl(path);
       logRequest('market proxy', url);
       let response;
       try {
-        response = await fetch(url, { cache: path.includes('/orders/') ? 'no-store' : 'force-cache' });
+        response = await fetch(url, {
+          cache: path.includes('/orders/') ? 'no-store' : 'force-cache',
+          signal: options.signal
+        });
       } catch (error) {
         const wrapped = new Error(`market proxy network error from ${url}: ${error?.message || 'request failed'}`);
         wrapped.fetchUrl = url;
@@ -3182,19 +3189,26 @@ function runBootSequence() {
         target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
         return;
       }
-      target.innerHTML = orders.map(order => {
+      target.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      orders.forEach(order => {
         const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
-        const status = order.user?.status || order.status || 'unknown';
         const platform = order.user?.platform || order.platform || 'pc';
         const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
         const price = Number(order.platinum);
-        const uid = `${username}|${price}|${order.quantity || 1}`;
-        const bestClass = cheapestId && cheapestId === uid ? ' market-order-row--best' : '';
-        return `
-        <div class="market-order-row${bestClass}">
+        const qty = order.quantity || 1;
+        const uid = `${username}|${price}|${qty}`;
+
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `market-order-row${cheapestId && cheapestId === uid ? ' market-order-row--best' : ''}`;
+        row.dataset.action = String(action || '');
+        row.dataset.user = String(username);
+        row.dataset.price = String(price);
+
+        row.innerHTML = `
           <div class="market-order-row__identity">
             <span class="market-order-row__name">${htmlEscape(username)}</span>
-            <span class="market-order-row__status">${htmlEscape(String(status).toUpperCase())}</span>
           </div>
           <div class="market-order-row__metric market-order-row__metric--price">
             <span class="market-order-row__label">Price</span>
@@ -3206,14 +3220,34 @@ function runBootSequence() {
           </div>
           <div class="market-order-row__metric">
             <span class="market-order-row__label">Qty</span>
-            <span class="market-order-row__value">${htmlEscape(order.quantity || 1)}</span>
+            <span class="market-order-row__value">${htmlEscape(qty)}</span>
           </div>
           <div class="market-order-row__platform">${htmlEscape(String(platform).toUpperCase())}</div>
-          <button class="market-whisper-copy market-order-row__copy" data-action="${htmlEscape(action)}" data-user="${jsAttrEscape(username)}" data-price="${htmlEscape(price)}">Copy Whisper</button>
-        </div>
-      `;
-      }).join('');
-      bindWhisperButtons(target);
+          <div class="market-order-row__copy">Copy Whisper</div>
+        `;
+
+        row.addEventListener('click', async () => {
+          const copyEl = row.querySelector('.market-order-row__copy');
+          if (copyEl) copyEl.textContent = 'Copying...';
+          try {
+            await copyMarketWhisper(row.dataset.action, row.dataset.user, row.dataset.price);
+            if (copyEl) copyEl.textContent = 'Copied ✓';
+            row.classList.add('is-copied');
+            window.setTimeout(() => {
+              row.classList.remove('is-copied');
+              if (copyEl) copyEl.textContent = 'Copy Whisper';
+            }, 900);
+          } catch {
+            if (copyEl) copyEl.textContent = 'Copy failed';
+            window.setTimeout(() => {
+              if (copyEl) copyEl.textContent = 'Copy Whisper';
+            }, 900);
+          }
+        });
+
+        fragment.appendChild(row);
+      });
+      target.appendChild(fragment);
     }
 
     function marketWhisper(action, username, price) {
@@ -3590,6 +3624,7 @@ function runBootSequence() {
 
     async function loadMarketItem(item, { reason = 'select' } = {}) {
       if (!item) return;
+      const itemKey = String(item.url_name || '');
       marketState.selectedItem = item;
       marketState.sellOrders = [];
       marketState.buyOrders = [];
@@ -3602,9 +3637,22 @@ function runBootSequence() {
       renderMarketStats(null);
       setMarketOrdersUpdated(null);
       try {
-        // Always fetch fresh orders on selection/refresh.
-        const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const ordersData = await fetchMarketJson(`/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
+        const now = Date.now();
+        const cached = marketState.ordersCache.get(itemKey);
+        const canUseCache = reason !== 'refresh' && cached && (now - cached.timestamp) <= marketState.ordersCacheTtlMs;
+        let ordersData;
+        if (canUseCache) {
+          ordersData = cached.data;
+        } else {
+          if (marketState.ordersAbortController) marketState.ordersAbortController.abort();
+          marketState.ordersAbortController = new AbortController();
+          const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+          const path = reason === 'refresh'
+            ? `/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`
+            : `/api/market/orders/${encodeURIComponent(item.url_name)}`;
+          ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
+          marketState.ordersCache.set(itemKey, { data: ordersData, timestamp: Date.now() });
+        }
         const directSell = pickFirstArray([
           ordersData?.sellOrders,
           ordersData?.payload?.sellOrders,
@@ -3645,6 +3693,7 @@ function runBootSequence() {
         setFavoriteToggleLabel();
         scheduleMarketAutoRefresh();
       } catch (error) {
+        if (error?.name === 'AbortError') return;
         const httpStatus = Number(error?.httpStatus || 0);
         const fetchUrl = error?.fetchUrl || buildMarketProxyUrl(`/api/market/orders/${encodeURIComponent(item?.url_name || '')}`);
         const reason = error?.message === 'Market proxy required'
@@ -3719,16 +3768,19 @@ function runBootSequence() {
         if (query) renderMarketAutocomplete(marketMatches(query, 8));
       });
 
-      marketItemSearch.addEventListener('input', async () => {
-        await ensureMarketCatalog().catch(error => logClientError('market input preload', error));
-        if (!marketState.loaded) {
+      marketItemSearch.addEventListener('input', () => {
+        if (marketState.inputDebounceTimer) window.clearTimeout(marketState.inputDebounceTimer);
+        marketState.inputDebounceTimer = window.setTimeout(async () => {
+          await ensureMarketCatalog().catch(error => logClientError('market input preload', error));
+          if (!marketState.loaded) {
+            const query = marketItemSearch.value;
+            renderMarketResults([], query);
+            hideMarketAutocomplete();
+            return;
+          }
           const query = marketItemSearch.value;
-          renderMarketResults([], query);
-          hideMarketAutocomplete();
-          return;
-        }
-        const query = marketItemSearch.value;
-        renderMarketAutocomplete(marketMatches(query, 8));
+          renderMarketAutocomplete(marketMatches(query, 8));
+        }, 300);
       });
 
       marketItemSearch.addEventListener('keydown', (e) => {
@@ -3783,8 +3835,14 @@ function runBootSequence() {
 
     if (marketTabSell) marketTabSell.addEventListener('click', () => setMarketActiveSide('sell'));
     if (marketTabBuy) marketTabBuy.addEventListener('click', () => setMarketActiveSide('buy'));
-    if (marketViewSellBtn) marketViewSellBtn.addEventListener('click', () => openMarketModal('sell'));
-    if (marketViewBuyBtn) marketViewBuyBtn.addEventListener('click', () => openMarketModal('buy'));
+    if (marketViewSellBtn) {
+      marketViewSellBtn.textContent = 'View Orders';
+      marketViewSellBtn.addEventListener('click', () => openMarketModal(marketUi.activeSide));
+    }
+    if (marketViewBuyBtn) {
+      marketViewBuyBtn.style.display = 'none';
+      marketViewBuyBtn.setAttribute('aria-hidden', 'true');
+    }
     if (marketRefreshOrdersBtn) {
       marketRefreshOrdersBtn.addEventListener('click', () => {
         if (!marketState.selectedItem) {
