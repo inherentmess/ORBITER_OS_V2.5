@@ -183,18 +183,22 @@
       align-items: center;
       column-gap: 10px;
     }
+    .market-order-head,
+    .market-order-row {
+      min-width: 780px;
+    }
     .market-order-head {
       border: 1px solid rgba(74, 222, 128, 0.24);
       background: rgba(0, 0, 0, 0.45);
-      padding: 8px 10px;
-      font-size: 10px;
+      padding: 7px 9px;
+      font-size: 9px;
       letter-spacing: 0.18em;
       text-transform: uppercase;
       color: rgba(74, 222, 128, 0.7);
     }
     .market-order-row {
       border: 1px solid rgba(74, 222, 128, 0.22);
-      padding: 8px 10px;
+      padding: 7px 9px;
       min-height: 48px;
       cursor: pointer;
       position: relative;
@@ -328,7 +332,7 @@
     #marketBuyOrders,
     #marketModalList {
       overflow-y: auto;
-      overflow-x: visible;
+      overflow-x: auto;
       width: 100%;
       box-sizing: border-box;
     }

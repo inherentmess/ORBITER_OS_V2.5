@@ -19,7 +19,11 @@ const EMBED_MODE = detectEmbedMode();
 const FULLSCREEN_PREF_KEY = 'orbiterFullscreenPreferred';
 
 function isFullscreenActive() {
-  return Boolean(document.fullscreenElement);
+  return Boolean(
+    document.fullscreenElement
+    || document.webkitFullscreenElement
+    || document.msFullscreenElement
+  );
 }
 
 function readFullscreenPreference() {
@@ -40,19 +44,66 @@ function updateFullscreenToggleUi() {
   fullscreenToggleBtn.setAttribute('title', preferred && !active ? 'Fullscreen preferred (click to enter)' : (active ? 'Exit Fullscreen' : 'Fullscreen'));
 }
 
-async function toggleFullscreen() {
+function toggleFullscreen() {
   if (EMBED_MODE) return;
-  try {
-    if (!isFullscreenActive()) {
-      await document.documentElement.requestFullscreen();
-      writeFullscreenPreference(true);
-    } else {
-      await document.exitFullscreen();
-      writeFullscreenPreference(false);
+  const root = document.documentElement;
+  console.log('Fullscreen click triggered');
+  if (!isFullscreenActive()) {
+    if (root.requestFullscreen) {
+      root.requestFullscreen()
+        .then(() => writeFullscreenPreference(true))
+        .catch(err => console.error('Fullscreen failed:', err))
+        .finally(updateFullscreenToggleUi);
+      return;
     }
-  } catch (error) {
-    console.warn('[orbiter] fullscreen toggle blocked', error);
-  } finally {
+    if (root.webkitRequestFullscreen) {
+      try {
+        root.webkitRequestFullscreen();
+        writeFullscreenPreference(true);
+      } catch (err) {
+        console.error('Fullscreen failed:', err);
+      }
+      updateFullscreenToggleUi();
+      return;
+    }
+    if (root.msRequestFullscreen) {
+      try {
+        root.msRequestFullscreen();
+        writeFullscreenPreference(true);
+      } catch (err) {
+        console.error('Fullscreen failed:', err);
+      }
+      updateFullscreenToggleUi();
+      return;
+    }
+    console.error('Fullscreen failed: API unavailable');
+    return;
+  }
+
+  if (document.exitFullscreen) {
+    document.exitFullscreen()
+      .then(() => writeFullscreenPreference(false))
+      .catch(err => console.error('Fullscreen failed:', err))
+      .finally(updateFullscreenToggleUi);
+    return;
+  }
+  if (document.webkitExitFullscreen) {
+    try {
+      document.webkitExitFullscreen();
+      writeFullscreenPreference(false);
+    } catch (err) {
+      console.error('Fullscreen failed:', err);
+    }
+    updateFullscreenToggleUi();
+    return;
+  }
+  if (document.msExitFullscreen) {
+    try {
+      document.msExitFullscreen();
+      writeFullscreenPreference(false);
+    } catch (err) {
+      console.error('Fullscreen failed:', err);
+    }
     updateFullscreenToggleUi();
   }
 }
@@ -659,11 +710,20 @@ function showSection(sectionName) {
     }
     updateFullscreenToggleUi();
     if (fullscreenToggleBtn) {
-      fullscreenToggleBtn.addEventListener('click', async () => {
-        await toggleFullscreen();
-      });
+      fullscreenToggleBtn.addEventListener('click', toggleFullscreen);
     }
     document.addEventListener('fullscreenchange', updateFullscreenToggleUi);
+    document.addEventListener('fullscreenchange', () => {
+      console.log('Fullscreen state:', !!document.fullscreenElement);
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+      console.log('Fullscreen state:', !!(document.webkitFullscreenElement || document.fullscreenElement));
+      updateFullscreenToggleUi();
+    });
+    document.addEventListener('MSFullscreenChange', () => {
+      console.log('Fullscreen state:', !!(document.msFullscreenElement || document.fullscreenElement));
+      updateFullscreenToggleUi();
+    });
     document.addEventListener('fullscreenerror', updateFullscreenToggleUi);
 
     // Subtle click sounds only for primary terminal actions.
@@ -4439,11 +4499,12 @@ function showSection(sectionName) {
     let codexActiveTitle = '';
     let codexActiveUrl = '';
     let codexActiveCategory = 'uncategorized';
+    let codexActiveSummary = '';
     let codexSearchTimer;
     let codexSearchAbortController = null;
     let codexActiveSuggestIndex = -1;
     const CODEX_CACHE_KEY = 'orbiter_codex_cache_v1';
-    const CODEX_FAVORITES_KEY = 'orbiter_codex_favorites_v1';
+    const CODEX_FAVORITES_KEY = 'orbiterCodexPinnedEntries';
     const CODEX_SEARCH_TTL_MS = 10 * 60 * 1000;
     const CODEX_ENTRY_TTL_MS = 24 * 60 * 60 * 1000;
     const codexMemoryCache = {
@@ -4546,12 +4607,46 @@ function showSection(sectionName) {
     }
 
     function loadCodexFavorites() {
-      const parsed = safeParseJson(localStorage.getItem(CODEX_FAVORITES_KEY), []);
-      return Array.isArray(parsed) ? parsed : [];
+      const parsed = safeParseJson(localStorage.getItem(CODEX_FAVORITES_KEY), null);
+      if (Array.isArray(parsed)) return parsed;
+      // Backward compatibility: migrate old key if present.
+      const legacy = safeParseJson(localStorage.getItem('orbiter_codex_favorites_v1'), []);
+      if (Array.isArray(legacy) && legacy.length) {
+        saveCodexFavorites(legacy);
+        return legacy;
+      }
+      return [];
     }
 
     function saveCodexFavorites(items) {
       localStorage.setItem(CODEX_FAVORITES_KEY, JSON.stringify(items.slice(0, 30)));
+    }
+
+    function getPinnedEntryIndex(title) {
+      const needle = String(title || '').trim().toLowerCase();
+      if (!needle) return -1;
+      return loadCodexFavorites().findIndex(item => String(item?.title || '').trim().toLowerCase() === needle);
+    }
+
+    function isCodexEntryPinned(title) {
+      return getPinnedEntryIndex(title) >= 0;
+    }
+
+    function updateCodexPinButtonState() {
+      if (!codexPinBtn) return;
+      const title = String(codexActiveTitle || '').trim();
+      if (!title) {
+        codexPinBtn.disabled = true;
+        codexPinBtn.textContent = 'Open an entry first';
+        codexPinBtn.setAttribute('aria-disabled', 'true');
+        codexPinBtn.title = 'Open an entry first';
+        return;
+      }
+      const pinned = isCodexEntryPinned(title);
+      codexPinBtn.disabled = false;
+      codexPinBtn.setAttribute('aria-disabled', 'false');
+      codexPinBtn.textContent = pinned ? 'Unpin Entry' : 'Pin Entry';
+      codexPinBtn.title = pinned ? 'Unpin Entry' : 'Pin Entry';
     }
 
     function detectFarmingInfo(entry = {}) {
@@ -4582,6 +4677,7 @@ function showSection(sectionName) {
           codexFarmingInfo.classList.add('hidden');
         }
       }
+      updateCodexPinButtonState();
     }
 
     function renderCodexResults(items = []) {
@@ -4669,6 +4765,7 @@ function showSection(sectionName) {
       const favorites = loadCodexFavorites();
       if (!favorites.length) {
         codexFavorites.innerHTML = '<div class="border border-terminal/25 p-3">No pinned entries yet.</div>';
+        updateCodexPinButtonState();
         return;
       }
       codexFavorites.innerHTML = favorites.map(item => `
@@ -4684,18 +4781,34 @@ function showSection(sectionName) {
           loadCodexEntry(title);
         });
       });
+      updateCodexPinButtonState();
     }
 
     function pinActiveCodexEntry() {
       const title = String(codexActiveTitle || '').trim();
-      if (!title) return;
+      if (!title) {
+        updateCodexPinButtonState();
+        return;
+      }
       const current = loadCodexFavorites();
-      const next = [
-        { title, category: codexActiveCategory || 'uncategorized', url: codexActiveUrl || codexPageUrl(title) },
-        ...current.filter(item => String(item.title || '').toLowerCase() !== title.toLowerCase())
-      ].slice(0, 30);
+      const normalizedTitle = title.toLowerCase();
+      const alreadyPinned = current.some(item => String(item?.title || '').toLowerCase() === normalizedTitle);
+      let next;
+      if (alreadyPinned) {
+        next = current.filter(item => String(item?.title || '').toLowerCase() !== normalizedTitle);
+      } else {
+        const entry = {
+          title,
+          url: codexActiveUrl || codexPageUrl(title),
+          slug: String((codexActiveUrl || codexPageUrl(title)).split('/').pop() || '').trim(),
+          category: codexActiveCategory || 'uncategorized',
+          summary: String(codexActiveSummary || codexSummary?.textContent || '').trim()
+        };
+        next = [entry, ...current.filter(item => String(item?.title || '').toLowerCase() !== normalizedTitle)].slice(0, 30);
+      }
       saveCodexFavorites(next);
       renderCodexFavorites();
+      updateCodexPinButtonState();
     }
 
     async function searchCodexSuggestions(query) {
@@ -4762,6 +4875,7 @@ function showSection(sectionName) {
           codexActiveTitle = cachedEntry.title;
           codexActiveUrl = cachedEntry.url;
           codexActiveCategory = cachedEntry.category || getCodexCategory(cachedEntry.title, cachedEntry.summary);
+          codexActiveSummary = String(cachedEntry.summary || '').trim();
           setCodexState({
             title: cachedEntry.title,
             summary: cachedEntry.summary,
@@ -4781,6 +4895,7 @@ function showSection(sectionName) {
           codexActiveTitle = finalTitle;
           codexActiveUrl = top.url || codexPageUrl(finalTitle);
           codexActiveCategory = category;
+          codexActiveSummary = extract || '';
           if (!extract) {
             console.warn('[orbiter] codex summary empty extract', { title: finalTitle, data: workerData });
           }
@@ -4796,6 +4911,10 @@ function showSection(sectionName) {
           setCodexState(entryPayload);
           return;
         } else {
+          codexActiveTitle = '';
+          codexActiveUrl = '';
+          codexActiveCategory = 'uncategorized';
+          codexActiveSummary = '';
           setCodexState({
             title: 'No codex result',
             summary: `No official wiki page matched "${q}". Try a broader term like Orokin, Lotus, Duviri, or Nightwave.`,
@@ -4806,6 +4925,10 @@ function showSection(sectionName) {
           return;
         }
       } catch (error) {
+        codexActiveTitle = '';
+        codexActiveUrl = '';
+        codexActiveCategory = 'uncategorized';
+        codexActiveSummary = '';
         const reason = error?.message?.includes('HTTP')
           ? 'bad endpoint or HTTP error'
           : error?.message?.includes('parse error')
