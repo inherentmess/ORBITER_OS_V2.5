@@ -32,27 +32,9 @@
       } catch {}
     })();
   </script>
-  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="./assets/tailwind.min.css" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700;900&display=swap" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            terminal: '#4ade80',
-            terminalDim: '#166534',
-            panel: '#071106',
-            panel2: '#0c160a'
-          },
-          fontFamily: {
-            code: ['Space Grotesk', 'sans-serif']
-          }
-        }
-      }
-    };
-  </script>
   <style>
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
     .cursor-blink { animation: blink 1s step-end infinite; }
@@ -860,6 +842,7 @@
                 <div id="marketOrderPanels" class="grid md:grid-cols-2 gap-3">
                   <div id="marketSellPanel" class="market-order-panel border border-terminal/25 p-3 bg-black/40" data-side="sell" data-active="1">
                     <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Sell Orders</div>
+                    <div id="marketSellCount" class="text-[10px] uppercase tracking-[0.2em] text-terminal/60 mb-2">Showing 0 of 0</div>
                     <div class="grid grid-cols-2 gap-2 mb-2">
                       <select id="marketSellStatus" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal focus:outline-none focus:ring-0">
                         <option value="all">status: all</option>
@@ -883,6 +866,7 @@
 
                   <div id="marketBuyPanel" class="market-order-panel border border-terminal/25 p-3 bg-black/40" data-side="buy" data-active="1">
                     <div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Buy Orders</div>
+                    <div id="marketBuyCount" class="text-[10px] uppercase tracking-[0.2em] text-terminal/60 mb-2">Showing 0 of 0</div>
                     <div class="grid grid-cols-2 gap-2 mb-2">
                       <select id="marketBuyStatus" class="bg-transparent border border-terminal px-2 py-2 text-xs text-terminal focus:outline-none focus:ring-0">
                         <option value="all">status: all</option>
@@ -994,6 +978,7 @@
         <div>
           <div class="terminal-modal__title">Market Order Book</div>
           <div id="marketModalTitle" class="terminal-modal__sub">Awaiting selection</div>
+          <div id="marketModalCount" class="terminal-modal__sub">Showing 0 of 0</div>
         </div>
         <div class="flex items-center gap-2">
           <button id="marketModalTabSell" class="market-tab-btn subtab-active border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest">Sell</button>

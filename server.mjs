@@ -231,6 +231,12 @@ async function handleApi(req, res, url, corsOrigin) {
   }
 
   try {
+    if (url.pathname === "/api/market/items") {
+      const result = await searchItems("");
+      sendJson(res, 200, result, "public, max-age=300", corsHeaders);
+      return;
+    }
+
     if (url.pathname === "/api/market/search") {
       const q = url.searchParams.get("q") || "";
       const result = await searchItems(q);

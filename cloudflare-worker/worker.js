@@ -269,45 +269,114 @@ function normalizeOrdersFromV2(data = {}) {
   };
 }
 
+function uniqueOrdersById(orders = []) {
+  const out = [];
+  const seen = new Set();
+  for (const order of orders) {
+    const key = String(order?.id || '');
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(order);
+  }
+  return out;
+}
+
+async function fetchAllV1Orders(normalizedName) {
+  const perPage = 100;
+  const maxPages = 30;
+  const all = [];
+  let firstError = null;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const upstream = `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=${page}&per_page=${perPage}`;
+    const result = await fetchJson(upstream);
+    if (!result.ok) {
+      if (page === 1) return { ok: false, error: result.error, status: result.status, upstreamUrl: upstream };
+      firstError = firstError || result.error;
+      break;
+    }
+    const pageOrders = result.data?.payload?.orders || [];
+    all.push(...pageOrders);
+    if (!Array.isArray(pageOrders) || pageOrders.length < perPage) break;
+  }
+
+  return {
+    ok: true,
+    source: 'cloudflare-worker:v1',
+    warning: firstError || null,
+    orders: uniqueOrdersById(all)
+  };
+}
+
+async function fetchAllV2Orders(normalizedName) {
+  const perPage = 100;
+  const maxPages = 30;
+  const allSell = [];
+  const allBuy = [];
+  let firstError = null;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const upstream = `${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=${page}&per_page=${perPage}`;
+    const result = await fetchJson(upstream);
+    if (!result.ok) {
+      if (page === 1) return { ok: false, error: result.error, status: result.status, upstreamUrl: upstream };
+      firstError = firstError || result.error;
+      break;
+    }
+    const sellPage = result.data?.data?.sell || [];
+    const buyPage = result.data?.data?.buy || [];
+    allSell.push(...sellPage);
+    allBuy.push(...buyPage);
+    if (sellPage.length < perPage && buyPage.length < perPage) break;
+  }
+
+  return {
+    ok: true,
+    source: 'cloudflare-worker:v2-fallback',
+    warning: firstError || null,
+    ordersPayload: normalizeOrdersFromV2({ data: { sell: uniqueOrdersById(allSell), buy: uniqueOrdersById(allBuy) } })
+  };
+}
+
 async function handleOrders(requestUrl, itemUrlName) {
   if (!itemUrlName) {
     return json(requestUrl, { error: 'missing_item', source: 'cloudflare-worker' }, 400);
   }
 
   const normalizedName = decodeURIComponent(String(itemUrlName || '')).trim().toLowerCase().replace(/\s+/g, '_');
-  const upstreamV1 = `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders`;
-  const resultV1 = await fetchJson(upstreamV1);
+  const resultV1 = await fetchAllV1Orders(normalizedName);
   if (resultV1.ok) {
-    const payload = resultV1.data || {};
+    const payload = { payload: { orders: resultV1.orders } };
     const normalized = normalizeOrders(payload, normalizedName.replace(/_/g, ' '));
     return json(requestUrl, {
       source: 'cloudflare-worker:v1',
-      upstreamUrl: upstreamV1,
+      upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100`,
       item: normalizedName,
       fetchedAt: new Date().toISOString(),
+      warning: resultV1.warning || null,
       sellOrders: normalized.sellOrders,
       buyOrders: normalized.buyOrders
     });
   }
 
-  const upstreamV2 = `${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}/top`;
-  const resultV2 = await fetchJson(upstreamV2);
+  const resultV2 = await fetchAllV2Orders(normalizedName);
   if (!resultV2.ok) {
     return json(requestUrl, {
       error: resultV1.error || resultV2.error,
-      upstreamUrl: `${upstreamV1} -> ${upstreamV2}`,
+      upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100 -> ${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
       source: 'cloudflare-worker',
       sellOrders: [],
       buyOrders: []
     }, Math.max(resultV1.status || 500, resultV2.status || 500));
   }
 
-  const normalized = normalizeOrders(normalizeOrdersFromV2(resultV2.data), normalizedName.replace(/_/g, ' '));
+  const normalized = normalizeOrders(resultV2.ordersPayload, normalizedName.replace(/_/g, ' '));
   return json(requestUrl, {
     source: 'cloudflare-worker:v2-fallback',
-    upstreamUrl: upstreamV2,
+    upstreamUrl: `${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
     item: normalizedName,
     fetchedAt: new Date().toISOString(),
+    warning: resultV2.warning || null,
     sellOrders: normalized.sellOrders,
     buyOrders: normalized.buyOrders
   });

@@ -25,11 +25,16 @@ const API_BASE_URL = normalizeApiBase(
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
   API_BASE
 );
+const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const MARKET_PROXY_URL = normalizeApiBase(
-  window.MARKET_PROXY_URL ||
-  window.ORBITER_MARKET_PROXY_URL ||
-  document.querySelector('meta[name="orbiter-market-proxy-url"]')?.content ||
-  ''
+  isLocalHost
+    ? window.location.origin
+    : (
+      window.MARKET_PROXY_URL ||
+      window.ORBITER_MARKET_PROXY_URL ||
+      document.querySelector('meta[name="orbiter-market-proxy-url"]')?.content ||
+      ''
+    )
 );
 
 function buildApiUrl(path) {
@@ -2694,6 +2699,8 @@ function runBootSequence() {
     const marketStats = document.getElementById('marketStats');
     const marketSellOrders = document.getElementById('marketSellOrders');
     const marketBuyOrders = document.getElementById('marketBuyOrders');
+    const marketSellCount = document.getElementById('marketSellCount');
+    const marketBuyCount = document.getElementById('marketBuyCount');
     const marketTabSell = document.getElementById('marketTabSell');
     const marketTabBuy = document.getElementById('marketTabBuy');
     const marketViewSellBtn = document.getElementById('marketViewSellBtn');
@@ -2710,6 +2717,7 @@ function runBootSequence() {
     const marketBuySort = document.getElementById('marketBuySort');
     const marketModal = document.getElementById('marketModal');
     const marketModalTitle = document.getElementById('marketModalTitle');
+    const marketModalCount = document.getElementById('marketModalCount');
     const marketModalList = document.getElementById('marketModalList');
     const marketModalClose = document.getElementById('marketModalClose');
     const marketModalTabSell = document.getElementById('marketModalTabSell');
@@ -3244,9 +3252,12 @@ function runBootSequence() {
       if (!marketModalList) return;
       if (!marketState.selectedItem) {
         marketModalList.innerHTML = '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select an item to view orders.</div>';
+        if (marketModalCount) marketModalCount.textContent = 'Showing 0 of 0';
         return;
       }
       const orders = getMarketFilteredOrders(marketModalState.side);
+      const total = marketModalState.side === 'buy' ? marketState.buyOrders.length : marketState.sellOrders.length;
+      if (marketModalCount) marketModalCount.textContent = `Showing ${orders.length} of ${total}`;
       renderOrderBook(
         marketModalList,
         orders,
@@ -3270,6 +3281,8 @@ function runBootSequence() {
     function renderFilteredMarketOrders() {
       const filteredSell = getMarketFilteredOrders('sell');
       const filteredBuy = getMarketFilteredOrders('buy');
+      if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} of ${marketState.sellOrders.length}`;
+      if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
 
       renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match these filters.', 'buy');
       renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match these filters.', 'sell');
@@ -3491,7 +3504,11 @@ function runBootSequence() {
       if (input) input.addEventListener('input', () => { applyMarketModalControlsToPanel(); renderFilteredMarketOrders(); });
     });
     if (marketModal) {
-      // Close only via close button or Escape (no backdrop close).
+      marketModal.addEventListener('click', (e) => {
+        if (!marketModalState.open) return;
+        const clickedBackdrop = e.target === marketModal || e.target?.classList?.contains('terminal-modal__backdrop');
+        if (clickedBackdrop) closeMarketModal();
+      });
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
           if (marketModalState.open) closeMarketModal();
@@ -3502,6 +3519,13 @@ function runBootSequence() {
     if (trackerModalClose) trackerModalClose.addEventListener('click', () => {
       closeTrackerModal();
     });
+    if (trackerModal) {
+      trackerModal.addEventListener('click', (e) => {
+        if (!trackerModalState.open) return;
+        const clickedBackdrop = e.target === trackerModal || e.target?.classList?.contains('terminal-modal__backdrop');
+        if (clickedBackdrop) closeTrackerModal();
+      });
+    }
     if (accordionMql) {
       const syncMarketUiToViewport = () => setMarketActiveSide(marketUi.activeSide);
       if (typeof accordionMql.addEventListener === 'function') accordionMql.addEventListener('change', syncMarketUiToViewport);
