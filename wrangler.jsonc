@@ -1,0 +1,5 @@
+{
+  "name": "orbiter-market-proxy",
+  "main": "cloudflare-worker/worker.js",
+  "compatibility_date": "2026-04-29"
+}
