@@ -2934,7 +2934,6 @@ function runBootSequence() {
       return pickFirstArray([
         data?.orders,
         data?.payload?.orders,
-        data?.data?.payload?.orders,
         data?.data?.orders,
         Array.isArray(data) ? data : null
       ]);
@@ -2943,14 +2942,9 @@ function runBootSequence() {
     function normalizeOrdersFromRaw(rawOrders) {
       const mapped = rawOrders.map(order => {
         const userObj = (order && typeof order.user === 'object' && order.user !== null) ? order.user : {};
-        const status = String(
-          userObj?.status ||
-          order?.user_status ||
-          order?.status ||
-          'unknown'
-        ).toLowerCase();
+        const status = String(userObj?.status || '').toLowerCase().trim();
         const platinumRaw = order?.platinum ?? order?.price ?? order?.price_platinum;
-        const rawSide = String(order?.order_type || order?.orderType || order?.type || order?.side || '').toLowerCase().trim();
+        const rawSide = String(order?.order_type || '').toLowerCase().trim();
         const normalizedSide = rawSide === 'seller' ? 'sell' : rawSide === 'buyer' ? 'buy' : rawSide;
         return {
           ...order,
@@ -3445,18 +3439,21 @@ function runBootSequence() {
       const maxInput = isBuy ? marketBuyMax : marketSellMax;
       const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
       const sideType = isBuy ? 'buy' : 'sell';
-      const sellStage = raw.filter(order => order?.visible !== false && String(order?.order_type || '').toLowerCase() === sideType);
-      const ingameUsersStage = sellStage.filter(order => {
-        const s = orderStatus(order);
+      const typeStage = raw.filter(order => {
+        const type = String(order?.order_type || '').toLowerCase().trim();
+        return order?.visible !== false && type === sideType;
+      });
+      const ingameStage = typeStage.filter(order => {
+        const s = String(order?.user?.status || order?.status || '').toLowerCase().trim();
         return s === 'ingame';
       });
-      const statusStage = applyStatusFilter(sellStage, status);
+      const statusStage = applyStatusFilter(ingameStage, status);
       const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
       const regionPlatformStage = filteredByPlat;
       const debug = {
         raw: raw.length,
-        sell: sellStage.length,
-        ingameUsers: ingameUsersStage.length,
+        type: typeStage.length,
+        ingame: ingameStage.length,
         status: statusStage.length,
         price: filteredByPlat.length,
         regionPlatform: regionPlatformStage.length
@@ -3467,8 +3464,8 @@ function runBootSequence() {
         min: minInput?.value ?? '',
         max: maxInput?.value ?? '',
         raw: debug.raw,
-        sell: debug.sell,
-        ingameUsers: debug.ingameUsers,
+        type: debug.type,
+        ingame: debug.ingame,
         statusFiltered: debug.status,
         priceFiltered: debug.price,
         regionPlatformFiltered: debug.regionPlatform
@@ -3608,6 +3605,7 @@ function runBootSequence() {
       marketDebugLog('filter', `sell=${filteredSell.length}/${marketState.sellOrders.length} buy=${filteredBuy.length}/${marketState.buyOrders.length} duration=${(marketNow() - filterStart).toFixed(1)}ms`);
       if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} ingame sellers of ${marketState.sellOrders.length} total orders`;
       if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
+      const activeDebug = marketUi.activeSide === 'buy' ? buyResult.debug : sellResult.debug;
 
       const cheapestOnline = applyPriceSort(
         filteredSell.filter(order => {
@@ -3630,7 +3628,7 @@ function runBootSequence() {
       }
       marketDebugLog('render', `active=${marketUi.activeSide} duration=${(marketNow() - renderStart).toFixed(1)}ms`);
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
-      setMarketStatus(`Showing ${filteredSell.length} ingame sellers of ${marketState.sellOrders.length} total orders`);
+      setMarketStatus(`Raw ${activeDebug.raw} → Type ${activeDebug.type} → Ingame ${activeDebug.ingame} → Price ${activeDebug.price}`);
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.
@@ -3693,6 +3691,17 @@ function runBootSequence() {
       setMarketStatus('Loading ingame sellers...');
 
       const applyOrdersData = (ordersData, sourceLabel = '') => {
+        const rawOrders = getOrdersFromResponse(ordersData);
+        console.log('[orbiter] market raw orders count', rawOrders.length);
+        console.log('[orbiter] market raw orders first 5', rawOrders.slice(0, 5));
+        const uniqType = [...new Set(rawOrders.map(o => String(o?.order_type || '').toLowerCase().trim()))];
+        const uniqStatus = [...new Set(rawOrders.map(o => String(o?.user?.status || '').toLowerCase().trim()))];
+        const uniqPlatform = [...new Set(rawOrders.map(o => String(o?.platform || o?.user?.platform || '').toLowerCase().trim()))];
+        const uniqPlatinum = [...new Set(rawOrders.map(o => String(o?.platinum ?? o?.price ?? '')))].slice(0, 20);
+        console.log('[orbiter] market raw unique order_type', uniqType);
+        console.log('[orbiter] market raw unique user.status', uniqStatus);
+        console.log('[orbiter] market raw unique platform', uniqPlatform);
+        console.log('[orbiter] market raw unique platinum(sample)', uniqPlatinum);
         const directSell = pickFirstArray([
           ordersData?.sellOrders,
           ordersData?.payload?.sellOrders,
@@ -3706,7 +3715,6 @@ function runBootSequence() {
         let sellOrders = normalizeOrdersFromRaw(directSell).sellOrders;
         let buyOrders = normalizeOrdersFromRaw(directBuy).buyOrders;
         if (!sellOrders.length && !buyOrders.length) {
-          const rawOrders = getOrdersFromResponse(ordersData);
           const normalized = normalizeOrdersFromRaw(rawOrders);
           sellOrders = normalized.sellOrders;
           buyOrders = normalized.buyOrders;
