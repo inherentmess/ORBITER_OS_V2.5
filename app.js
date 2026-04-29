@@ -2618,11 +2618,21 @@ function runBootSequence() {
           const details = (dashboardTrackerState.categories || []).flatMap(category => category.details || []);
           const rows = details.flatMap(detail => (detail.entries || []).concat(detail.rows || []).concat(detail.row ? [detail.row] : []));
           const row = rows.find(item => `detail-${item.id}` === countdownId);
-          if (row) node.textContent = formatDashboardCountdown(row.expiresAt);
+          if (row) {
+            node.textContent = formatDashboardCountdown(row.expiresAt);
+            const diffSec = Math.max(0, Math.floor((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
+            node.classList.toggle('tracker-timer--warning', diffSec <= 120 && diffSec > 30);
+            node.classList.toggle('tracker-timer--urgent', diffSec <= 30);
+          }
           return;
         }
         const card = cards.find(item => item.id === countdownId);
-        if (card) node.textContent = formatDashboardCountdown(card.expiresAt);
+        if (card) {
+          node.textContent = formatDashboardCountdown(card.expiresAt);
+          const diffSec = Math.max(0, Math.floor((new Date(card.expiresAt).getTime() - Date.now()) / 1000));
+          node.classList.toggle('tracker-timer--warning', diffSec <= 120 && diffSec > 30);
+          node.classList.toggle('tracker-timer--urgent', diffSec <= 30);
+        }
       });
     }
 
@@ -2716,6 +2726,14 @@ function runBootSequence() {
     const marketModalSort = document.getElementById('marketModalSort');
     const marketModalMin = document.getElementById('marketModalMin');
     const marketModalMax = document.getElementById('marketModalMax');
+    const marketFavoriteToggle = document.getElementById('marketFavoriteToggle');
+    const marketFavoritesList = document.getElementById('marketFavoritesList');
+    const marketAutoRefreshToggle = document.getElementById('marketAutoRefreshToggle');
+    const marketAutoRefreshInterval = document.getElementById('marketAutoRefreshInterval');
+
+    const MARKET_FAVORITES_KEY = 'orbiter_market_favorites_v1';
+    const MARKET_AUTO_REFRESH_KEY = 'orbiter_market_auto_refresh_v1';
+    const MARKET_AUTO_REFRESH_INTERVAL_KEY = 'orbiter_market_auto_refresh_interval_v1';
 
     const marketState = {
       catalog: [],
@@ -2734,7 +2752,11 @@ function runBootSequence() {
       selectedItem: null,
       // Raw orders are stored once per item selection; filters/sorts are applied locally.
       sellOrders: [],
-      buyOrders: []
+      buyOrders: [],
+      favorites: [],
+      autoRefreshEnabled: localStorage.getItem(MARKET_AUTO_REFRESH_KEY) === '1',
+      autoRefreshIntervalMs: Number(localStorage.getItem(MARKET_AUTO_REFRESH_INTERVAL_KEY) || 45000) || 45000,
+      autoRefreshTimer: 0
     };
 
     const marketUi = {
@@ -2749,6 +2771,100 @@ function runBootSequence() {
 
     function setMarketStatus(text) {
       if (marketApiStatus) marketApiStatus.textContent = text;
+    }
+
+    function loadMarketFavorites() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(MARKET_FAVORITES_KEY) || '[]');
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+          .map(entry => ({
+            item_name: String(entry?.item_name || '').trim(),
+            url_name: String(entry?.url_name || '').trim()
+          }))
+          .filter(entry => entry.item_name && entry.url_name);
+      } catch {
+        return [];
+      }
+    }
+
+    function saveMarketFavorites() {
+      localStorage.setItem(MARKET_FAVORITES_KEY, JSON.stringify(marketState.favorites));
+    }
+
+    function isFavoriteItem(item) {
+      if (!item?.url_name) return false;
+      return marketState.favorites.some(entry => entry.url_name === item.url_name);
+    }
+
+    function setFavoriteToggleLabel() {
+      if (!marketFavoriteToggle) return;
+      const selected = marketState.selectedItem;
+      const fav = selected && isFavoriteItem(selected);
+      marketFavoriteToggle.textContent = fav ? 'Unfavorite' : 'Favorite';
+      marketFavoriteToggle.disabled = !selected;
+      marketFavoriteToggle.classList.toggle('is-active', Boolean(fav));
+    }
+
+    function renderMarketFavorites() {
+      if (!marketFavoritesList) return;
+      if (!marketState.favorites.length) {
+        marketFavoritesList.innerHTML = '<div class="border border-terminal/25 p-2 text-xs text-green-200/75">No favorites saved.</div>';
+        return;
+      }
+      marketFavoritesList.innerHTML = marketState.favorites.map(item => `
+        <button class="market-favorite-row w-full text-left border border-terminal/25 px-3 py-2 hover:bg-terminal hover:text-black transition-colors" data-url="${htmlEscape(item.url_name)}">
+          <div class="text-xs font-bold">${htmlEscape(item.item_name)}</div>
+          <div class="text-[10px] uppercase tracking-[0.18em] opacity-70 mt-1">${htmlEscape(item.url_name)}</div>
+        </button>
+      `).join('');
+      marketFavoritesList.querySelectorAll('.market-favorite-row').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const item = marketState.catalog.find(entry => entry.url_name === btn.dataset.url)
+            || marketState.favorites.find(entry => entry.url_name === btn.dataset.url);
+          if (!item) return;
+          if (marketItemSearch) marketItemSearch.value = item.item_name;
+          loadMarketItem(item).catch(error => logClientError('market favorite load', error, { url: item.url_name }));
+        });
+      });
+    }
+
+    function toggleSelectedFavorite() {
+      const selected = marketState.selectedItem;
+      if (!selected) return;
+      const exists = marketState.favorites.find(entry => entry.url_name === selected.url_name);
+      if (exists) {
+        marketState.favorites = marketState.favorites.filter(entry => entry.url_name !== selected.url_name);
+      } else {
+        marketState.favorites.unshift({
+          item_name: selected.item_name,
+          url_name: selected.url_name
+        });
+      }
+      saveMarketFavorites();
+      setFavoriteToggleLabel();
+      renderMarketFavorites();
+    }
+
+    function clearMarketAutoRefreshTimer() {
+      if (marketState.autoRefreshTimer) {
+        window.clearTimeout(marketState.autoRefreshTimer);
+        marketState.autoRefreshTimer = 0;
+      }
+    }
+
+    function scheduleMarketAutoRefresh() {
+      clearMarketAutoRefreshTimer();
+      if (!marketState.autoRefreshEnabled || !marketState.selectedItem) return;
+      marketState.autoRefreshTimer = window.setTimeout(() => {
+        if (!marketState.selectedItem || !marketState.autoRefreshEnabled) return;
+        loadMarketItem(marketState.selectedItem, { reason: 'auto' }).catch(error => logClientError('market auto refresh', error));
+      }, marketState.autoRefreshIntervalMs);
+    }
+
+    function syncMarketAutoRefreshControls() {
+      if (marketAutoRefreshToggle) marketAutoRefreshToggle.checked = Boolean(marketState.autoRefreshEnabled);
+      if (marketAutoRefreshInterval) marketAutoRefreshInterval.value = String(Math.round(marketState.autoRefreshIntervalMs / 1000));
     }
 
     function formatLocalTimestamp(date) {
@@ -2847,9 +2963,16 @@ function runBootSequence() {
       }
       logResponse('market proxy', response);
       if (!response.ok) {
+        let bodyText = '';
+        try {
+          bodyText = await response.text();
+        } catch {
+          bodyText = '';
+        }
         const wrapped = new Error(`market proxy HTTP ${response.status} from ${url}`);
         wrapped.fetchUrl = url;
         wrapped.httpStatus = response.status;
+        wrapped.responseBody = bodyText ? bodyText.slice(0, 500) : '';
         throw wrapped;
       }
       const json = await parseJsonResponse(response, 'market proxy');
@@ -3052,8 +3175,9 @@ function runBootSequence() {
       return htmlEscape(String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
     }
 
-    function renderOrderBook(target, orders, emptyText, action) {
+    function renderOrderBook(target, orders, emptyText, action, options = {}) {
       if (!target) return;
+      const cheapestId = options?.cheapestId || '';
       if (!orders.length) {
         target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
         return;
@@ -3064,14 +3188,28 @@ function runBootSequence() {
         const platform = order.user?.platform || order.platform || 'pc';
         const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
         const price = Number(order.platinum);
+        const uid = `${username}|${price}|${order.quantity || 1}`;
+        const bestClass = cheapestId && cheapestId === uid ? ' market-order-row--best' : '';
         return `
-        <div class="market-order-row border border-terminal/25 p-2 text-xs">
-          <div class="flex justify-between gap-2">
-            <span class="text-terminal">${htmlEscape(price)}p</span>
-            <span class="opacity-70">${htmlEscape(String(status).toUpperCase())}</span>
+        <div class="market-order-row${bestClass}">
+          <div class="market-order-row__identity">
+            <span class="market-order-row__name">${htmlEscape(username)}</span>
+            <span class="market-order-row__status">${htmlEscape(String(status).toUpperCase())}</span>
           </div>
-          <div class="opacity-80 mt-1">${htmlEscape(username)} - qty ${htmlEscape(order.quantity || 1)} - ${htmlEscape(platform)} - rep ${htmlEscape(rep)}</div>
-          <button class="market-whisper-copy mt-2 border border-terminal/40 px-2 py-1 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black" data-action="${htmlEscape(action)}" data-user="${jsAttrEscape(username)}" data-price="${htmlEscape(price)}">Copy Whisper</button>
+          <div class="market-order-row__metric market-order-row__metric--price">
+            <span class="market-order-row__label">Price</span>
+            <span class="market-order-row__value">${htmlEscape(price)}p</span>
+          </div>
+          <div class="market-order-row__metric">
+            <span class="market-order-row__label">Rank</span>
+            <span class="market-order-row__value">${htmlEscape(rep)}</span>
+          </div>
+          <div class="market-order-row__metric">
+            <span class="market-order-row__label">Qty</span>
+            <span class="market-order-row__value">${htmlEscape(order.quantity || 1)}</span>
+          </div>
+          <div class="market-order-row__platform">${htmlEscape(String(platform).toUpperCase())}</div>
+          <button class="market-whisper-copy market-order-row__copy" data-action="${htmlEscape(action)}" data-user="${jsAttrEscape(username)}" data-price="${htmlEscape(price)}">Copy Whisper</button>
         </div>
       `;
       }).join('');
@@ -3173,15 +3311,8 @@ function runBootSequence() {
     }
 
     function applyStatusFilter(orders, statusValue) {
-      const value = String(statusValue || 'all').toLowerCase();
-      if (value === 'all') return orders;
-      if (value === 'ingame') {
-        return orders.filter(order => {
-          const status = orderStatus(order);
-          return status === 'ingame' || status === 'online';
-        });
-      }
-      return orders.filter(order => orderStatus(order) === value);
+      void statusValue;
+      return orders.filter(order => orderStatus(order) === 'ingame');
     }
 
     function applyPriceSort(orders, sortValue, defaultValue) {
@@ -3202,8 +3333,6 @@ function runBootSequence() {
       // Keep unknown statuses last.
       const s = String(status || '').toLowerCase();
       if (s === 'ingame') return 0;
-      if (s === 'online') return 1;
-      if (s === 'offline') return 2;
       return 3;
     }
 
@@ -3234,7 +3363,7 @@ function runBootSequence() {
       const sellStage = raw.filter(order => order?.visible !== false);
       const ingameUsersStage = sellStage.filter(order => {
         const s = orderStatus(order);
-        return s === 'ingame' || s === 'online';
+        return s === 'ingame';
       });
       const statusStage = applyStatusFilter(sellStage, status);
       const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
@@ -3368,7 +3497,7 @@ function runBootSequence() {
       renderOrderBook(
         marketModalList,
         orders,
-        'No orders match these filters.',
+        marketModalState.side === 'sell' ? 'No ingame sellers available' : 'No orders match these filters.',
         marketModalState.side === 'sell' ? 'buy' : 'sell'
       );
     }
@@ -3390,13 +3519,24 @@ function runBootSequence() {
       const buyResult = getMarketFilteredOrdersWithDebug('buy');
       const filteredSell = sellResult.orders;
       const filteredBuy = buyResult.orders;
-      if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} of ${marketState.sellOrders.length}`;
+      if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} ingame sellers of ${marketState.sellOrders.length} total orders`;
       if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
 
-      renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match these filters.', 'buy');
+      const cheapestOnline = applyPriceSort(
+        filteredSell.filter(order => {
+          const s = orderStatus(order);
+          return s === 'ingame';
+        }),
+        'price_asc',
+        'price_asc'
+      )[0];
+      const cheapestId = cheapestOnline
+        ? `${cheapestOnline.user?.ingameName || cheapestOnline.user?.ingame_name || cheapestOnline.user || 'Unknown'}|${Number(cheapestOnline.platinum)}|${cheapestOnline.quantity || 1}`
+        : '';
+      renderOrderBook(marketSellOrders, filteredSell, 'No ingame sellers available', 'buy', { cheapestId });
       renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match these filters.', 'sell');
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
-      setMarketStatus(`Raw ${sellResult.debug.raw} → Sell ${sellResult.debug.sell} → Status ${sellResult.debug.status} → Price ${sellResult.debug.price} → Showing ${filteredSell.length} of ${sellResult.debug.raw}`);
+      setMarketStatus(`Showing ${filteredSell.length} ingame sellers of ${marketState.sellOrders.length} total orders`);
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.
@@ -3423,18 +3563,28 @@ function runBootSequence() {
       if (!marketStats) return;
       if (!stats) {
         marketStats.innerHTML = [
-          '<div class="border border-terminal/25 p-2">Avg: -</div>',
+          '<div class="border border-terminal/25 p-2">Lowest: -</div>',
           '<div class="border border-terminal/25 p-2">Median: -</div>',
-          '<div class="border border-terminal/25 p-2">Min: -</div>',
-          '<div class="border border-terminal/25 p-2">Max: -</div>'
+          '<div class="border border-terminal/25 p-2">Highest: -</div>',
+          '<div class="border border-terminal/25 p-2">Best Seller: -</div>'
         ].join('');
         return;
       }
+      const bestOnline = applyPriceSort(
+        marketState.sellOrders.filter(order => {
+          const s = orderStatus(order);
+          return s === 'ingame';
+        }),
+        'price_asc',
+        'price_asc'
+      )[0];
+      const bestName = bestOnline?.user?.ingameName || bestOnline?.user?.ingame_name || bestOnline?.user || '-';
+      const bestPrice = Number(bestOnline?.platinum);
       marketStats.innerHTML = [
-        `<div class="border border-terminal/25 p-2">${label} avg: ${Math.round(stats.avg_price || 0)}p</div>`,
+        `<div class="border border-terminal/25 p-2">${label} lowest: ${Math.round(stats.min_price || 0)}p</div>`,
         `<div class="border border-terminal/25 p-2">Median: ${Math.round(stats.median || 0)}p</div>`,
-        `<div class="border border-terminal/25 p-2">Min: ${Math.round(stats.min_price || 0)}p</div>`,
-        `<div class="border border-terminal/25 p-2">Max: ${Math.round(stats.max_price || 0)}p</div>`
+        `<div class="border border-terminal/25 p-2">Highest: ${Math.round(stats.max_price || 0)}p</div>`,
+        `<div class="border border-terminal/25 p-2">Best seller: ${htmlEscape(bestName)}${Number.isFinite(bestPrice) ? ` @ ${bestPrice}p` : ''}</div>`
       ].join('');
     }
 
@@ -3446,7 +3596,8 @@ function runBootSequence() {
       marketSelectedTitle.textContent = item.item_name;
       if (marketModalState.open) setMarketModalSide(marketModalState.side);
       marketSelectedMeta.textContent = 'Loading live orders and stats...';
-      renderOrderBook(marketSellOrders, [], 'Loading sell orders...');
+      setMarketStatus('Loading ingame sellers...');
+      renderOrderBook(marketSellOrders, [], 'Loading ingame sellers...');
       renderOrderBook(marketBuyOrders, [], 'Loading buy orders...');
       renderMarketStats(null);
       setMarketOrdersUpdated(null);
@@ -3491,6 +3642,8 @@ function runBootSequence() {
           setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
         }
         renderFilteredMarketOrders();
+        setFavoriteToggleLabel();
+        scheduleMarketAutoRefresh();
       } catch (error) {
         const httpStatus = Number(error?.httpStatus || 0);
         const fetchUrl = error?.fetchUrl || buildMarketProxyUrl(`/api/market/orders/${encodeURIComponent(item?.url_name || '')}`);
@@ -3502,6 +3655,9 @@ function runBootSequence() {
             ? 'parse error'
             : 'network/CORS/proxy blocked';
         marketSelectedMeta.textContent = `Unable to load item data: ${reason}. url=${fetchUrl} status=${httpStatus || 'network'}`;
+        if (error?.responseBody) {
+          marketSelectedMeta.textContent += ` body=${error.responseBody}`;
+        }
         marketState.sellOrders = [];
         marketState.buyOrders = [];
         renderOrderBook(marketSellOrders, [], 'Order fetch failed.');
@@ -3511,9 +3667,10 @@ function runBootSequence() {
         setMarketStatus(
           reason === 'Market proxy required'
             ? reason
-            : `Item failed: ${reason} | url=${fetchUrl} | status=${httpStatus || 'network'}`
+            : `Item failed: ${reason} | url=${fetchUrl} | status=${httpStatus || 'network'}${error?.responseBody ? ` | body=${error.responseBody}` : ''}`
         );
         logClientError('market item load', error, { item: item?.url_name || '' });
+        clearMarketAutoRefreshTimer();
       }
     }
 
@@ -3675,6 +3832,28 @@ function runBootSequence() {
       else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncMarketUiToViewport);
     }
     setMarketActiveSide(marketUi.activeSide);
+    marketState.favorites = loadMarketFavorites();
+    renderMarketFavorites();
+    syncMarketAutoRefreshControls();
+    setFavoriteToggleLabel();
+    if (marketFavoriteToggle) marketFavoriteToggle.addEventListener('click', toggleSelectedFavorite);
+    if (marketAutoRefreshToggle) {
+      marketAutoRefreshToggle.addEventListener('change', () => {
+        marketState.autoRefreshEnabled = Boolean(marketAutoRefreshToggle.checked);
+        localStorage.setItem(MARKET_AUTO_REFRESH_KEY, marketState.autoRefreshEnabled ? '1' : '0');
+        scheduleMarketAutoRefresh();
+      });
+    }
+    if (marketAutoRefreshInterval) {
+      marketAutoRefreshInterval.addEventListener('change', () => {
+        const sec = Number(marketAutoRefreshInterval.value);
+        const safeSec = sec >= 30 && sec <= 60 ? sec : 45;
+        marketState.autoRefreshIntervalMs = safeSec * 1000;
+        localStorage.setItem(MARKET_AUTO_REFRESH_INTERVAL_KEY, String(marketState.autoRefreshIntervalMs));
+        syncMarketAutoRefreshControls();
+        scheduleMarketAutoRefresh();
+      });
+    }
     if (!MARKET_PROXY_URL) {
       setMarketStatus('Market proxy required');
       logClientError('market config', new Error('Market proxy required'));
