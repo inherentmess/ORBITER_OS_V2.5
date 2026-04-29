@@ -3452,8 +3452,18 @@ function runBootSequence() {
         // Always fetch fresh orders on selection/refresh.
         const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const ordersData = await fetchMarketJson(`/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
-        let sellOrders = normalizeOrdersFromRaw(Array.isArray(ordersData?.sellOrders) ? ordersData.sellOrders : []).sellOrders;
-        let buyOrders = normalizeOrdersFromRaw(Array.isArray(ordersData?.buyOrders) ? ordersData.buyOrders : []).buyOrders;
+        const directSell = pickFirstArray([
+          ordersData?.sellOrders,
+          ordersData?.payload?.sellOrders,
+          ordersData?.data?.payload?.sellOrders
+        ]);
+        const directBuy = pickFirstArray([
+          ordersData?.buyOrders,
+          ordersData?.payload?.buyOrders,
+          ordersData?.data?.payload?.buyOrders
+        ]);
+        let sellOrders = normalizeOrdersFromRaw(directSell).sellOrders;
+        let buyOrders = normalizeOrdersFromRaw(directBuy).buyOrders;
         if (!sellOrders.length && !buyOrders.length) {
           const rawOrders = getOrdersFromResponse(ordersData);
           const normalized = normalizeOrdersFromRaw(rawOrders);
