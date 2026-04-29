@@ -5,11 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-<<<<<<< HEAD
-=======
     "tailwind:build": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/tailwindcss/lib/cli.js -c tailwind.config.cjs -i ./tailwind.input.css -o ./assets/tailwind.min.css --minify",
     "tailwind:watch": "C:\\Progra~1\\nodejs\\node.exe ./node_modules/tailwindcss/lib/cli.js -c tailwind.config.cjs -i ./tailwind.input.css -o ./assets/tailwind.min.css --watch",
->>>>>>> 30addf1 (Initial commit)
     "autopush": "node scripts/autopush.mjs",
     "worker:deploy": "cd cloudflare-worker && npx wrangler deploy",
     "worker:deploy:cmd": "cd cloudflare-worker && \"C:\\Program Files\\nodejs\\npx.cmd\" wrangler deploy",
@@ -17,13 +14,10 @@
   },
   "engines": {
     "node": ">=18"
-<<<<<<< HEAD
-=======
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "^0.1.1",
     "@tailwindcss/forms": "^0.5.10",
     "tailwindcss": "^3.4.17"
->>>>>>> 30addf1 (Initial commit)
   }
 }

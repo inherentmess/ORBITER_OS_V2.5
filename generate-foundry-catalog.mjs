@@ -116,8 +116,4 @@ buildCatalog()
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
-<<<<<<< HEAD
   });
-=======
-  });
->>>>>>> 30addf1 (Initial commit)

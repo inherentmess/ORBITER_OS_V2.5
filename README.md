@@ -52,8 +52,4 @@ Notes:
 1. Expand the generator to cover more official wiki categories and pages.
 2. Replace the starter catalog with a larger generated dataset from `generate-foundry-catalog.mjs`.
 3. Add richer Foundry categories such as weapons, companions, and components once their craft times are verified from the official wiki.
-<<<<<<< HEAD
 4. Turn the static app into a PWA so it behaves more like a phone-friendly companion app.
-=======
-4. Turn the static app into a PWA so it behaves more like a phone-friendly companion app.
->>>>>>> 30addf1 (Initial commit)
