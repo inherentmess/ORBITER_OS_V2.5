@@ -187,6 +187,36 @@ function normalizeOrders(payload = {}, itemName = '') {
   return { sellOrders, buyOrders };
 }
 
+function filterIngameTradeOrders(orders = []) {
+  return (Array.isArray(orders) ? orders : []).filter(order => {
+    const type = String(order?.order_type || '').toLowerCase().trim();
+    const status = String(order?.user?.status || '').toLowerCase().trim();
+    return (type === 'sell' || type === 'buy') && status === 'ingame';
+  });
+}
+
+function normalizeTradeOrderForFilter(order = {}) {
+  const type = String(order?.order_type || '').toLowerCase().trim();
+  const status = String(order?.user?.status || '').toLowerCase().trim();
+  return {
+    ...order,
+    order_type: type,
+    user: {
+      ...(order?.user || {}),
+      status
+    }
+  };
+}
+
+function summarizeOrderDebug(orders = []) {
+  const list = Array.isArray(orders) ? orders : [];
+  return {
+    rawCount: list.length,
+    uniqueStatus: [...new Set(list.map(o => String(o?.user?.status || '').toLowerCase().trim()))],
+    uniqueType: [...new Set(list.map(o => String(o?.order_type || '').toLowerCase().trim()))]
+  };
+}
+
 async function fetchCatalogFromUpstream() {
   const v1Url = `${WM_V1_BASE}/items`;
   const v1 = await fetchJson(v1Url);
@@ -480,16 +510,18 @@ async function handleOrders(requestUrl, itemUrlName) {
   if (resultV1.ok) {
     const payload = { payload: { orders: resultV1.orders } };
     const normalized = normalizeOrders(payload, normalizedName.replace(/_/g, ' '));
-    const orders = [...normalized.sellOrders, ...normalized.buyOrders];
+    const normalizedTrade = [...normalized.sellOrders, ...normalized.buyOrders]
+      .map(normalizeTradeOrderForFilter)
+      .filter(order => order.order_type === 'sell' || order.order_type === 'buy');
+    const debug = summarizeOrderDebug(normalizedTrade);
+    console.log(`[market-proxy] orders(v1) item=${normalizedName} raw=${debug.rawCount} ingame=${filterIngameTradeOrders(normalizedTrade).length}`);
+    console.log('[market-proxy] orders(v1) unique user.status', debug.uniqueStatus);
+    console.log('[market-proxy] orders(v1) unique order_type', debug.uniqueType);
+    const filteredOrders = filterIngameTradeOrders(normalizedTrade);
     return json(requestUrl, {
-      source: 'cloudflare-worker:v1',
-      upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100`,
-      item: normalizedName,
-      fetchedAt: new Date().toISOString(),
-      warning: resultV1.warning || null,
-      orders,
-      sellOrders: normalized.sellOrders,
-      buyOrders: normalized.buyOrders
+      orders: filteredOrders,
+      rawCount: debug.rawCount,
+      ingameCount: filteredOrders.length
     });
   }
 
@@ -498,24 +530,25 @@ async function handleOrders(requestUrl, itemUrlName) {
     return json(requestUrl, {
       error: resultV1.error || resultV2.error,
       upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100 -> ${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
-      source: 'cloudflare-worker',
       orders: [],
-      sellOrders: [],
-      buyOrders: []
+      rawCount: 0,
+      ingameCount: 0
     }, Math.max(resultV1.status || 500, resultV2.status || 500));
   }
 
   const normalized = normalizeOrders(resultV2.ordersPayload, normalizedName.replace(/_/g, ' '));
-  const orders = [...normalized.sellOrders, ...normalized.buyOrders];
+  const normalizedTrade = [...normalized.sellOrders, ...normalized.buyOrders]
+    .map(normalizeTradeOrderForFilter)
+    .filter(order => order.order_type === 'sell' || order.order_type === 'buy');
+  const debug = summarizeOrderDebug(normalizedTrade);
+  const filteredOrders = filterIngameTradeOrders(normalizedTrade);
+  console.log(`[market-proxy] orders(v2) item=${normalizedName} raw=${debug.rawCount} ingame=${filteredOrders.length}`);
+  console.log('[market-proxy] orders(v2) unique user.status', debug.uniqueStatus);
+  console.log('[market-proxy] orders(v2) unique order_type', debug.uniqueType);
   return json(requestUrl, {
-    source: 'cloudflare-worker:v2-fallback',
-    upstreamUrl: `${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
-    item: normalizedName,
-    fetchedAt: new Date().toISOString(),
-    warning: resultV2.warning || null,
-    orders,
-    sellOrders: normalized.sellOrders,
-    buyOrders: normalized.buyOrders
+    orders: filteredOrders,
+    rawCount: debug.rawCount,
+    ingameCount: filteredOrders.length
   });
 }
 

@@ -2766,6 +2766,9 @@ function runBootSequence() {
       lastResults: [],
       selectedItem: null,
       // Raw orders are stored once per item selection; filters/sorts are applied locally.
+      rawOrders: [],
+      rawOrderCount: 0,
+      ingameOrderCount: 0,
       sellOrders: [],
       buyOrders: [],
       favorites: [],
@@ -3390,7 +3393,7 @@ function runBootSequence() {
 
     function applyStatusFilter(orders, statusValue) {
       void statusValue;
-      return orders.filter(order => orderStatus(order) === 'ingame');
+      return orders;
     }
 
     function applyPriceSort(orders, sortValue, defaultValue) {
@@ -3443,11 +3446,8 @@ function runBootSequence() {
         const type = String(order?.order_type || '').toLowerCase().trim();
         return order?.visible !== false && type === sideType;
       });
-      const ingameStage = typeStage.filter(order => {
-        const s = String(order?.user?.status || order?.status || '').toLowerCase().trim();
-        return s === 'ingame';
-      });
-      const statusStage = applyStatusFilter(ingameStage, status);
+      const ingameStage = typeStage;
+      const statusStage = applyStatusFilter(typeStage, status);
       const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
       const regionPlatformStage = filteredByPlat;
       const debug = {
@@ -3628,7 +3628,7 @@ function runBootSequence() {
       }
       marketDebugLog('render', `active=${marketUi.activeSide} duration=${(marketNow() - renderStart).toFixed(1)}ms`);
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
-      setMarketStatus(`Raw ${activeDebug.raw} → Type ${activeDebug.type} → Ingame ${activeDebug.ingame} → Price ${activeDebug.price}`);
+      setMarketStatus(`Raw ${marketState.rawOrderCount || 0} → Ingame ${marketState.ingameOrderCount || 0}`);
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.
@@ -3712,13 +3712,17 @@ function runBootSequence() {
           ordersData?.payload?.buyOrders,
           ordersData?.data?.payload?.buyOrders
         ]);
-        let sellOrders = normalizeOrdersFromRaw(directSell).sellOrders;
-        let buyOrders = normalizeOrdersFromRaw(directBuy).buyOrders;
-        if (!sellOrders.length && !buyOrders.length) {
-          const normalized = normalizeOrdersFromRaw(rawOrders);
-          sellOrders = normalized.sellOrders;
-          buyOrders = normalized.buyOrders;
-        }
+        const rawCount = Number(ordersData?.rawCount);
+        const ingameCount = Number(ordersData?.ingameCount);
+        const hasWorkerCounts = Number.isFinite(rawCount) && Number.isFinite(ingameCount);
+        const combinedDirect = [...directSell, ...directBuy];
+        const sourceOrders = rawOrders.length ? rawOrders : combinedDirect;
+        const normalized = normalizeOrdersFromRaw(sourceOrders);
+        const sellOrders = normalized.sellOrders;
+        const buyOrders = normalized.buyOrders;
+        marketState.rawOrders = sourceOrders;
+        marketState.rawOrderCount = hasWorkerCounts ? rawCount : sourceOrders.length;
+        marketState.ingameOrderCount = hasWorkerCounts ? ingameCount : (sellOrders.length + buyOrders.length);
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
         const fetchedAt = ordersData?.fetchedAt ? new Date(ordersData.fetchedAt) : new Date();
