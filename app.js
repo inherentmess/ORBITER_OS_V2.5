@@ -2805,12 +2805,26 @@ function runBootSequence() {
     }
 
     function normalizeOrdersFromRaw(rawOrders) {
-      const mapped = rawOrders.map(order => ({
-        ...order,
-        order_type: order?.order_type || order?.type || '',
-        status: String(order?.user?.status || order?.status || 'unknown').toLowerCase(),
-        visible: order?.visible !== false
-      }));
+      const mapped = rawOrders.map(order => {
+        const userObj = (order && typeof order.user === 'object' && order.user !== null) ? order.user : {};
+        const status = String(
+          userObj?.status ||
+          order?.user_status ||
+          order?.status ||
+          'unknown'
+        ).toLowerCase();
+        const platinumRaw = order?.platinum ?? order?.price ?? order?.price_platinum;
+        return {
+          ...order,
+          user: typeof order?.user === 'string'
+            ? { ingameName: order.user, status, platform: order?.platform || order?.user_platform || 'pc' }
+            : (order?.user || userObj),
+          order_type: order?.order_type || order?.type || '',
+          status,
+          platinum: Number.isFinite(Number(platinumRaw)) ? Number(platinumRaw) : platinumRaw,
+          visible: order?.visible !== false
+        };
+      });
       return {
         sellOrders: mapped.filter(order => order.visible && order.order_type === 'sell'),
         buyOrders: mapped.filter(order => order.visible && order.order_type === 'buy')
@@ -3122,11 +3136,20 @@ function runBootSequence() {
     }
 
     function getPlatFilter(minInput, maxInput) {
-      const min = minInput?.value === '' ? null : Number(minInput?.value);
-      const max = maxInput?.value === '' ? null : Number(maxInput?.value);
+      const minRaw = String(minInput?.value ?? '').trim();
+      const maxRaw = String(maxInput?.value ?? '').trim();
+      let min = minRaw === '' ? null : Number(minRaw);
+      let max = maxRaw === '' ? null : Number(maxRaw);
+      min = Number.isFinite(min) ? min : null;
+      max = Number.isFinite(max) ? max : null;
+      if (min !== null && max !== null && min > max) {
+        const swap = min;
+        min = max;
+        max = swap;
+      }
       return {
-        min: Number.isFinite(min) ? min : null,
-        max: Number.isFinite(max) ? max : null
+        min,
+        max
       };
     }
 
@@ -3429,8 +3452,8 @@ function runBootSequence() {
         // Always fetch fresh orders on selection/refresh.
         const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const ordersData = await fetchMarketJson(`/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
-        let sellOrders = (ordersData?.sellOrders || []).filter(order => order.visible !== false);
-        let buyOrders = (ordersData?.buyOrders || []).filter(order => order.visible !== false);
+        let sellOrders = normalizeOrdersFromRaw(Array.isArray(ordersData?.sellOrders) ? ordersData.sellOrders : []).sellOrders;
+        let buyOrders = normalizeOrdersFromRaw(Array.isArray(ordersData?.buyOrders) ? ordersData.buyOrders : []).buyOrders;
         if (!sellOrders.length && !buyOrders.length) {
           const rawOrders = getOrdersFromResponse(ordersData);
           const normalized = normalizeOrdersFromRaw(rawOrders);
@@ -3445,8 +3468,8 @@ function runBootSequence() {
         const bestBuy = applyPriceSort(buyOrders, 'price_desc', 'price_desc')[0]?.platinum;
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
         marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p | Best buy ${bestBuy ?? '-'}p${spread !== null ? ` | Spread ${spread}p` : ''} | ${marketState.activeSource}`;
-        renderFilteredMarketOrders();
         setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
+        renderFilteredMarketOrders();
       } catch (error) {
         const httpStatus = Number(error?.httpStatus || 0);
         const fetchUrl = error?.fetchUrl || buildMarketProxyUrl(`/api/market/orders/${encodeURIComponent(item?.url_name || '')}`);
