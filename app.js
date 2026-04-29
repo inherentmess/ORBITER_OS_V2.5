@@ -3194,10 +3194,10 @@ function runBootSequence() {
       const header = document.createElement('div');
       header.className = 'market-order-head';
       header.innerHTML = `
-        <span>User</span>
         <span>Price</span>
-        <span>Rank</span>
+        <span>User</span>
         <span>Qty</span>
+        <span>Rank</span>
         <span>Platform</span>
       `;
       fragment.appendChild(header);
@@ -3217,25 +3217,26 @@ function runBootSequence() {
         row.dataset.price = String(price);
 
         row.innerHTML = `
-          <div class="market-order-row__identity">
-            <span class="market-order-row__name">${htmlEscape(username)}</span>
-          </div>
           <div class="market-order-row__metric market-order-row__metric--price">
             <span class="market-order-row__label">Price</span>
             <span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span>
           </div>
-          <div class="market-order-row__metric">
-            <span class="market-order-row__label">Rank</span>
-            <span class="market-order-row__value">${htmlEscape(rep)}</span>
+          <div class="market-order-row__identity">
+            <span class="market-order-row__name">${htmlEscape(username)}</span>
+            <button type="button" class="market-order-row__copy-btn">Copy Whisper</button>
           </div>
           <div class="market-order-row__metric">
             <span class="market-order-row__label">Qty</span>
             <span class="market-order-row__value">${htmlEscape(qty)}</span>
           </div>
+          <div class="market-order-row__metric">
+            <span class="market-order-row__label">Rank</span>
+            <span class="market-order-row__value">${htmlEscape(rep)}</span>
+          </div>
           <div class="market-order-row__platform">${htmlEscape(platform)}</div>
         `;
 
-        row.addEventListener('click', async () => {
+        const doCopy = async () => {
           const priceEl = row.querySelector('.market-order-row__value--price');
           const originalPriceText = priceEl ? priceEl.textContent : '';
           if (priceEl) priceEl.textContent = '...';
@@ -3253,7 +3254,17 @@ function runBootSequence() {
               if (priceEl) priceEl.textContent = originalPriceText;
             }, 900);
           }
-        });
+        };
+
+        row.addEventListener('click', doCopy);
+        const copyBtn = row.querySelector('.market-order-row__copy-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await doCopy();
+          });
+        }
 
         fragment.appendChild(row);
       });

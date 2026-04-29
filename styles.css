@@ -425,17 +425,35 @@ h3 {
   word-break: break-word;
 }
 
+.market-order-head {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.72fr) minmax(170px, 1.5fr) minmax(62px, 0.48fr) minmax(62px, 0.48fr) minmax(80px, 0.55fr);
+  gap: 8px;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 10px;
+  border: 1px solid rgba(54, 255, 139, 0.28);
+  border-radius: 8px;
+  background: rgba(4, 14, 10, 0.94);
+  color: #78d79f;
+  font-size: 0.58rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
 .market-order-row {
   width: 100%;
   border: 1px solid rgba(54, 255, 139, 0.2);
   appearance: none;
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) minmax(90px, 0.72fr) minmax(64px, 0.5fr) minmax(64px, 0.5fr) minmax(120px, auto);
+  grid-template-columns: minmax(92px, 0.72fr) minmax(170px, 1.5fr) minmax(62px, 0.48fr) minmax(62px, 0.48fr) minmax(80px, 0.55fr);
   align-items: center;
   gap: 8px;
-  min-height: 52px;
+  min-height: 44px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: rgba(7, 17, 27, 0.7);
   text-align: left;
   cursor: pointer;
@@ -451,12 +469,14 @@ h3 {
 .market-order-row__identity {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .market-order-row__name {
-  font-size: 0.84rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #d6ffe9;
   white-space: nowrap;
@@ -464,10 +484,27 @@ h3 {
   text-overflow: ellipsis;
 }
 
+.market-order-row__copy-btn {
+  border: 1px solid rgba(54, 255, 139, 0.35);
+  border-radius: 999px;
+  background: rgba(54, 255, 139, 0.1);
+  color: #b7f7d8;
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.market-order-row__copy-btn:hover {
+  background: rgba(54, 255, 139, 0.22);
+}
+
 .market-order-row__metric {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   align-items: flex-start;
 }
 
@@ -476,44 +513,30 @@ h3 {
 }
 
 .market-order-row__value--price {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 800;
   color: #a5ffd8;
 }
 
 .market-order-row__label {
-  font-size: 0.58rem;
+  font-size: 0.5rem;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: #86bc9f;
 }
 
 .market-order-row__value {
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: #d8f7e8;
 }
 
-.market-order-row__copy {
-  justify-self: end;
-  border: 1px solid rgba(54, 255, 139, 0.35);
-  border-radius: 999px;
-  background: rgba(54, 255, 139, 0.08);
-  color: #bbfadb;
-  min-height: 30px;
-  padding: 6px 10px;
-  font-size: 0.58rem;
+.market-order-row__platform {
+  font-size: 0.64rem;
+  font-weight: 700;
   letter-spacing: 0.09em;
-  text-transform: uppercase;
-  transition: background 180ms ease, color 180ms ease, border-color 180ms ease, opacity 180ms ease;
-}
-
-.market-order-row:hover .market-order-row__copy,
-.market-order-row:focus-visible .market-order-row__copy,
-.market-order-row.is-copied .market-order-row__copy {
-  background: #36ff8b;
-  border-color: #36ff8b;
-  color: #02160c;
+  color: #9de9be;
+  text-align: center;
 }
 
 .market-order-row:focus-visible {
@@ -522,30 +545,44 @@ h3 {
 }
 
 @media (max-width: 840px) {
-  .market-order-row {
-    grid-template-columns: minmax(0, 1fr) minmax(76px, auto) minmax(64px, auto);
-    grid-template-areas:
-      "identity price copy"
-      "identity qty rank";
-    row-gap: 4px;
-    min-height: 70px;
+  .market-order-head {
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr) minmax(58px, auto) minmax(58px, auto) minmax(64px, auto);
+    font-size: 0.52rem;
   }
 
-  .market-order-row__identity { grid-area: identity; }
+  .market-order-row {
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr) minmax(58px, auto) minmax(58px, auto) minmax(64px, auto);
+    grid-template-areas:
+      "price identity rank"
+      "qty identity platform";
+    row-gap: 4px;
+    min-height: 64px;
+  }
+
   .market-order-row__metric--price { grid-area: price; }
+  .market-order-row__identity { grid-area: identity; }
   .market-order-row__metric:nth-of-type(2) { grid-area: qty; }
   .market-order-row__metric:nth-of-type(3) { grid-area: rank; }
-  .market-order-row__copy { grid-area: copy; justify-self: end; }
+  .market-order-row__platform { grid-area: platform; justify-self: end; }
 }
 
 @media (max-width: 560px) {
+  .market-order-head {
+    display: none;
+  }
+
   .market-order-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
-      "identity copy"
-      "price qty"
-      "rank rank";
+      "price price"
+      "identity identity"
+      "qty rank"
+      "platform platform";
     min-height: 94px;
+  }
+
+  .market-order-row__platform {
+    justify-self: start;
   }
 }
 
