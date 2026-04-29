@@ -6,7 +6,7 @@ function corsHeaders(request) {
   return {
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, OPTIONS',
-    'access-control-allow-headers': 'Content-Type',
+    'access-control-allow-headers': 'Content-Type, Accept, Cache-Control',
     'access-control-max-age': '86400',
     'vary': 'Origin'
   };
@@ -217,6 +217,127 @@ async function handleWikiSearch(request, url) {
     query: q,
     items,
     summary
+  }, 200, { 'cache-control': 'public, max-age=30' });
+}
+
+async function handleWikiPage(request, url) {
+  const title = (url.searchParams.get('title') || '').trim();
+  if (!title) {
+    return json(request, { ok: false, error: 'missing_title', source: 'cloudflare-worker', summary: null, page: null }, 400);
+  }
+
+  const summaryResult = await fetchWikiJson({
+    action: 'query',
+    prop: 'extracts',
+    exintro: '1',
+    explaintext: '1',
+    redirects: '1',
+    titles: title
+  });
+  if (!summaryResult.ok) {
+    return json(request, {
+      ok: false,
+      error: summaryResult.error,
+      source: 'cloudflare-worker',
+      upstreamUrl: summaryResult.upstreamUrl,
+      summary: null,
+      page: null
+    }, summaryResult.status || 502);
+  }
+
+  const pages = summaryResult?.data?.query?.pages || {};
+  const firstPage = Object.values(pages)[0] || null;
+  if (!firstPage || firstPage.missing || firstPage.invalid) {
+    return json(request, {
+      ok: true,
+      source: 'cloudflare-worker',
+      summary: null,
+      page: null
+    });
+  }
+
+  const resolvedTitle = firstPage.title || title;
+  const summary = {
+    title: resolvedTitle,
+    extract: String(firstPage.extract || '').trim(),
+    url: wikiPageUrl(resolvedTitle)
+  };
+
+  let page = {
+    title: resolvedTitle,
+    url: wikiPageUrl(resolvedTitle),
+    sections: [],
+    importantSections: [],
+    links: [],
+    images: [],
+    html: '',
+    plainText: ''
+  };
+
+  const parseResult = await fetchWikiJson({
+    action: 'parse',
+    page: resolvedTitle,
+    prop: 'text|sections|links|images',
+    redirects: '1'
+  });
+
+  if (parseResult.ok) {
+    const parse = parseResult?.data?.parse || {};
+    const sections = Array.isArray(parse?.sections) ? parse.sections : [];
+    const links = Array.isArray(parse?.links) ? parse.links : [];
+    const images = Array.isArray(parse?.images) ? parse.images : [];
+    const html = String(parse?.text?.['*'] || '');
+    const plainText = html.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 1800);
+
+    const normalizedSections = sections
+      .map(section => ({
+        number: String(section?.number || ''),
+        line: String(section?.line || '').trim(),
+        index: Number(section?.index || 0),
+        level: Number(section?.level || section?.toclevel || 0),
+        anchor: String(section?.anchor || '').trim()
+      }))
+      .filter(section => section.line)
+      .slice(0, 40);
+
+    const importantTerms = ['acquisition', 'drop', 'drops', 'farming', 'abilities', 'stats', 'build', 'notes', 'tips'];
+    const importantSections = normalizedSections
+      .filter(section => importantTerms.some(term => section.line.toLowerCase().includes(term)))
+      .slice(0, 8);
+
+    const normalizedLinks = links
+      .filter(link => Number(link?.ns) === 0 && link?.['*'])
+      .map(link => String(link['*']).trim())
+      .filter(Boolean)
+      .slice(0, 24);
+
+    const normalizedImages = images
+      .map(name => String(name || '').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+
+    page = {
+      title: resolvedTitle,
+      url: wikiPageUrl(resolvedTitle),
+      sections: normalizedSections,
+      importantSections,
+      links: normalizedLinks,
+      images: normalizedImages,
+      html: html.slice(0, 20000),
+      plainText
+    };
+  }
+
+  return json(request, {
+    ok: true,
+    source: 'cloudflare-worker',
+    summary,
+    page
   }, 200, { 'cache-control': 'public, max-age=30' });
 }
 
@@ -744,6 +865,10 @@ export default {
         return handleWikiSearch(request, url);
       }
 
+      if (path === '/api/wiki/page') {
+        return handleWikiPage(request, url);
+      }
+
       const orderMatch = path.match(/^\/(?:api\/)?market\/orders\/([^/]+)$/);
       if (orderMatch) {
         return cacheRoute(request, {
@@ -765,6 +890,7 @@ export default {
           '/api/market/search?q=',
           '/api/market/orders/:url_name',
           '/api/wiki/search?q=',
+          '/api/wiki/page?title=',
           '/market/items',
           '/market/search?q=',
           '/market/orders/:url_name'

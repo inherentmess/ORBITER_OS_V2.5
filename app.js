@@ -111,17 +111,37 @@ function normalizeApiBase(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function isAbsoluteHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
 const API_BASE = "https://orbiter-os.up.railway.app";
 const API_BASE_URL = normalizeApiBase(
   window.ORBITER_API_BASE_URL ||
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
   API_BASE
 );
-const MARKET_PROXY_URL = normalizeApiBase('https://orbiter-market-proxy.jrque.workers.dev');
+const DEFAULT_MARKET_PROXY_URL = 'https://orbiter-market-proxy.jrque.workers.dev';
+const configuredMarketProxy = normalizeApiBase(
+  window.ORBITER_MARKET_PROXY_URL
+  || document.querySelector('meta[name="orbiter-market-proxy-url"]')?.content
+  || DEFAULT_MARKET_PROXY_URL
+);
+const MARKET_PROXY_URL = isAbsoluteHttpUrl(configuredMarketProxy)
+  ? configuredMarketProxy
+  : DEFAULT_MARKET_PROXY_URL;
+const CODEX_WORKER_BASE_URL = normalizeApiBase(
+  document.querySelector('meta[name="orbiter-market-proxy-url"]')?.content
+    || DEFAULT_MARKET_PROXY_URL
+) || DEFAULT_MARKET_PROXY_URL;
 const MARKET_DEBUG = (new URLSearchParams(window.location.search).get('market_debug') || '').toLowerCase() === '1'
   || localStorage.getItem('orbiter_market_debug') === '1';
 
 if (MARKET_DEBUG) console.log('[MARKET_DEBUG] market proxy base', MARKET_PROXY_URL || '(missing)');
+console.log('[CODEX] environment hostname:', window.location.hostname || '(unknown)');
+console.log('[CODEX] environment href:', window.location.href || '(unknown)');
+console.log('[CODEX] worker base URL:', MARKET_PROXY_URL || '(missing)');
+console.log('[CODEX] codex worker base URL:', CODEX_WORKER_BASE_URL || '(missing)');
 
 function buildApiUrl(path) {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
@@ -4492,8 +4512,16 @@ function showSection(sectionName) {
     const codexPageLink = document.getElementById('codexPageLink');
     const codexCategoryFilter = document.getElementById('codexCategoryFilter');
     const codexFarmingInfo = document.getElementById('codexFarmingInfo');
+    const codexPageDetails = document.getElementById('codexPageDetails');
     const codexPinBtn = document.getElementById('codexPinBtn');
     const codexFavorites = document.getElementById('codexFavorites');
+    const codexEntryModal = document.getElementById('codexEntryModal');
+    const codexEntryModalClose = document.getElementById('codexEntryModalClose');
+    const codexEntryModalTitle = document.getElementById('codexEntryModalTitle');
+    const codexEntryModalMeta = document.getElementById('codexEntryModalMeta');
+    const codexEntryModalBody = document.getElementById('codexEntryModalBody');
+    const codexEntryModalOpenWiki = document.getElementById('codexEntryModalOpenWiki');
+    const codexEntryModalPin = document.getElementById('codexEntryModalPin');
     let codexSuggestionsCache = [];
     let codexSearchResultsCache = [];
     let codexActiveTitle = '';
@@ -4507,27 +4535,69 @@ function showSection(sectionName) {
     const CODEX_FAVORITES_KEY = 'orbiterCodexPinnedEntries';
     const CODEX_SEARCH_TTL_MS = 10 * 60 * 1000;
     const CODEX_ENTRY_TTL_MS = 24 * 60 * 60 * 1000;
+    const CODEX_PAGE_TTL_MS = 60 * 60 * 1000;
     const codexMemoryCache = {
       search: new Map(),
-      entry: new Map()
+      entry: new Map(),
+      page: new Map()
+    };
+    const codexModalState = {
+      open: false,
+      prevBodyOverflow: ''
     };
 
     function buildCodexWorkerSearchUrl(query) {
       const q = String(query || '').trim();
-      return buildMarketProxyUrl(`/api/wiki/search?q=${encodeURIComponent(q)}`);
+      return `${CODEX_WORKER_BASE_URL}/api/wiki/search?q=${encodeURIComponent(q)}&_ts=${Date.now()}`;
     }
 
-    async function fetchCodexJson(query, signal) {
-      const url = buildCodexWorkerSearchUrl(query);
-      logRequest('codex worker search', url);
-      const response = await fetch(url, { headers: { Accept: 'application/json' }, signal, cache: 'no-store' });
-      logResponse('codex worker search', response);
-      const json = await response.json();
-      logJson('codex worker search', json);
-      if (!response.ok || json?.ok === false) {
-        throw new Error(`HTTP ${response.status}`);
+    function buildCodexWorkerPageUrl(title) {
+      const t = String(title || '').trim();
+      return `${CODEX_WORKER_BASE_URL}/api/wiki/page?title=${encodeURIComponent(t)}&_ts=${Date.now()}`;
+    }
+
+    async function fetchCodexJson(url, signal, label = 'codex worker') {
+      console.log('[CODEX] hostname check:', window.location.hostname || '(unknown)');
+      console.log('[CODEX] worker base check:', CODEX_WORKER_BASE_URL || '(missing)');
+      console.log('[CODEX] final request URL:', url);
+      logRequest(label, url);
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json'
+        },
+        signal,
+        cache: 'no-store'
+      });
+      logResponse(label, response);
+      console.log('[CODEX] response status:', response.status);
+      const rawText = await response.text();
+      console.log('[CODEX] response text preview:', String(rawText || '').slice(0, 240));
+      let json = null;
+      try {
+        json = rawText ? JSON.parse(rawText) : {};
+      } catch (parseError) {
+        console.error('[CODEX] JSON parse failed. Raw response preview:', String(rawText || '').slice(0, 300));
+        const error = new Error(`parse error: expected JSON but got non-JSON response (status ${response.status})`);
+        error.name = 'CodexParseError';
+        error.responseStatus = response.status;
+        error.responsePreview = String(rawText || '').slice(0, 300);
+        throw error;
       }
-      return json;
+      logJson(label, json);
+      console.log('Codex response:', json);
+      if (!response.ok || json?.ok === false) {
+        const workerError = String(json?.error || '').trim();
+        const error = new Error(`HTTP ${response.status}${workerError ? ` (${workerError})` : ''}`);
+        error.name = 'CodexHttpError';
+        error.responseStatus = response.status;
+        error.workerError = workerError;
+        throw error;
+      }
+      return {
+        ...json,
+        __status: response.status,
+        __requestUrl: url
+      };
     }
 
     function codexPageUrl(title) {
@@ -4542,7 +4612,9 @@ function showSection(sectionName) {
 
     function safeParseJson(value, fallback) {
       try {
-        return JSON.parse(value);
+        if (value === null || value === undefined || value === '') return fallback;
+        const parsed = JSON.parse(value);
+        return parsed === null || parsed === undefined ? fallback : parsed;
       } catch {
         return fallback;
       }
@@ -4576,8 +4648,18 @@ function showSection(sectionName) {
     }
 
     function getCodexCacheBucket(type) {
-      const raw = safeParseJson(localStorage.getItem(CODEX_CACHE_KEY), { search: {}, entry: {} });
-      if (!raw[type] || typeof raw[type] !== 'object') raw[type] = {};
+      const fallback = { search: {}, entry: {}, page: {} };
+      const parsed = safeParseJson(localStorage.getItem(CODEX_CACHE_KEY), fallback);
+      const raw = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : { ...fallback };
+      if (!raw.search || typeof raw.search !== 'object' || Array.isArray(raw.search)) raw.search = {};
+      if (!raw.entry || typeof raw.entry !== 'object' || Array.isArray(raw.entry)) raw.entry = {};
+      if (!raw.page || typeof raw.page !== 'object' || Array.isArray(raw.page)) raw.page = {};
+      if (!raw[type] || typeof raw[type] !== 'object' || Array.isArray(raw[type])) raw[type] = {};
+      try {
+        localStorage.setItem(CODEX_CACHE_KEY, JSON.stringify(raw));
+      } catch (error) {
+        console.warn('[CODEX] cache bucket self-heal write skipped', error);
+      }
       return raw;
     }
 
@@ -4678,6 +4760,297 @@ function showSection(sectionName) {
         }
       }
       updateCodexPinButtonState();
+    }
+
+    function clearCodexPageDetails() {
+      if (!codexPageDetails) return;
+      codexPageDetails.classList.add('hidden');
+      codexPageDetails.innerHTML = '';
+    }
+
+    function extractSectionsFromParsedHtml(details) {
+      const html = String(details?.html || '').trim();
+      const metadataSections = Array.isArray(details?.sections) ? details.sections : [];
+      if (!html || !metadataSections.length) return [];
+
+      const container = document.createElement('div');
+      container.innerHTML = html;
+
+      // Remove noisy layout-heavy elements before text extraction.
+      container.querySelectorAll('script, style, table, nav, .mw-editsection, .navbox, .toc, .reference, .reflist').forEach(el => el.remove());
+
+      const normalized = metadataSections.map((meta, idx) => {
+        const title = String(meta?.line || '').replace(/\[edit\]/gi, '').trim();
+        const anchor = String(meta?.anchor || '').trim();
+        const heading =
+          (anchor ? container.querySelector(`#${cssEscapeValue(anchor)}`)?.closest('h2, h3, h4') : null)
+          || Array.from(container.querySelectorAll('h2, h3, h4')).find(h => {
+            const text = (h.textContent || '').replace(/\[edit\]/gi, '').replace(/\s+/g, ' ').trim().toLowerCase();
+            return text === title.toLowerCase();
+          });
+
+        let content = '';
+        if (heading) {
+          let node = heading.nextElementSibling;
+          const chunks = [];
+          while (node) {
+            const tag = (node.tagName || '').toUpperCase();
+            if (tag === 'H2' || tag === 'H3' || tag === 'H4') break;
+            const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+            if (text) chunks.push(text);
+            node = node.nextElementSibling;
+          }
+          content = chunks.join(' ').trim();
+        }
+        if (!content && String(details?.plainText || '').trim()) {
+          content = String(details.plainText).slice(0, 1800);
+        }
+        return {
+          key: `section-${idx}`,
+          title: title || `Section ${idx + 1}`,
+          number: String(meta?.number || ''),
+          content: content.slice(0, 2200),
+          anchor
+        };
+      });
+
+      return normalized.filter(section => section.title);
+    }
+
+    function buildCodexDetailMarkup(details) {
+      const extractedSections = extractSectionsFromParsedHtml(details).slice(0, 14);
+      const importantSections = Array.isArray(details?.importantSections) ? details.importantSections.slice(0, 8) : [];
+      const links = Array.isArray(details?.links) ? details.links.slice(0, 12) : [];
+      const images = Array.isArray(details?.images) ? details.images.slice(0, 8) : [];
+      const plainText = String(details?.plainText || '').trim();
+      const sectionRows = extractedSections.length
+        ? extractedSections.map(section => {
+          return `<li><button type="button" class="codex-load-result codex-detail-chip" data-section-key="${htmlEscape(section.key)}">${htmlEscape(section.number ? `${section.number} ` : '')}${htmlEscape(section.title)}</button></li>`;
+        }).join('')
+        : '';
+
+      const importantRows = importantSections.length
+        ? importantSections.map(section => `<li class="codex-detail-chip">${htmlEscape(section.line || '—')}</li>`).join('')
+        : '<li class="codex-detail-chip">—</li>';
+
+      const linkRows = links.length
+        ? links.map(linkTitle => `<li><button type="button" class="codex-load-result codex-detail-chip" data-title="${htmlEscape(linkTitle)}">${htmlEscape(linkTitle)}</button></li>`).join('')
+        : '<li class="codex-detail-chip">—</li>';
+
+      const imageRows = images.length
+        ? images.map(name => {
+          const filePage = `https://wiki.warframe.com/wiki/File:${encodeURIComponent(name.replace(/ /g, '_'))}`;
+          return `<li><a class="codex-detail-chip" href="${filePage}" target="_blank" rel="noopener noreferrer">${htmlEscape(name)}</a></li>`;
+        }).join('')
+        : '<li class="codex-detail-chip">—</li>';
+
+      const sectionsBlock = extractedSections.length
+        ? `
+        <div class="codex-detail-group">
+          <div class="codex-detail-title">Sections</div>
+          <ul class="codex-detail-list">${sectionRows}</ul>
+          <div id="codexSectionContent" class="mt-2 border border-terminal/20 p-3 text-xs text-green-200/85 leading-6">Select a section to view details.</div>
+        </div>`
+        : `
+        <div class="codex-detail-group">
+          <div class="codex-detail-title">Sections</div>
+          <div class="codex-detail-chip">No sections available for this entry.</div>
+        </div>`;
+
+      return {
+        html: `
+        ${sectionsBlock}
+        <div class="codex-detail-group">
+          <div class="codex-detail-title">Important</div>
+          <ul class="codex-detail-list">${importantRows}</ul>
+        </div>
+        <div class="codex-detail-group">
+          <div class="codex-detail-title">Related Links</div>
+          <ul class="codex-detail-list">${linkRows}</ul>
+        </div>
+        <div class="codex-detail-group">
+          <div class="codex-detail-title">Images</div>
+          <ul class="codex-detail-list">${imageRows}</ul>
+        </div>
+        ${plainText ? `<div class="codex-detail-group"><div class="codex-detail-title">Page Notes</div><div class="text-xs text-green-200/80 leading-6">${htmlEscape(plainText)}</div></div>` : ''}
+      `,
+        sections: extractedSections
+      };
+    }
+
+    function renderCodexPageDetails(details, { loading = false } = {}) {
+      if (!codexPageDetails) return;
+      if (loading) {
+        codexPageDetails.classList.remove('hidden');
+        codexPageDetails.innerHTML = '<div class="text-xs text-green-200/85">Loading entry details...</div>';
+        return;
+      }
+      if (!details) {
+        clearCodexPageDetails();
+        return;
+      }
+      codexPageDetails.classList.remove('hidden');
+      codexPageDetails.innerHTML = buildCodexDetailMarkup(details);
+      codexPageDetails.querySelectorAll('.codex-load-result[data-title]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const title = btn.dataset.title || '';
+          if (!title) return;
+          if (codexSearchInput) codexSearchInput.value = title;
+          loadCodexEntry(title);
+        });
+      });
+    }
+
+    async function setCodexModalOpen(open) {
+      if (!codexEntryModal) return;
+      const wantOpen = Boolean(open);
+      if (codexModalState.open === wantOpen) return;
+      codexModalState.open = wantOpen;
+      if (wantOpen) {
+        codexEntryModal.classList.add('is-visible');
+        codexEntryModal.setAttribute('aria-hidden', 'false');
+        codexModalState.prevBodyOverflow = document.body.style.overflow || '';
+        document.body.style.overflow = 'hidden';
+        codexEntryModal.dataset.open = '0';
+        codexEntryModal.getBoundingClientRect();
+        codexEntryModal.dataset.open = '1';
+        return;
+      }
+      codexEntryModal.dataset.open = '0';
+      codexEntryModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = codexModalState.prevBodyOverflow;
+      await new Promise(resolve => window.setTimeout(resolve, 220));
+      if (!codexModalState.open) codexEntryModal.classList.remove('is-visible');
+    }
+
+    function renderCodexEntryModal({ title, summary, details, url }) {
+      if (!codexEntryModalBody) return;
+      if (codexEntryModalTitle) codexEntryModalTitle.textContent = title || 'Unknown entry';
+      if (codexEntryModalMeta) codexEntryModalMeta.textContent = details ? 'Loaded from Worker page route' : 'Summary only';
+      if (codexEntryModalOpenWiki) {
+        codexEntryModalOpenWiki.onclick = () => {
+          const wikiUrl = url || codexPageUrl(title || '');
+          if (wikiUrl) window.open(wikiUrl, '_blank', 'noopener,noreferrer');
+        };
+      }
+      if (codexEntryModalPin) {
+        codexEntryModalPin.onclick = () => pinActiveCodexEntry();
+      }
+      const safeSummary = htmlEscape(String(summary || '').trim() || '—');
+      const detailData = details ? buildCodexDetailMarkup(details) : { html: '<div class="codex-detail-group"><div class="codex-detail-title">Sections</div><div class="codex-detail-chip">No sections available for this entry.</div></div>', sections: [] };
+      codexEntryModalBody.innerHTML = `
+        <div class="border border-terminal/20 p-3 bg-black/40 mb-3">
+          <div class="text-xs text-terminal/70 uppercase tracking-[0.2em] mb-2">Summary</div>
+          <div class="text-sm text-green-200/85 leading-7">${safeSummary}</div>
+        </div>
+        ${detailData.html}
+      `;
+      const sectionLookup = new Map((detailData.sections || []).map(section => [section.key, section]));
+      const sectionContentEl = codexEntryModalBody.querySelector('#codexSectionContent');
+      const sectionBtns = codexEntryModalBody.querySelectorAll('.codex-detail-chip[data-section-key]');
+      sectionBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const key = btn.dataset.sectionKey || '';
+          const section = sectionLookup.get(key);
+          const titleText = section?.title || 'Section';
+          const contentText = section?.content || '';
+          sectionBtns.forEach(b => b.classList.remove('bg-terminal/10'));
+          btn.classList.add('bg-terminal/10');
+          if (sectionContentEl) {
+            sectionContentEl.textContent = contentText ? `${titleText}: ${contentText}` : `${titleText}: No section details available.`;
+          }
+        });
+      });
+      if (sectionBtns.length && sectionContentEl) {
+        sectionBtns[0].click();
+      }
+      codexEntryModalBody.querySelectorAll('.codex-load-result[data-title]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const nextTitle = btn.dataset.title || '';
+          if (!nextTitle) return;
+          if (codexSearchInput) codexSearchInput.value = nextTitle;
+          loadCodexEntry(nextTitle);
+          loadCodexPageDetails(nextTitle, { openModal: true });
+        });
+      });
+    }
+
+    async function loadCodexPageDetails(title, { openModal = false } = {}) {
+      const q = String(title || codexActiveTitle || codexSearchInput?.value || '').trim();
+      if (!q) {
+        setCodexState({
+          title: codexTitle?.textContent || 'Awaiting query',
+          summary: codexSummary?.textContent || 'Open an entry first.',
+          meta: 'SOURCE // OPEN AN ENTRY FIRST',
+          url: codexActiveUrl || ''
+        });
+        return;
+      }
+      if (openModal) {
+        if (codexEntryModalBody) codexEntryModalBody.innerHTML = '<div class="text-xs text-green-200/85">Loading entry details...</div>';
+        await setCodexModalOpen(true);
+      } else {
+        renderCodexPageDetails(null, { loading: true });
+      }
+      const cacheKey = q.toLowerCase();
+      const cached = getCodexCached('page', cacheKey, CODEX_PAGE_TTL_MS);
+      if (cached) {
+        if (openModal) {
+          renderCodexEntryModal({
+            title: codexActiveTitle || q,
+            summary: codexActiveSummary || codexSummary?.textContent || '',
+            details: cached,
+            url: codexActiveUrl || codexPageUrl(q)
+          });
+        } else {
+          renderCodexPageDetails(cached);
+        }
+        return;
+      }
+      try {
+        const pageData = await fetchCodexJson(buildCodexWorkerPageUrl(q), undefined, 'codex worker page');
+        console.log('[CODEX PAGE DEBUG FULL JSON]', pageData);
+        const details = pageData?.page || pageData?.payload?.page || null;
+        if (!details) {
+          if (openModal) {
+            renderCodexEntryModal({
+              title: codexActiveTitle || q,
+              summary: codexActiveSummary || codexSummary?.textContent || '',
+              details: null,
+              url: codexActiveUrl || codexPageUrl(q)
+            });
+          } else {
+            renderCodexPageDetails(null);
+          }
+          return;
+        }
+        setCodexCached('page', cacheKey, details);
+        if (openModal) {
+          renderCodexEntryModal({
+            title: codexActiveTitle || q,
+            summary: codexActiveSummary || codexSummary?.textContent || '',
+            details,
+            url: codexActiveUrl || codexPageUrl(q)
+          });
+        } else {
+          renderCodexPageDetails(details);
+        }
+      } catch (error) {
+        logClientError('codex page details fetch', error, { title: q });
+        if (openModal) {
+          renderCodexEntryModal({
+            title: codexActiveTitle || q,
+            summary: codexActiveSummary || codexSummary?.textContent || 'Unable to load full entry details.',
+            details: null,
+            url: codexActiveUrl || codexPageUrl(q)
+          });
+        } else {
+          renderCodexPageDetails(null);
+        }
+      }
     }
 
     function renderCodexResults(items = []) {
@@ -4831,8 +5204,21 @@ function showSection(sectionName) {
         }
         if (codexSearchAbortController) codexSearchAbortController.abort();
         codexSearchAbortController = new AbortController();
-        const data = await fetchCodexJson(q, codexSearchAbortController.signal);
-        const items = (Array.isArray(data?.items) ? data.items : []).map(entry => {
+        const data = await fetchCodexJson(buildCodexWorkerSearchUrl(q), codexSearchAbortController.signal, 'codex worker search');
+        const items = data?.items || data?.payload?.items || [];
+        const summary = data?.summary || data?.payload?.summary || null;
+        console.log('[CODEX DEBUG]', {
+          hostname: window.location.hostname || '(unknown)',
+          workerBase: CODEX_WORKER_BASE_URL,
+          requestUrl: data?.__requestUrl || '(unknown)',
+          responseStatus: data?.__status,
+          dataOk: data?.ok,
+          itemsLength: Array.isArray(items) ? items.length : -1,
+          hasSummary: Boolean(summary)
+        });
+        console.log('Items count:', items.length);
+        console.log('Summary:', summary);
+        const mappedItems = (Array.isArray(items) ? items : []).map(entry => {
           const title = entry.title;
           const snippet = stripHtml(entry.snippet || '');
           return {
@@ -4842,8 +5228,8 @@ function showSection(sectionName) {
             url: entry.url || codexPageUrl(title)
           };
         });
-        setCodexCached('search', cacheKey, items);
-        const filteredItems = filterCodexByCategory(items);
+        setCodexCached('search', cacheKey, mappedItems);
+        const filteredItems = filterCodexByCategory(mappedItems);
         codexSearchResultsCache = filteredItems;
         if (!filteredItems.length) {
           console.warn('[orbiter] codex suggestions empty result', { query: q, data, category: categoryKey });
@@ -4866,6 +5252,7 @@ function showSection(sectionName) {
         logClientError('codex entry load', new Error('Empty query'));
         return;
       }
+      clearCodexPageDetails();
       setCodexState({ loading: true });
       hideCodexSuggestions();
       try {
@@ -4885,8 +5272,38 @@ function showSection(sectionName) {
           });
           return;
         }
-        const workerData = await fetchCodexJson(q);
-        const top = workerData?.summary || null;
+        const workerData = await fetchCodexJson(buildCodexWorkerSearchUrl(q), undefined, 'codex worker search');
+        const items = workerData?.items || workerData?.payload?.items || [];
+        const top = workerData?.summary || workerData?.payload?.summary || null;
+        console.log('[CODEX DEBUG]', {
+          hostname: window.location.hostname || '(unknown)',
+          workerBase: CODEX_WORKER_BASE_URL,
+          requestUrl: workerData?.__requestUrl || '(unknown)',
+          responseStatus: workerData?.__status,
+          dataOk: workerData?.ok,
+          itemsLength: Array.isArray(items) ? items.length : -1,
+          hasSummary: Boolean(top)
+        });
+        console.log('Items count:', items.length);
+        console.log('Summary:', top);
+        const hasParseShape =
+          Array.isArray(workerData?.items)
+          || workerData?.summary !== undefined
+          || Array.isArray(workerData?.payload?.items)
+          || workerData?.payload?.summary !== undefined;
+        if (workerData?.ok === true && !hasParseShape) {
+          codexActiveTitle = '';
+          codexActiveUrl = '';
+          codexActiveCategory = 'uncategorized';
+          codexActiveSummary = '';
+          setCodexState({
+            title: 'Lookup failed',
+            summary: 'Codex response received, but UI could not parse it.',
+            meta: 'SOURCE // PARSE SHAPE MISMATCH',
+            url: ''
+          });
+          return;
+        }
         if (top?.title) {
           const finalTitle = top.title;
           const extract = String(top.extract || '').trim();
@@ -4910,6 +5327,32 @@ function showSection(sectionName) {
           setCodexCached('entry', entryCacheKey, entryPayload);
           setCodexState(entryPayload);
           return;
+        } else if (items.length > 0) {
+          const first = items[0];
+          const fallbackTitle = String(first?.title || q).trim();
+          const fallbackSnippet = String(first?.snippet || '').trim();
+          const category = getCodexCategory(fallbackTitle, fallbackSnippet);
+          codexActiveTitle = fallbackTitle;
+          codexActiveUrl = first?.url || codexPageUrl(fallbackTitle);
+          codexActiveCategory = category;
+          codexActiveSummary = fallbackSnippet;
+          const fallbackPayload = {
+            title: fallbackTitle,
+            summary: fallbackSnippet || `Open "${fallbackTitle}" for full details.`,
+            meta: `SOURCE // WORKER SEARCH RESULT // ${category.toUpperCase()}`,
+            url: first?.url || codexPageUrl(fallbackTitle),
+            category,
+            farmingInfo: ''
+          };
+          setCodexCached('entry', entryCacheKey, fallbackPayload);
+          setCodexState(fallbackPayload);
+          renderCodexResults(filterCodexByCategory(items.map(entry => ({
+            title: entry.title,
+            snippet: stripHtml(entry.snippet || ''),
+            category: getCodexCategory(entry.title, entry.snippet || ''),
+            url: entry.url || codexPageUrl(entry.title)
+          }))));
+          return;
         } else {
           codexActiveTitle = '';
           codexActiveUrl = '';
@@ -4917,8 +5360,8 @@ function showSection(sectionName) {
           codexActiveSummary = '';
           setCodexState({
             title: 'No codex result',
-            summary: `No official wiki page matched "${q}". Try a broader term like Orokin, Lotus, Duviri, or Nightwave.`,
-            meta: 'SOURCE // EMPTY SEARCH RESULT',
+            summary: 'No Codex results found.',
+            meta: 'SOURCE // NO RESULTS',
             url: ''
           });
           console.warn('[orbiter] codex entry empty result', { query: q, data: workerData });
@@ -4929,14 +5372,17 @@ function showSection(sectionName) {
         codexActiveUrl = '';
         codexActiveCategory = 'uncategorized';
         codexActiveSummary = '';
-        const reason = error?.message?.includes('HTTP')
-          ? 'bad endpoint or HTTP error'
-          : error?.message?.includes('parse error')
-            ? 'parse error'
-            : 'network or CORS blocked';
+        const isNetworkError = error?.name === 'TypeError' || /network|failed to fetch|cors/i.test(String(error?.message || ''));
+        const reason = isNetworkError
+          ? 'network or CORS blocked'
+          : error?.message?.includes('HTTP')
+            ? 'HTTP error from Worker'
+            : error?.message?.includes('parse error')
+              ? 'response parse error'
+              : 'lookup error';
         setCodexState({
           title: 'Lookup failed',
-          summary: `Codex lookup failed because of ${reason}. Check the console for the request URL, response status, and parsed JSON details.`,
+          summary: `Codex lookup failed because of ${reason}. Check the console for hostname, worker base URL, request URL, response status, and parsed JSON.`,
           meta: `SOURCE // ${reason.toUpperCase()}`,
           url: q ? codexPageUrl(q) : ''
         });
@@ -4984,10 +5430,28 @@ function showSection(sectionName) {
     if (codexOpenBtn) codexOpenBtn.addEventListener('click', () => {
       const title = (codexActiveTitle || codexSearchInput?.value || '').trim();
       if (!title) {
-        logClientError('codex open page', new Error('No title to open'));
+        logClientError('codex open entry', new Error('No title to open'));
+        setCodexState({
+          title: codexTitle?.textContent || 'Awaiting query',
+          summary: 'Open an entry first.',
+          meta: 'SOURCE // OPEN AN ENTRY FIRST',
+          url: codexActiveUrl || ''
+        });
         return;
       }
-      window.open(codexPageUrl(title), '_blank', 'noopener,noreferrer');
+      loadCodexPageDetails(title, { openModal: true });
+    });
+    if (codexEntryModalClose) codexEntryModalClose.addEventListener('click', () => setCodexModalOpen(false));
+    if (codexEntryModal) {
+      codexEntryModal.addEventListener('click', (e) => {
+        const backdropClick = e.target === codexEntryModal || e.target?.classList?.contains('terminal-modal__backdrop');
+        if (backdropClick) setCodexModalOpen(false);
+      });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !codexModalState.open) return;
+      e.preventDefault();
+      setCodexModalOpen(false);
     });
     if (codexPinBtn) codexPinBtn.addEventListener('click', pinActiveCodexEntry);
     if (codexCategoryFilter) {
