@@ -138,6 +138,13 @@ h3 {
   align-items: center;
 }
 
+<<<<<<< HEAD
+=======
+.market-result__actions #marketViewSellBtn {
+  margin-inline: auto;
+}
+
+>>>>>>> 30addf1 (Initial commit)
 .button {
   border: 1px solid transparent;
   border-radius: 999px;
@@ -425,6 +432,7 @@ h3 {
   word-break: break-word;
 }
 
+<<<<<<< HEAD
 .market-order-head {
   display: grid;
   grid-template-columns: minmax(92px, 0.72fr) minmax(170px, 1.5fr) minmax(62px, 0.48fr) minmax(62px, 0.48fr) minmax(80px, 0.55fr);
@@ -441,6 +449,32 @@ h3 {
   font-size: 0.58rem;
   letter-spacing: 0.11em;
   text-transform: uppercase;
+=======
+.market-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+.market-order-head {
+  display: grid;
+  grid-template-columns: 100px minmax(160px, 1fr) 70px 70px 90px 120px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(54, 255, 139, 0.24);
+  border-radius: 8px;
+  background: rgba(7, 17, 27, 0.92);
+  color: #8cebb8;
+  font-size: 0.63rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+>>>>>>> 30addf1 (Initial commit)
 }
 
 .market-order-row {
@@ -448,9 +482,15 @@ h3 {
   border: 1px solid rgba(54, 255, 139, 0.2);
   appearance: none;
   display: grid;
+<<<<<<< HEAD
   grid-template-columns: minmax(92px, 0.72fr) minmax(170px, 1.5fr) minmax(62px, 0.48fr) minmax(62px, 0.48fr) minmax(80px, 0.55fr);
   align-items: center;
   gap: 8px;
+=======
+  grid-template-columns: 100px minmax(160px, 1fr) 70px 70px 90px 120px;
+  align-items: center;
+  gap: 10px;
+>>>>>>> 30addf1 (Initial commit)
   min-height: 44px;
   padding: 8px 10px;
   border-radius: 8px;
@@ -466,6 +506,7 @@ h3 {
   transform: translateY(-1px);
 }
 
+<<<<<<< HEAD
 .market-order-row__identity {
   min-width: 0;
   display: flex;
@@ -482,6 +523,43 @@ h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+=======
+.market-order-row__col {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: #9de9be;
+  font-size: 0.71rem;
+  letter-spacing: 0.02em;
+}
+
+.market-order-row__col--price {
+  justify-content: flex-start;
+}
+
+.market-order-row__col--user {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.market-order-row__name {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-order-row__col--copy {
+  justify-content: flex-end;
+}
+
+.market-order-row__value--price {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #a5ffd8;
+  line-height: 1.1;
+>>>>>>> 30addf1 (Initial commit)
 }
 
 .market-order-row__copy-btn {
@@ -492,15 +570,21 @@ h3 {
   font-size: 0.5rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+<<<<<<< HEAD
   padding: 3px 7px;
   cursor: pointer;
   flex-shrink: 0;
+=======
+  padding: 3px 8px;
+  cursor: pointer;
+>>>>>>> 30addf1 (Initial commit)
 }
 
 .market-order-row__copy-btn:hover {
   background: rgba(54, 255, 139, 0.22);
 }
 
+<<<<<<< HEAD
 .market-order-row__metric {
   display: flex;
   flex-direction: column;
@@ -537,6 +621,16 @@ h3 {
   letter-spacing: 0.09em;
   color: #9de9be;
   text-align: center;
+=======
+.market-order-row__chip {
+  border: 1px solid rgba(54, 255, 139, 0.4);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b6ffdb;
+>>>>>>> 30addf1 (Initial commit)
 }
 
 .market-order-row:focus-visible {
@@ -545,6 +639,7 @@ h3 {
 }
 
 @media (max-width: 840px) {
+<<<<<<< HEAD
   .market-order-head {
     grid-template-columns: minmax(72px, auto) minmax(0, 1fr) minmax(58px, auto) minmax(58px, auto) minmax(64px, auto);
     font-size: 0.52rem;
@@ -564,6 +659,19 @@ h3 {
   .market-order-row__metric:nth-of-type(2) { grid-area: qty; }
   .market-order-row__metric:nth-of-type(3) { grid-area: rank; }
   .market-order-row__platform { grid-area: platform; justify-self: end; }
+=======
+  .market-order-head,
+  .market-order-row {
+    grid-template-columns: 84px minmax(120px, 1fr) 56px 56px 72px 104px;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .market-order-row__copy-btn {
+    font-size: 0.46rem;
+    padding: 2px 6px;
+  }
+>>>>>>> 30addf1 (Initial commit)
 }
 
 @media (max-width: 560px) {
@@ -572,6 +680,7 @@ h3 {
   }
 
   .market-order-row {
+<<<<<<< HEAD
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
       "price price"
@@ -583,6 +692,37 @@ h3 {
 
   .market-order-row__platform {
     justify-self: start;
+=======
+    grid-template-columns: 1fr;
+    min-height: 72px;
+    gap: 6px;
+    padding: 9px;
+  }
+
+  .market-order-row__col {
+    justify-content: flex-start;
+  }
+
+  .market-order-row__col::before {
+    content: attr(data-label);
+    display: inline-block;
+    margin-right: 6px;
+    font-size: 0.56rem;
+    color: #7fd1a6;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .market-order-row__col--price::before { content: "Price"; }
+  .market-order-row__col--user::before { content: "User"; }
+  .market-order-row__col--qty::before { content: "Qty"; }
+  .market-order-row__col--rank::before { content: "Rank"; }
+  .market-order-row__col--platform::before { content: "Platform"; }
+  .market-order-row__col--copy::before { content: "Copy"; }
+
+  .market-order-row__col--copy {
+    justify-content: flex-start;
+>>>>>>> 30addf1 (Initial commit)
   }
 }
 
