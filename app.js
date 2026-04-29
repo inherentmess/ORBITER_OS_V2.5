@@ -3755,8 +3755,10 @@ function runBootSequence() {
       if (!item) return;
       const loadStart = marketNow();
       const itemKey = String(item.url_name || '');
-      console.log('[MARKET] loadMarketItem selected item name', item.item_name || '(unknown)');
-      console.log('[MARKET] loadMarketItem selected item url_name', itemKey || '(empty)');
+      if (MARKET_DEBUG) {
+        console.log('[MARKET] loadMarketItem selected item name', item.item_name || '(unknown)');
+        console.log('[MARKET] loadMarketItem selected item url_name', itemKey || '(empty)');
+      }
       marketState.selectedItem = item;
       marketSelectedTitle.textContent = item.item_name;
       if (marketModalState.open) setMarketModalSide(marketModalState.side);
@@ -3764,7 +3766,7 @@ function runBootSequence() {
       setMarketStatus('Loading ingame sellers...');
 
       const applyOrdersData = (ordersData, sourceLabel = '') => {
-        console.log('[MARKET] raw orders response JSON', ordersData);
+        if (MARKET_DEBUG) console.log('[MARKET] raw orders response JSON', ordersData);
         const rawOrders = ordersData?.payload?.orders || ordersData?.orders || [];
         const normalized = normalizeOrdersFromRaw(rawOrders);
         const sourceOrders = [...normalized.sellOrders, ...normalized.buyOrders];
@@ -3797,16 +3799,16 @@ function runBootSequence() {
             order_type: String(order?.order_type || '').toLowerCase().trim(),
             platinum: order?.platinum ?? order?.price ?? null
           }));
-        console.log('[MARKET] total raw orders', sourceOrders.length);
-        console.log('[MARKET] counts by order_type', orderTypeCounts);
-        console.log('[MARKET] counts by user.status', statusCounts);
-        console.log('[MARKET] seller count', sellers.length);
-        console.log('[MARKET] ingame seller count', sellIngameCount);
-        console.log('[MARKET] first 5 sell orders with user.status', firstFiveSell);
-        console.log('[MARKET] normalized rawOrders.length', marketState.rawOrders.length);
-        console.log('[MARKET] first 5 orders', marketState.rawOrders.slice(0, 5));
-        console.log('[MARKET] first 5 user.status values', marketState.rawOrders.slice(0, 5).map(o => o?.user?.status));
         if (MARKET_DEBUG) {
+          console.log('[MARKET] total raw orders', sourceOrders.length);
+          console.log('[MARKET] counts by order_type', orderTypeCounts);
+          console.log('[MARKET] counts by user.status', statusCounts);
+          console.log('[MARKET] seller count', sellers.length);
+          console.log('[MARKET] ingame seller count', sellIngameCount);
+          console.log('[MARKET] first 5 sell orders with user.status', firstFiveSell);
+          console.log('[MARKET] normalized rawOrders.length', marketState.rawOrders.length);
+          console.log('[MARKET] first 5 orders', marketState.rawOrders.slice(0, 5));
+          console.log('[MARKET] first 5 user.status values', marketState.rawOrders.slice(0, 5).map(o => o?.user?.status));
           console.log('[MARKET_DEBUG] market raw orders first 3', sourceOrders.slice(0, 3));
           console.log('[MARKET_DEBUG] market raw unique platform', uniqPlatform);
           console.log('[MARKET_DEBUG] market raw unique platinum(sample)', uniqPlatinum);
@@ -3858,7 +3860,7 @@ function runBootSequence() {
         const path = buildMarketOrdersPath(item.url_name, reason === 'refresh'
           ? { refresh: true, t: refreshTag }
           : {});
-        console.log('[MARKET] exact orders URL called', buildMarketProxyUrl(path));
+        if (MARKET_DEBUG) console.log('[MARKET] exact orders URL called', buildMarketProxyUrl(path));
         const fetchStart = marketNow();
         const ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
         marketDebugLog('orders-fetch', `item=${itemKey} path=${path} duration=${(marketNow() - fetchStart).toFixed(1)}ms`);
