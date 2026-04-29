@@ -577,8 +577,105 @@ function runBootSequence() {
     }
 
     if (searchInput) {
+      const searchSuggestHost = searchInput.closest('.relative');
+      const searchSuggestBox = document.createElement('div');
+      searchSuggestBox.className = 'archive-suggest';
+      searchSuggestBox.id = 'archiveSuggest';
+      if (searchSuggestHost) searchSuggestHost.appendChild(searchSuggestBox);
+
+      const navLookup = [
+        { title: 'Dashboard', kind: 'section', section: 'dashboard', terms: ['dashboard', 'home', 'overview'] },
+        { title: 'Trackers', kind: 'section', section: 'trackers', terms: ['tracker', 'trackers', 'track'] },
+        { title: 'Market', kind: 'section', section: 'market', terms: ['market', 'mar'] },
+        { title: 'Arsenal', kind: 'section', section: 'arsenal', terms: ['arsenal', 'build', 'weapon'] },
+        { title: 'Codex', kind: 'section', section: 'codex', terms: ['codex', 'wiki', 'guide'] },
+        { title: 'Invasions', kind: 'tracker', section: 'trackers', terms: ['invasion', 'invasions', 'inv'] },
+        { title: 'Events', kind: 'tracker', section: 'trackers', terms: ['event', 'events'] },
+        { title: 'Factions', kind: 'tracker', section: 'trackers', terms: ['faction', 'factions'] },
+        { title: 'Projects', kind: 'tracker', section: 'trackers', terms: ['project', 'projects'] }
+      ];
+      let navSuggestItems = [];
+      let navSuggestIndex = -1;
+      let navSuggestOpen = false;
+
+      const closeNavSuggest = () => {
+        navSuggestOpen = false;
+        navSuggestItems = [];
+        navSuggestIndex = -1;
+        searchSuggestBox.innerHTML = '';
+        searchSuggestBox.classList.remove('is-open');
+      };
+
+      const setNavSuggestActive = (index) => {
+        navSuggestIndex = index;
+        searchSuggestBox.querySelectorAll('.archive-suggest__item').forEach((el, i) => {
+          el.classList.toggle('is-active', i === index);
+        });
+      };
+
+      const pickTrackerDetailByText = (queryText) => {
+        const q = String(queryText || '').toLowerCase().trim();
+        const buttons = Array.from(document.querySelectorAll('button[data-dashboard-detail-select]'));
+        const match = buttons.find(btn => String(btn.innerText || '').toLowerCase().includes(q));
+        if (match) match.click();
+      };
+
+      const applyNavSuggestion = (item) => {
+        if (!item) return;
+        showSection(item.section);
+        if (item.kind === 'tracker') {
+          window.setTimeout(() => pickTrackerDetailByText(item.title), 40);
+        }
+        searchInput.value = item.title;
+        closeNavSuggest();
+      };
+
+      const renderNavSuggest = (query) => {
+        const q = String(query || '').toLowerCase().trim();
+        if (!q) {
+          closeNavSuggest();
+          return;
+        }
+        const ranked = navLookup
+          .map(item => {
+            const title = item.title.toLowerCase();
+            let score = -1;
+            if (title === q) score = 100;
+            else if (title.startsWith(q)) score = 80;
+            else if (title.includes(q)) score = 60;
+            else {
+              const termScore = item.terms.reduce((best, t) => {
+                if (t === q) return Math.max(best, 90);
+                if (t.startsWith(q)) return Math.max(best, 70);
+                if (t.includes(q)) return Math.max(best, 50);
+                return best;
+              }, -1);
+              score = termScore;
+            }
+            return { item, score };
+          })
+          .filter(entry => entry.score >= 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 8);
+        navSuggestItems = ranked.map(entry => entry.item);
+        if (!navSuggestItems.length) {
+          closeNavSuggest();
+          return;
+        }
+        searchSuggestBox.innerHTML = navSuggestItems.map((entry, idx) => `
+          <button type="button" class="archive-suggest__item${idx === 0 ? ' is-active' : ''}" data-nav-suggest-index="${idx}">
+            <span class="archive-suggest__title">${entry.title}</span>
+            <span class="archive-suggest__meta">${entry.kind === 'tracker' ? 'Tracker Section' : 'Section'}</span>
+          </button>
+        `).join('');
+        navSuggestIndex = 0;
+        navSuggestOpen = true;
+        searchSuggestBox.classList.add('is-open');
+      };
+
       searchInput.addEventListener('input', (e) => {
         const q = e.target.value.trim().toLowerCase();
+        renderNavSuggest(q);
         const activeSections = sectionAccordionState.enabled
           ? sectionNames
               .filter(name => sectionAccordionState.bodies.get(name)?.dataset.open === '1')
@@ -597,6 +694,57 @@ function runBootSequence() {
             }
           });
         });
+      });
+
+      searchInput.addEventListener('keydown', (e) => {
+        if (!navSuggestOpen || !navSuggestItems.length) {
+          if (e.key === 'Enter') {
+            const q = String(searchInput.value || '').trim().toLowerCase();
+            const first = navLookup.find(item =>
+              item.title.toLowerCase().includes(q) || item.terms.some(t => t.includes(q))
+            );
+            if (first) {
+              e.preventDefault();
+              applyNavSuggestion(first);
+            }
+          }
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const next = (navSuggestIndex + 1) % navSuggestItems.length;
+          setNavSuggestActive(next);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const next = (navSuggestIndex - 1 + navSuggestItems.length) % navSuggestItems.length;
+          setNavSuggestActive(next);
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          applyNavSuggestion(navSuggestItems[navSuggestIndex] || navSuggestItems[0]);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeNavSuggest();
+        }
+      });
+
+      searchSuggestBox.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-nav-suggest-index]');
+        if (!btn) return;
+        const idx = Number(btn.dataset.navSuggestIndex);
+        if (!Number.isFinite(idx)) return;
+        applyNavSuggestion(navSuggestItems[idx]);
+      });
+
+      searchInput.addEventListener('blur', () => {
+        window.setTimeout(() => {
+          if (!searchSuggestBox.matches(':hover')) closeNavSuggest();
+        }, 120);
       });
     } else {
       logClientError('global search binding', new Error('searchInput not found'));
@@ -1868,16 +2016,16 @@ function runBootSequence() {
 
     function renderInteractiveSummaryCard(categoryId, card) {
       const selected = dashboardTrackerState.selectedDetailCategoryId === categoryId && dashboardTrackerState.selectedDetailId === card.id;
-      const selectedClasses = selected ? ' bg-terminal text-black shadow-[0_0_24px_rgba(66,245,139,0.28)]' : ' hover:bg-terminal hover:text-black';
+      const selectedClasses = selected ? ' bg-terminal/20 text-terminal shadow-[0_0_24px_rgba(66,245,139,0.28)] border-terminal/80' : ' hover:bg-terminal/10';
       const timerLine = card.hideTimer ? '' : `<div class="tracker-timer mt-3 font-black" data-dashboard-countdown="${escapeHtml(card.id)}">${formatDashboardCountdown(card.expiresAt)}</div>`;
       return `
         <button class="tracker-card panel-card text-left transition-colors${selectedClasses}" type="button" data-dashboard-detail-select="${escapeHtml(card.id)}" data-dashboard-detail-category="${escapeHtml(categoryId)}">
-          <div class="uppercase text-[10px] tracking-[0.25em] mb-2 ${selected ? 'text-black/70' : 'text-terminal/70'}">${escapeHtml(card.label)}</div>
+          <div class="uppercase text-[10px] tracking-[0.25em] mb-2 ${selected ? 'text-terminal/85' : 'text-terminal/70'}">${escapeHtml(card.label)}</div>
           <div class="tracker-card-title font-bold">${escapeHtml(card.title)}</div>
           ${timerLine}
           <div class="tracker-card-footer">
-            <div class="text-sm mt-2 ${selected ? 'text-black/80' : 'text-green-200/90'}">${escapeHtml(card.state)}</div>
-            <p class="text-xs mt-3 leading-5 ${selected ? 'text-black/70' : 'text-green-200/70'}">${escapeHtml(card.detail)}</p>
+            <div class="text-sm mt-2 ${selected ? 'text-green-100' : 'text-green-200/90'}">${escapeHtml(card.state)}</div>
+            <p class="text-xs mt-3 leading-5 ${selected ? 'text-green-100/85' : 'text-green-200/70'}">${escapeHtml(card.detail)}</p>
           </div>
         </button>
       `;
@@ -3251,12 +3399,33 @@ function runBootSequence() {
     function renderOrderRows(orders, action, options = {}) {
       const fragment = document.createDocumentFragment();
       const cheapestId = options?.cheapestId || '';
+      const formatStatus = (value) => {
+        const raw = String(value || '').toLowerCase().trim();
+        if (raw === 'ingame') return { key: 'ingame', label: 'In Game' };
+        if (raw === 'online') return { key: 'online', label: 'Online' };
+        if (raw === 'offline') return { key: 'offline', label: 'Offline' };
+        return { key: 'unknown', label: '—' };
+      };
+      const formatSeenOrRep = (order, rep) => {
+        const seenRaw = order?.creation_date || order?.last_seen || order?.lastSeen || '';
+        const seenText = String(seenRaw || '').trim();
+        const repText = (rep === 'n/a' || rep === undefined || rep === null || rep === '') ? '—' : String(rep);
+        if (seenText && repText !== '—') return `${seenText} / Rep ${repText}`;
+        if (seenText) return seenText;
+        if (repText !== '—') return `Rep ${repText}`;
+        return '—';
+      };
       (orders || []).forEach(order => {
-        const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
-        const platform = String(order.user?.platform || order.platform || 'pc').toUpperCase();
+        const username = order.user?.ingameName || order.user?.ingame_name || order.user || '—';
+        const platformRaw = String(order.user?.platform || order.platform || '').trim();
+        const platform = platformRaw ? platformRaw.toUpperCase() : '—';
+        const statusMeta = formatStatus(order?.user?.status);
         const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
-        const price = Number(order.platinum);
-        const qty = order.quantity || 1;
+        const seenOrRep = formatSeenOrRep(order, rep);
+        const priceNum = Number(order.platinum);
+        const price = Number.isFinite(priceNum) ? `${priceNum}p` : '—';
+        const qtyNum = Number(order.quantity);
+        const qty = Number.isFinite(qtyNum) ? qtyNum : '—';
         const uid = `${username}|${price}|${qty}`;
 
         const row = document.createElement('div');
@@ -3265,32 +3434,36 @@ function runBootSequence() {
         row.setAttribute('tabindex', '0');
 
         row.innerHTML = `
-          <div class="market-order-cell market-order-cell--price market-order-row__value--price">${htmlEscape(price)}p</div>
+          <div class="market-order-cell market-order-cell--price market-order-row__value--price">${htmlEscape(price)}</div>
           <div class="market-order-cell market-order-cell--user" title="${htmlEscape(username)}">${htmlEscape(username)}</div>
           <div class="market-order-cell market-order-cell--qty">${htmlEscape(qty)}</div>
-          <div class="market-order-cell market-order-cell--rank">${htmlEscape(rep)}</div>
+          <div class="market-order-cell market-order-cell--status">
+            <span class="market-status-badge market-status-badge--${htmlEscape(statusMeta.key)}">${htmlEscape(statusMeta.label)}</span>
+          </div>
           <div class="market-order-cell market-order-cell--platform">${htmlEscape(platform)}</div>
+          <div class="market-order-cell market-order-cell--seen-rep" title="${htmlEscape(seenOrRep)}">${htmlEscape(seenOrRep)}</div>
           <div class="market-order-cell market-order-cell--copy">
             <button type="button" class="market-order-row__copy-btn">Copy Whisper</button>
           </div>
         `;
 
+        const copyBtn = row.querySelector('.market-order-row__copy-btn');
+        const baseCopyLabel = copyBtn?.textContent || 'Copy Whisper';
         const doCopy = async () => {
-          const nameEl = row.querySelector('.market-order-cell--user');
-          const originalNameText = nameEl ? nameEl.textContent : '';
-          if (nameEl) nameEl.textContent = '...';
           try {
+            if (copyBtn) copyBtn.textContent = 'Copying...';
             await copyWhisper(order, action);
-            row.classList.add('is-copied');
-            if (nameEl) nameEl.textContent = 'Copied ✓';
-            window.setTimeout(() => {
-              row.classList.remove('is-copied');
-              if (nameEl) nameEl.textContent = originalNameText;
-            }, 1400);
+            row.classList.add('is-copied', 'copied');
+            if (row.__copiedTimer) window.clearTimeout(row.__copiedTimer);
+            if (copyBtn) copyBtn.textContent = 'Copied!';
+            row.__copiedTimer = window.setTimeout(() => {
+              row.classList.remove('is-copied', 'copied');
+              if (copyBtn) copyBtn.textContent = baseCopyLabel;
+            }, 1800);
           } catch {
-            if (nameEl) nameEl.textContent = 'Error';
+            if (copyBtn) copyBtn.textContent = 'Copy failed';
             window.setTimeout(() => {
-              if (nameEl) nameEl.textContent = originalNameText;
+              if (copyBtn) copyBtn.textContent = baseCopyLabel;
             }, 1400);
           }
         };
@@ -3302,7 +3475,6 @@ function runBootSequence() {
             doCopy();
           }
         });
-        const copyBtn = row.querySelector('.market-order-row__copy-btn');
         if (copyBtn) {
           copyBtn.addEventListener('click', async (event) => {
             event.preventDefault();
@@ -3323,6 +3495,16 @@ function runBootSequence() {
         marketDebugLog('render-book', `target=${target.id || 'unknown'} rows=0 duration=${(marketNow() - renderStart).toFixed(1)}ms`);
         return;
       }
+      const statusPriority = {
+        ingame: 0,
+        online: 1,
+        offline: 2
+      };
+      const displayOrders = [...orders].sort((a, b) => {
+        const aStatus = String(a?.user?.status || '').toLowerCase().trim();
+        const bStatus = String(b?.user?.status || '').toLowerCase().trim();
+        return (statusPriority[aStatus] ?? 99) - (statusPriority[bStatus] ?? 99);
+      });
       target.innerHTML = '';
       const fragment = document.createDocumentFragment();
       const header = document.createElement('div');
@@ -3331,12 +3513,13 @@ function runBootSequence() {
         <span>Price</span>
         <span>User</span>
         <span>Qty</span>
-        <span>Rank</span>
+        <span>Status</span>
         <span>Platform</span>
+        <span>Last Seen / Rep</span>
         <span>Copy</span>
       `;
       fragment.appendChild(header);
-      fragment.appendChild(renderOrderRows(orders, action, options));
+      fragment.appendChild(renderOrderRows(displayOrders, action, options));
       target.appendChild(fragment);
       marketDebugLog('render-book', `target=${target.id || 'unknown'} rows=${orders.length} duration=${(marketNow() - renderStart).toFixed(1)}ms`);
     }
