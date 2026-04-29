@@ -3393,7 +3393,7 @@ function runBootSequence() {
 
     function applyStatusFilter(orders, statusValue) {
       void statusValue;
-      return orders;
+      return orders.filter(order => String(order?.user?.status || '').toLowerCase().trim() === 'ingame');
     }
 
     function applyPriceSort(orders, sortValue, defaultValue) {
@@ -3442,21 +3442,32 @@ function runBootSequence() {
       const maxInput = isBuy ? marketBuyMax : marketSellMax;
       const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
       const sideType = isBuy ? 'buy' : 'sell';
+      const sellStage = raw.filter(order => {
+        const type = String(order?.order_type || '').toLowerCase().trim();
+        return order?.visible !== false && type === 'sell';
+      });
+      const buyStage = raw.filter(order => {
+        const type = String(order?.order_type || '').toLowerCase().trim();
+        return order?.visible !== false && type === 'buy';
+      });
       const typeStage = raw.filter(order => {
         const type = String(order?.order_type || '').toLowerCase().trim();
         return order?.visible !== false && type === sideType;
       });
-      const ingameStage = typeStage;
-      const statusStage = applyStatusFilter(typeStage, status);
+      const ingameStage = applyStatusFilter(typeStage, status);
+      const statusStage = ingameStage;
       const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
       const regionPlatformStage = filteredByPlat;
       const debug = {
         raw: raw.length,
+        sell: sellStage.length,
+        buy: buyStage.length,
         type: typeStage.length,
         ingame: ingameStage.length,
         status: statusStage.length,
         price: filteredByPlat.length,
-        regionPlatform: regionPlatformStage.length
+        regionPlatform: regionPlatformStage.length,
+        visible: regionPlatformStage.length
       };
       console.log('[orbiter] market filter counts', {
         side,
@@ -3464,11 +3475,14 @@ function runBootSequence() {
         min: minInput?.value ?? '',
         max: maxInput?.value ?? '',
         raw: debug.raw,
+        sell: debug.sell,
+        buy: debug.buy,
         type: debug.type,
         ingame: debug.ingame,
         statusFiltered: debug.status,
         priceFiltered: debug.price,
-        regionPlatformFiltered: debug.regionPlatform
+        regionPlatformFiltered: debug.regionPlatform,
+        visible: debug.visible
       });
       if (String(status).toLowerCase() === 'all') {
         // Show ingame first (then online/offline), while still sorting by price within each status group.
@@ -3628,7 +3642,7 @@ function runBootSequence() {
       }
       marketDebugLog('render', `active=${marketUi.activeSide} duration=${(marketNow() - renderStart).toFixed(1)}ms`);
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
-      setMarketStatus(`Raw ${marketState.rawOrderCount || 0} → Ingame ${marketState.ingameOrderCount || 0}`);
+      setMarketStatus(`Raw ${activeDebug.raw} -> Sell ${activeDebug.sell} -> Buy ${activeDebug.buy} -> Ingame ${activeDebug.ingame} -> Visible ${activeDebug.visible}`);
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.

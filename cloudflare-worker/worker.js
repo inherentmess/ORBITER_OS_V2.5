@@ -187,14 +187,6 @@ function normalizeOrders(payload = {}, itemName = '') {
   return { sellOrders, buyOrders };
 }
 
-function filterIngameTradeOrders(orders = []) {
-  return (Array.isArray(orders) ? orders : []).filter(order => {
-    const type = String(order?.order_type || '').toLowerCase().trim();
-    const status = String(order?.user?.status || '').toLowerCase().trim();
-    return (type === 'sell' || type === 'buy') && status === 'ingame';
-  });
-}
-
 function normalizeTradeOrderForFilter(order = {}) {
   const type = String(order?.order_type || '').toLowerCase().trim();
   const status = String(order?.user?.status || '').toLowerCase().trim();
@@ -205,15 +197,6 @@ function normalizeTradeOrderForFilter(order = {}) {
       ...(order?.user || {}),
       status
     }
-  };
-}
-
-function summarizeOrderDebug(orders = []) {
-  const list = Array.isArray(orders) ? orders : [];
-  return {
-    rawCount: list.length,
-    uniqueStatus: [...new Set(list.map(o => String(o?.user?.status || '').toLowerCase().trim()))],
-    uniqueType: [...new Set(list.map(o => String(o?.order_type || '').toLowerCase().trim()))]
   };
 }
 
@@ -513,15 +496,13 @@ async function handleOrders(requestUrl, itemUrlName) {
     const normalizedTrade = [...normalized.sellOrders, ...normalized.buyOrders]
       .map(normalizeTradeOrderForFilter)
       .filter(order => order.order_type === 'sell' || order.order_type === 'buy');
-    const debug = summarizeOrderDebug(normalizedTrade);
-    console.log(`[market-proxy] orders(v1) item=${normalizedName} raw=${debug.rawCount} ingame=${filterIngameTradeOrders(normalizedTrade).length}`);
-    console.log('[market-proxy] orders(v1) unique user.status', debug.uniqueStatus);
-    console.log('[market-proxy] orders(v1) unique order_type', debug.uniqueType);
-    const filteredOrders = filterIngameTradeOrders(normalizedTrade);
+    const uniqueStatus = [...new Set(normalizedTrade.map(o => String(o?.user?.status || '').toLowerCase().trim()))];
+    const uniqueType = [...new Set(normalizedTrade.map(o => String(o?.order_type || '').toLowerCase().trim()))];
+    console.log(`[market-proxy] orders(v1) item=${normalizedName} raw=${normalizedTrade.length}`);
+    console.log('[market-proxy] orders(v1) unique user.status', uniqueStatus);
+    console.log('[market-proxy] orders(v1) unique order_type', uniqueType);
     return json(requestUrl, {
-      orders: filteredOrders,
-      rawCount: debug.rawCount,
-      ingameCount: filteredOrders.length
+      orders: normalizedTrade
     });
   }
 
@@ -530,9 +511,7 @@ async function handleOrders(requestUrl, itemUrlName) {
     return json(requestUrl, {
       error: resultV1.error || resultV2.error,
       upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100 -> ${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
-      orders: [],
-      rawCount: 0,
-      ingameCount: 0
+      orders: []
     }, Math.max(resultV1.status || 500, resultV2.status || 500));
   }
 
@@ -540,15 +519,13 @@ async function handleOrders(requestUrl, itemUrlName) {
   const normalizedTrade = [...normalized.sellOrders, ...normalized.buyOrders]
     .map(normalizeTradeOrderForFilter)
     .filter(order => order.order_type === 'sell' || order.order_type === 'buy');
-  const debug = summarizeOrderDebug(normalizedTrade);
-  const filteredOrders = filterIngameTradeOrders(normalizedTrade);
-  console.log(`[market-proxy] orders(v2) item=${normalizedName} raw=${debug.rawCount} ingame=${filteredOrders.length}`);
-  console.log('[market-proxy] orders(v2) unique user.status', debug.uniqueStatus);
-  console.log('[market-proxy] orders(v2) unique order_type', debug.uniqueType);
+  const uniqueStatus = [...new Set(normalizedTrade.map(o => String(o?.user?.status || '').toLowerCase().trim()))];
+  const uniqueType = [...new Set(normalizedTrade.map(o => String(o?.order_type || '').toLowerCase().trim()))];
+  console.log(`[market-proxy] orders(v2) item=${normalizedName} raw=${normalizedTrade.length}`);
+  console.log('[market-proxy] orders(v2) unique user.status', uniqueStatus);
+  console.log('[market-proxy] orders(v2) unique order_type', uniqueType);
   return json(requestUrl, {
-    orders: filteredOrders,
-    rawCount: debug.rawCount,
-    ingameCount: filteredOrders.length
+    orders: normalizedTrade
   });
 }
 
