@@ -3193,7 +3193,6 @@ function runBootSequence() {
       const fragment = document.createDocumentFragment();
       orders.forEach(order => {
         const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
-        const platform = order.user?.platform || order.platform || 'pc';
         const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
         const price = Number(order.platinum);
         const qty = order.quantity || 1;
@@ -3212,18 +3211,17 @@ function runBootSequence() {
           </div>
           <div class="market-order-row__metric market-order-row__metric--price">
             <span class="market-order-row__label">Price</span>
-            <span class="market-order-row__value">${htmlEscape(price)}p</span>
-          </div>
-          <div class="market-order-row__metric">
-            <span class="market-order-row__label">Rank</span>
-            <span class="market-order-row__value">${htmlEscape(rep)}</span>
+            <span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span>
           </div>
           <div class="market-order-row__metric">
             <span class="market-order-row__label">Qty</span>
             <span class="market-order-row__value">${htmlEscape(qty)}</span>
           </div>
-          <div class="market-order-row__platform">${htmlEscape(String(platform).toUpperCase())}</div>
-          <div class="market-order-row__copy">Copy Whisper</div>
+          <div class="market-order-row__metric">
+            <span class="market-order-row__label">Rank</span>
+            <span class="market-order-row__value">${htmlEscape(rep)}</span>
+          </div>
+          <div class="market-order-row__copy">Action: Copy</div>
         `;
 
         row.addEventListener('click', async () => {
@@ -3394,7 +3392,8 @@ function runBootSequence() {
       const minInput = isBuy ? marketBuyMin : marketSellMin;
       const maxInput = isBuy ? marketBuyMax : marketSellMax;
       const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
-      const sellStage = raw.filter(order => order?.visible !== false);
+      const sideType = isBuy ? 'buy' : 'sell';
+      const sellStage = raw.filter(order => order?.visible !== false && String(order?.order_type || '').toLowerCase() === sideType);
       const ingameUsersStage = sellStage.filter(order => {
         const s = orderStatus(order);
         return s === 'ingame';
