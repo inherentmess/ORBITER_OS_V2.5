@@ -260,6 +260,18 @@ async function handleSearch(request, url) {
 
 function normalizeOrdersFromV2(data = {}) {
   const top = data || {};
+  const numericObjectToArray = (value) => {
+    if (!value || Array.isArray(value) || typeof value !== 'object') return null;
+    const keys = Object.keys(value);
+    if (!keys.length) return null;
+    const allNumeric = keys.every(key => /^\d+$/.test(key));
+    if (!allNumeric) return null;
+    return keys
+      .map(key => Number(key))
+      .sort((a, b) => a - b)
+      .map(idx => value[String(idx)])
+      .filter(Boolean);
+  };
   const pickArray = (candidates) => candidates.find(Array.isArray) || [];
   const digArray = (node, path) => {
     try {
@@ -288,7 +300,9 @@ function normalizeOrdersFromV2(data = {}) {
   const genericOrders = [
     top?.data?.orders,
     top?.payload?.orders,
-    top?.orders
+    top?.orders,
+    Array.isArray(top?.data) ? top.data : null,
+    numericObjectToArray(top?.data)
   ].find(Array.isArray) || [];
 
   // Additional v2 variants observed in different payload envelopes.
