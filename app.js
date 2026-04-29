@@ -3114,20 +3114,24 @@ function runBootSequence() {
     }
 
     function marketMatches(query, limit = 20) {
-      const q = marketNorm(query);
+      const q = String(query || '').trim().toLowerCase();
       if (!q) return [];
       if (!marketState.loaded) {
         logClientError('market match', new Error('Catalog not loaded yet'), { query });
         return [];
       }
-      const starts = [];
-      const includes = [];
-      for (const item of marketState.catalog) {
-        if (item.norm_name.startsWith(q)) starts.push(item);
-        else if (item.norm_name.includes(q)) includes.push(item);
-        if (starts.length + includes.length >= limit * 3) break;
-      }
-      return starts.concat(includes).slice(0, limit);
+      const firstFive = marketState.catalog.slice(0, 5).map(item => ({
+        item_name: item?.item_name || '',
+        url_name: item?.url_name || ''
+      }));
+      console.log('[MARKET] query', q);
+      console.log('[MARKET] first 5 items from dataset', firstFive);
+
+      const exact = marketState.catalog.filter(item => String(item?.item_name || '').toLowerCase() === q);
+      if (exact.length) return exact.slice(0, limit);
+
+      const includes = marketState.catalog.filter(item => String(item?.item_name || '').toLowerCase().includes(q));
+      return includes.slice(0, limit);
     }
 
     function hideMarketAutocomplete(options = {}) {
@@ -3891,8 +3895,9 @@ function runBootSequence() {
 
     async function runMarketSearch() {
       const searchStart = marketNow();
-      const query = marketItemSearch?.value || '';
-      if (!query.trim()) {
+      const rawQuery = marketItemSearch?.value || '';
+      const query = rawQuery.trim().toLowerCase();
+      if (!query) {
         renderMarketResults([], '');
         hideMarketAutocomplete();
         setMarketStatus('Search failed: empty query');
@@ -3903,26 +3908,28 @@ function runBootSequence() {
         setMarketStatus('Search waiting for catalog...');
         const catalogWaitStart = marketNow();
         await ensureMarketCatalog();
-        marketDebugLog('search-catalog-wait', `query="${query.trim()}" duration=${(marketNow() - catalogWaitStart).toFixed(1)}ms`);
+        marketDebugLog('search-catalog-wait', `query="${query}" duration=${(marketNow() - catalogWaitStart).toFixed(1)}ms`);
       } catch (error) {
-        renderMarketResults([], query);
+        renderMarketResults([], rawQuery);
         hideMarketAutocomplete();
         setMarketStatus(error?.message === 'Market proxy required' ? 'Market proxy required' : 'Search failed: catalog failed');
         logClientError('market search catalog gate', error, { query });
         return;
       }
       const results = marketMatches(query, 30);
-      marketDebugLog('search-match', `query="${query.trim()}" results=${results.length} duration=${(marketNow() - searchStart).toFixed(1)}ms`);
-      renderMarketResults(results, query);
+      marketDebugLog('search-match', `query="${query}" results=${results.length} duration=${(marketNow() - searchStart).toFixed(1)}ms`);
+      renderMarketResults(results, rawQuery);
       hideMarketAutocomplete();
       if (results[0]) {
+        console.log('[MARKET] matched item', results[0].item_name);
+        console.log('[MARKET] matched url_name', results[0].url_name);
         setMarketStatus(`matched item found | ${results[0].item_name}`);
         loadMarketItem(results[0]);
       }
       if (!results.length) {
-        marketSelectedMeta.textContent = `No market item matched "${query}".`;
+        marketSelectedMeta.textContent = `No market item matched "${rawQuery}".`;
         setMarketStatus('Search failed: empty result');
-        logClientError('market search results', new Error('No matches after normalized item-name search'), { query, normalized: marketNorm(query), catalogSize: marketState.catalog.length });
+        logClientError('market search results', new Error('No matches after item-name exact/includes search'), { query, catalogSize: marketState.catalog.length });
       }
     }
 
