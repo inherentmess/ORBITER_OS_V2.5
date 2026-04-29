@@ -3203,6 +3203,7 @@ function runBootSequence() {
         <span>Qty</span>
         <span>Rank</span>
         <span>Platform</span>
+        <span>Copy</span>
       `;
       fragment.appendChild(header);
       orders.forEach(order => {
@@ -3213,31 +3214,23 @@ function runBootSequence() {
         const qty = order.quantity || 1;
         const uid = `${username}|${price}|${qty}`;
 
-        const row = document.createElement('button');
-        row.type = 'button';
+        const row = document.createElement('div');
         row.className = `market-order-row${cheapestId && cheapestId === uid ? ' market-order-row--best' : ''}`;
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
         row.dataset.action = String(action || '');
         row.dataset.user = String(username);
         row.dataset.price = String(price);
 
         row.innerHTML = `
-          <div class="market-order-row__metric market-order-row__metric--price">
-            <span class="market-order-row__label">Price</span>
-            <span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span>
-          </div>
-          <div class="market-order-row__identity">
-            <span class="market-order-row__name">${htmlEscape(username)}</span>
+          <div class="market-order-cell market-order-cell--price market-order-row__value--price">${htmlEscape(price)}p</div>
+          <div class="market-order-cell market-order-cell--user" title="${htmlEscape(username)}">${htmlEscape(username)}</div>
+          <div class="market-order-cell market-order-cell--qty">${htmlEscape(qty)}</div>
+          <div class="market-order-cell market-order-cell--rank">${htmlEscape(rep)}</div>
+          <div class="market-order-cell market-order-cell--platform">${htmlEscape(platform)}</div>
+          <div class="market-order-cell market-order-cell--copy">
             <button type="button" class="market-order-row__copy-btn">Copy Whisper</button>
           </div>
-          <div class="market-order-row__metric">
-            <span class="market-order-row__label">Qty</span>
-            <span class="market-order-row__value">${htmlEscape(qty)}</span>
-          </div>
-          <div class="market-order-row__metric">
-            <span class="market-order-row__label">Rank</span>
-            <span class="market-order-row__value">${htmlEscape(rep)}</span>
-          </div>
-          <div class="market-order-row__platform">${htmlEscape(platform)}</div>
         `;
 
         const doCopy = async () => {
@@ -3261,6 +3254,12 @@ function runBootSequence() {
         };
 
         row.addEventListener('click', doCopy);
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            doCopy();
+          }
+        });
         const copyBtn = row.querySelector('.market-order-row__copy-btn');
         if (copyBtn) {
           copyBtn.addEventListener('click', async (event) => {
