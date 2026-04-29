@@ -25,17 +25,7 @@ const API_BASE_URL = normalizeApiBase(
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
   API_BASE
 );
-const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const MARKET_PROXY_URL = normalizeApiBase(
-  isLocalHost
-    ? window.location.origin
-    : (
-      window.MARKET_PROXY_URL ||
-      window.ORBITER_MARKET_PROXY_URL ||
-      document.querySelector('meta[name="orbiter-market-proxy-url"]')?.content ||
-      ''
-    )
-);
+const MARKET_PROXY_URL = normalizeApiBase('https://orbitor-os.jrque.workers.dev');
 
 function buildApiUrl(path) {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
@@ -2789,6 +2779,44 @@ function runBootSequence() {
       return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     }
 
+    function pickFirstArray(candidates) {
+      for (const value of candidates) {
+        if (Array.isArray(value)) return value;
+      }
+      return [];
+    }
+
+    function getCatalogItemsFromResponse(data) {
+      return pickFirstArray([
+        data?.data?.payload?.items,
+        data?.payload?.items,
+        data?.items,
+        Array.isArray(data) ? data : null
+      ]);
+    }
+
+    function getOrdersFromResponse(data) {
+      return pickFirstArray([
+        data?.data?.payload?.orders,
+        data?.payload?.orders,
+        data?.orders,
+        Array.isArray(data) ? data : null
+      ]);
+    }
+
+    function normalizeOrdersFromRaw(rawOrders) {
+      const mapped = rawOrders.map(order => ({
+        ...order,
+        order_type: order?.order_type || order?.type || '',
+        status: String(order?.user?.status || order?.status || 'unknown').toLowerCase(),
+        visible: order?.visible !== false
+      }));
+      return {
+        sellOrders: mapped.filter(order => order.visible && order.order_type === 'sell'),
+        buyOrders: mapped.filter(order => order.visible && order.order_type === 'buy')
+      };
+    }
+
     async function fetchMarketJson(path) {
       const url = buildMarketProxyUrl(path);
       logRequest('market proxy', url);
@@ -2818,23 +2846,18 @@ function runBootSequence() {
 
       marketState.loadPromise = (async () => {
         const data = await fetchMarketJson('/api/market/items');
-        const rawItems = Array.isArray(data?.items)
-          ? data.items
-          : (Array.isArray(data?.data?.items)
-            ? data.data.items
-            : (Array.isArray(data?.data) ? data.data : []));
-        const detectedPath = Array.isArray(data?.items)
-          ? 'items'
-          : (Array.isArray(data?.data?.items)
-            ? 'data.items'
-            : (Array.isArray(data?.data) ? 'data' : 'none'));
+        const rawItems = getCatalogItemsFromResponse(data);
+        const detectedPath = Array.isArray(data?.data?.payload?.items)
+          ? 'data.payload.items'
+          : (Array.isArray(data?.payload?.items)
+            ? 'payload.items'
+            : (Array.isArray(data?.items)
+              ? 'items'
+              : (Array.isArray(data) ? 'array' : 'none')));
         logJson('market catalog raw response', data);
         console.log('[orbiter] market catalog top-level response keys', Object.keys(data || {}));
         console.log('[orbiter] market catalog detected item array path', detectedPath);
         console.log('[orbiter] market catalog usable source rows', rawItems.length);
-        if (!Array.isArray(rawItems)) {
-          throw new Error('bad endpoint shape: expected search response items[]');
-        }
         marketState.catalog = rawItems
           .map(item => ({
             item_name: item.item_name || item.name || item?.i18n?.en?.name || item.title || item.slug || item.url_name,
@@ -2853,7 +2876,7 @@ function runBootSequence() {
         marketState.failed = false;
         marketState.error = null;
         const source = data?.source || marketState.activeSource;
-        setMarketStatus(`Catalog live: ${marketState.catalog.length} items (${source})`);
+        setMarketStatus(`catalog fetch ok | ${marketState.catalog.length} items (${source})`);
         return marketState.catalog;
       })();
 
@@ -3281,12 +3304,14 @@ function runBootSequence() {
     function renderFilteredMarketOrders() {
       const filteredSell = getMarketFilteredOrders('sell');
       const filteredBuy = getMarketFilteredOrders('buy');
+      const ingameSellCount = filteredSell.filter(order => orderStatus(order) === 'ingame').length;
       if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} of ${marketState.sellOrders.length}`;
       if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
 
       renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match these filters.', 'buy');
       renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match these filters.', 'sell');
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
+      setMarketStatus(`filtered ingame sellers count | ${ingameSellCount} of ${marketState.sellOrders.length}`);
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.
@@ -3344,10 +3369,14 @@ function runBootSequence() {
         // Always fetch fresh orders on selection/refresh.
         const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
         const ordersData = await fetchMarketJson(`/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`);
-        const sellOrders = (ordersData?.sellOrders || [])
-          .filter(order => order.visible !== false);
-        const buyOrders = (ordersData?.buyOrders || [])
-          .filter(order => order.visible !== false);
+        let sellOrders = (ordersData?.sellOrders || []).filter(order => order.visible !== false);
+        let buyOrders = (ordersData?.buyOrders || []).filter(order => order.visible !== false);
+        if (!sellOrders.length && !buyOrders.length) {
+          const rawOrders = getOrdersFromResponse(ordersData);
+          const normalized = normalizeOrdersFromRaw(rawOrders);
+          sellOrders = normalized.sellOrders;
+          buyOrders = normalized.buyOrders;
+        }
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
         const fetchedAt = ordersData?.fetchedAt ? new Date(ordersData.fetchedAt) : new Date();
@@ -3357,7 +3386,7 @@ function runBootSequence() {
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
         marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p | Best buy ${bestBuy ?? '-'}p${spread !== null ? ` | Spread ${spread}p` : ''} | ${marketState.activeSource}`;
         renderFilteredMarketOrders();
-        setMarketStatus(`Item live (${marketState.activeSource})`);
+        setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
       } catch (error) {
         const reason = error?.message === 'Market proxy required'
           ? 'Market proxy required'
@@ -3400,8 +3429,12 @@ function runBootSequence() {
       const results = marketMatches(query, 30);
       renderMarketResults(results, query);
       hideMarketAutocomplete();
-      if (results[0]) loadMarketItem(results[0]);
+      if (results[0]) {
+        setMarketStatus(`matched item found | ${results[0].item_name}`);
+        loadMarketItem(results[0]);
+      }
       if (!results.length) {
+        marketSelectedMeta.textContent = `No market item matched "${query}".`;
         setMarketStatus('Search failed: empty result');
         logClientError('market search results', new Error('No matches after normalized item-name search'), { query, normalized: marketNorm(query), catalogSize: marketState.catalog.length });
       }
