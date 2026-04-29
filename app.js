@@ -3191,8 +3191,19 @@ function runBootSequence() {
       }
       target.innerHTML = '';
       const fragment = document.createDocumentFragment();
+      const header = document.createElement('div');
+      header.className = 'market-order-head';
+      header.innerHTML = `
+        <span>User</span>
+        <span>Price</span>
+        <span>Rank</span>
+        <span>Qty</span>
+        <span>Platform</span>
+      `;
+      fragment.appendChild(header);
       orders.forEach(order => {
         const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
+        const platform = String(order.user?.platform || order.platform || 'pc').toUpperCase();
         const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
         const price = Number(order.platinum);
         const qty = order.quantity || 1;
@@ -3214,31 +3225,32 @@ function runBootSequence() {
             <span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span>
           </div>
           <div class="market-order-row__metric">
-            <span class="market-order-row__label">Qty</span>
-            <span class="market-order-row__value">${htmlEscape(qty)}</span>
-          </div>
-          <div class="market-order-row__metric">
             <span class="market-order-row__label">Rank</span>
             <span class="market-order-row__value">${htmlEscape(rep)}</span>
           </div>
-          <div class="market-order-row__copy">Action: Copy</div>
+          <div class="market-order-row__metric">
+            <span class="market-order-row__label">Qty</span>
+            <span class="market-order-row__value">${htmlEscape(qty)}</span>
+          </div>
+          <div class="market-order-row__platform">${htmlEscape(platform)}</div>
         `;
 
         row.addEventListener('click', async () => {
-          const copyEl = row.querySelector('.market-order-row__copy');
-          if (copyEl) copyEl.textContent = 'Copying...';
+          const priceEl = row.querySelector('.market-order-row__value--price');
+          const originalPriceText = priceEl ? priceEl.textContent : '';
+          if (priceEl) priceEl.textContent = '...';
           try {
             await copyMarketWhisper(row.dataset.action, row.dataset.user, row.dataset.price);
-            if (copyEl) copyEl.textContent = 'Copied ✓';
+            if (priceEl) priceEl.textContent = 'Copied ✓';
             row.classList.add('is-copied');
             window.setTimeout(() => {
               row.classList.remove('is-copied');
-              if (copyEl) copyEl.textContent = 'Copy Whisper';
+              if (priceEl) priceEl.textContent = originalPriceText;
             }, 900);
           } catch {
-            if (copyEl) copyEl.textContent = 'Copy failed';
+            if (priceEl) priceEl.textContent = 'Error';
             window.setTimeout(() => {
-              if (copyEl) copyEl.textContent = 'Copy Whisper';
+              if (priceEl) priceEl.textContent = originalPriceText;
             }, 900);
           }
         });
@@ -3625,33 +3637,12 @@ function runBootSequence() {
       if (!item) return;
       const itemKey = String(item.url_name || '');
       marketState.selectedItem = item;
-      marketState.sellOrders = [];
-      marketState.buyOrders = [];
       marketSelectedTitle.textContent = item.item_name;
       if (marketModalState.open) setMarketModalSide(marketModalState.side);
       marketSelectedMeta.textContent = 'Loading live orders and stats...';
       setMarketStatus('Loading ingame sellers...');
-      renderOrderBook(marketSellOrders, [], 'Loading ingame sellers...');
-      renderOrderBook(marketBuyOrders, [], 'Loading buy orders...');
-      renderMarketStats(null);
-      setMarketOrdersUpdated(null);
-      try {
-        const now = Date.now();
-        const cached = marketState.ordersCache.get(itemKey);
-        const canUseCache = reason !== 'refresh' && cached && (now - cached.timestamp) <= marketState.ordersCacheTtlMs;
-        let ordersData;
-        if (canUseCache) {
-          ordersData = cached.data;
-        } else {
-          if (marketState.ordersAbortController) marketState.ordersAbortController.abort();
-          marketState.ordersAbortController = new AbortController();
-          const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-          const path = reason === 'refresh'
-            ? `/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`
-            : `/api/market/orders/${encodeURIComponent(item.url_name)}`;
-          ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
-          marketState.ordersCache.set(itemKey, { data: ordersData, timestamp: Date.now() });
-        }
+
+      const applyOrdersData = (ordersData, sourceLabel = '') => {
         const directSell = pickFirstArray([
           ordersData?.sellOrders,
           ordersData?.payload?.sellOrders,
@@ -3669,11 +3660,6 @@ function runBootSequence() {
           const normalized = normalizeOrdersFromRaw(rawOrders);
           sellOrders = normalized.sellOrders;
           buyOrders = normalized.buyOrders;
-          console.log('[orbiter] market orders fallback parse', {
-            rawOrders: rawOrders.length,
-            sell: sellOrders.length,
-            buy: buyOrders.length
-          });
         }
         marketState.sellOrders = sellOrders;
         marketState.buyOrders = buyOrders;
@@ -3684,13 +3670,44 @@ function runBootSequence() {
         const spread = bestSell && bestBuy ? bestSell - bestBuy : null;
         marketSelectedMeta.textContent = `Best sell ${bestSell ?? '-'}p | Best buy ${bestBuy ?? '-'}p${spread !== null ? ` | Spread ${spread}p` : ''} | ${marketState.activeSource}`;
         if (!sellOrders.length && !buyOrders.length) {
-          setMarketStatus('orders fetch ok but parsed 0 sell/buy | check worker payload shape');
+          setMarketStatus(`orders ${sourceLabel || 'fetch'} ok but parsed 0 sell/buy`);
         } else {
-          setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
+          setMarketStatus(`orders ${sourceLabel || 'fetch'} ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
         }
         renderFilteredMarketOrders();
         setFavoriteToggleLabel();
         scheduleMarketAutoRefresh();
+      };
+
+      const now = Date.now();
+      const cached = marketState.ordersCache.get(itemKey);
+      const cacheAgeMs = cached ? now - cached.timestamp : Number.POSITIVE_INFINITY;
+      const hasCached = Boolean(cached?.data) && reason !== 'refresh';
+      const isCachedFresh = hasCached && cacheAgeMs <= marketState.ordersCacheTtlMs;
+
+      if (hasCached) {
+        applyOrdersData(cached.data, isCachedFresh ? 'cache' : 'cache-stale');
+        if (isCachedFresh) return;
+        setMarketStatus('Showing cached ingame sellers... refreshing...');
+      } else {
+        marketState.sellOrders = [];
+        marketState.buyOrders = [];
+        renderOrderBook(marketSellOrders, [], 'Loading ingame sellers...');
+        renderOrderBook(marketBuyOrders, [], 'Loading buy orders...');
+        renderMarketStats(null);
+        setMarketOrdersUpdated(null);
+      }
+      try {
+        if (marketState.ordersAbortController) marketState.ordersAbortController.abort();
+        marketState.ordersAbortController = new AbortController();
+        const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const path = reason === 'refresh'
+          ? `/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`
+          : `/api/market/orders/${encodeURIComponent(item.url_name)}`;
+        const ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
+        marketState.ordersCache.set(itemKey, { data: ordersData, timestamp: Date.now() });
+        if (marketState.selectedItem?.url_name !== item.url_name) return;
+        applyOrdersData(ordersData, 'fetch');
       } catch (error) {
         if (error?.name === 'AbortError') return;
         const httpStatus = Number(error?.httpStatus || 0);
