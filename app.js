@@ -2820,9 +2820,22 @@ function runBootSequence() {
     async function fetchMarketJson(path) {
       const url = buildMarketProxyUrl(path);
       logRequest('market proxy', url);
-      const response = await fetch(url, { cache: path.includes('/orders/') ? 'no-store' : 'force-cache' });
+      let response;
+      try {
+        response = await fetch(url, { cache: path.includes('/orders/') ? 'no-store' : 'force-cache' });
+      } catch (error) {
+        const wrapped = new Error(`market proxy network error from ${url}: ${error?.message || 'request failed'}`);
+        wrapped.fetchUrl = url;
+        wrapped.httpStatus = 0;
+        throw wrapped;
+      }
       logResponse('market proxy', response);
-      if (!response.ok) throw new Error(`market proxy HTTP ${response.status} from ${url}`);
+      if (!response.ok) {
+        const wrapped = new Error(`market proxy HTTP ${response.status} from ${url}`);
+        wrapped.fetchUrl = url;
+        wrapped.httpStatus = response.status;
+        throw wrapped;
+      }
       const json = await parseJsonResponse(response, 'market proxy');
       marketState.activeSource = json?.source || 'cloudflare-worker';
       return json;
@@ -2883,11 +2896,13 @@ function runBootSequence() {
       try {
         return await marketState.loadPromise;
       } catch (error) {
+        const httpStatus = Number(error?.httpStatus || 0);
+        const fetchUrl = error?.fetchUrl || buildMarketProxyUrl('/api/market/items');
         const reason = error?.message === 'Market proxy required'
           ? 'Market proxy required'
           : error?.message?.includes('catalog_parse_failed') || error?.message?.includes('catalog_zero_usable_items')
             ? (error?.message || 'catalog parse failed')
-          : error?.message?.includes('HTTP')
+          : error?.message?.includes('HTTP') || httpStatus > 0
             ? 'market proxy endpoint or HTTP error'
           : error?.message?.includes('parse error')
             ? 'parse error'
@@ -2896,7 +2911,11 @@ function runBootSequence() {
         marketState.loaded = false;
         marketState.failed = true;
         marketState.error = error;
-        setMarketStatus(reason === 'Market proxy required' ? reason : `Catalog failed: ${reason}`);
+        setMarketStatus(
+          reason === 'Market proxy required'
+            ? reason
+            : `Catalog failed: ${reason} | url=${fetchUrl} | status=${httpStatus || 'network'}`
+        );
         logClientError('market catalog fetch', error);
         throw error;
       } finally {
@@ -3388,21 +3407,27 @@ function runBootSequence() {
         renderFilteredMarketOrders();
         setMarketStatus(`orders fetch ok | sell ${sellOrders.length} | buy ${buyOrders.length}`);
       } catch (error) {
+        const httpStatus = Number(error?.httpStatus || 0);
+        const fetchUrl = error?.fetchUrl || buildMarketProxyUrl(`/api/market/orders/${encodeURIComponent(item?.url_name || '')}`);
         const reason = error?.message === 'Market proxy required'
           ? 'Market proxy required'
-          : error?.message?.includes('HTTP')
+          : error?.message?.includes('HTTP') || httpStatus > 0
             ? 'market proxy endpoint or HTTP error'
           : error?.message?.includes('parse error')
             ? 'parse error'
             : 'network/CORS/proxy blocked';
-        marketSelectedMeta.textContent = `Unable to load item data: ${reason}.`;
+        marketSelectedMeta.textContent = `Unable to load item data: ${reason}. url=${fetchUrl} status=${httpStatus || 'network'}`;
         marketState.sellOrders = [];
         marketState.buyOrders = [];
         renderOrderBook(marketSellOrders, [], 'Order fetch failed.');
         renderOrderBook(marketBuyOrders, [], 'Order fetch failed.');
         renderMarketStats(null);
         setMarketOrdersUpdated(null);
-        setMarketStatus(reason === 'Market proxy required' ? reason : `Item failed: ${reason}`);
+        setMarketStatus(
+          reason === 'Market proxy required'
+            ? reason
+            : `Item failed: ${reason} | url=${fetchUrl} | status=${httpStatus || 'network'}`
+        );
         logClientError('market item load', error, { item: item?.url_name || '' });
       }
     }
