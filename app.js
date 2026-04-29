@@ -25,7 +25,7 @@ const API_BASE_URL = normalizeApiBase(
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
   API_BASE
 );
-const MARKET_PROXY_URL = normalizeApiBase('https://orbitor-os.jrque.workers.dev');
+const MARKET_PROXY_URL = normalizeApiBase('https://orbiter-market-proxy.jrque.workers.dev');
 
 function buildApiUrl(path) {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;

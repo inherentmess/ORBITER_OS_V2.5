@@ -2,18 +2,10 @@ const WM_V1_BASE = 'https://api.warframe.market/v1';
 const WM_V2_BASE = 'https://api.warframe.market/v2';
 
 function corsHeaders(request) {
-  let origin = '*';
-  try {
-    if (request && request.headers && typeof request.headers.get === 'function') {
-      origin = request.headers.get('Origin') || '*';
-    }
-  } catch (error) {
-    console.error('[market-proxy] cors header read failed', error?.message || String(error));
-  }
   return {
-    'access-control-allow-origin': origin,
+    'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET, OPTIONS',
-    'access-control-allow-headers': 'content-type, accept',
+    'access-control-allow-headers': 'Content-Type',
     'access-control-max-age': '86400',
     'vary': 'Origin'
   };
@@ -260,18 +252,6 @@ async function handleSearch(request, url) {
 
 function normalizeOrdersFromV2(data = {}) {
   const top = data || {};
-  const numericObjectToArray = (value) => {
-    if (!value || Array.isArray(value) || typeof value !== 'object') return null;
-    const keys = Object.keys(value);
-    if (!keys.length) return null;
-    const allNumeric = keys.every(key => /^\d+$/.test(key));
-    if (!allNumeric) return null;
-    return keys
-      .map(key => Number(key))
-      .sort((a, b) => a - b)
-      .map(idx => value[String(idx)])
-      .filter(Boolean);
-  };
   const pickArray = (candidates) => candidates.find(Array.isArray) || [];
   const digArray = (node, path) => {
     try {
@@ -300,9 +280,7 @@ function normalizeOrdersFromV2(data = {}) {
   const genericOrders = [
     top?.data?.orders,
     top?.payload?.orders,
-    top?.orders,
-    Array.isArray(top?.data) ? top.data : null,
-    numericObjectToArray(top?.data)
+    top?.orders
   ].find(Array.isArray) || [];
 
   // Additional v2 variants observed in different payload envelopes.
@@ -446,12 +424,14 @@ async function handleOrders(requestUrl, itemUrlName) {
   if (resultV1.ok) {
     const payload = { payload: { orders: resultV1.orders } };
     const normalized = normalizeOrders(payload, normalizedName.replace(/_/g, ' '));
+    const orders = [...normalized.sellOrders, ...normalized.buyOrders];
     return json(requestUrl, {
       source: 'cloudflare-worker:v1',
       upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100`,
       item: normalizedName,
       fetchedAt: new Date().toISOString(),
       warning: resultV1.warning || null,
+      orders,
       sellOrders: normalized.sellOrders,
       buyOrders: normalized.buyOrders
     });
@@ -463,18 +443,21 @@ async function handleOrders(requestUrl, itemUrlName) {
       error: resultV1.error || resultV2.error,
       upstreamUrl: `${WM_V1_BASE}/items/${encodeURIComponent(normalizedName)}/orders?page=1&per_page=100 -> ${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
       source: 'cloudflare-worker',
+      orders: [],
       sellOrders: [],
       buyOrders: []
     }, Math.max(resultV1.status || 500, resultV2.status || 500));
   }
 
   const normalized = normalizeOrders(resultV2.ordersPayload, normalizedName.replace(/_/g, ' '));
+  const orders = [...normalized.sellOrders, ...normalized.buyOrders];
   return json(requestUrl, {
     source: 'cloudflare-worker:v2-fallback',
     upstreamUrl: `${WM_V2_BASE}/orders/item/${encodeURIComponent(normalizedName)}?page=1&per_page=100`,
     item: normalizedName,
     fetchedAt: new Date().toISOString(),
     warning: resultV2.warning || null,
+    orders,
     sellOrders: normalized.sellOrders,
     buyOrders: normalized.buyOrders
   });
@@ -534,15 +517,15 @@ export default {
       const path = url.pathname.replace(/\/+$/, '');
       console.log(`[market-proxy] incoming route: ${path} query=${url.search}`);
 
-      if (path === '/api/market/items') {
+      if (path === '/api/market/items' || path === '/market/items') {
         return handleItems(request);
       }
 
-      if (path === '/api/market/search') {
+      if (path === '/api/market/search' || path === '/market/search') {
         return handleSearch(request, url);
       }
 
-      const orderMatch = path.match(/^\/api\/market\/orders\/([^/]+)$/);
+      const orderMatch = path.match(/^\/(?:api\/)?market\/orders\/([^/]+)$/);
       if (orderMatch) {
         return handleOrders(url, orderMatch[1]);
       }
@@ -550,7 +533,14 @@ export default {
       return json(request, {
         ok: true,
         source: 'cloudflare-worker',
-        routes: ['/api/market/items', '/api/market/search?q=', '/api/market/orders/:item']
+        routes: [
+          '/api/market/items',
+          '/api/market/search?q=',
+          '/api/market/orders/:item',
+          '/market/items',
+          '/market/search?q=',
+          '/market/orders/:item'
+        ]
       });
     } catch (error) {
       console.error('[market-proxy] unhandled exception', {
