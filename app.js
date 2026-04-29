@@ -40,6 +40,17 @@ function buildMarketProxyUrl(path) {
   return `${MARKET_PROXY_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+function buildMarketOrdersPath(urlName, options = {}) {
+  const encoded = encodeURIComponent(String(urlName || '').trim());
+  const baseHasApiSuffix = /\/api$/i.test(MARKET_PROXY_URL || '');
+  const routeBase = baseHasApiSuffix ? '/market/orders/' : '/api/market/orders/';
+  const query = [];
+  if (options.refresh) query.push('refresh=1');
+  if (options.t) query.push(`t=${encodeURIComponent(String(options.t))}`);
+  const qs = query.length ? `?${query.join('&')}` : '';
+  return `${routeBase}${encoded}${qs}`;
+}
+
 function marketDebugLog(step, detail = '') {
   if (!MARKET_DEBUG) return;
   console.log(`[MARKET_DEBUG] ${step}${detail ? ` | ${detail}` : ''}`);
@@ -2987,7 +2998,8 @@ function runBootSequence() {
 
     async function fetchMarketJson(path, options = {}) {
       const withCacheBust = (() => {
-        if (!String(path).includes('/api/market/orders/')) return path;
+        const p = String(path);
+        if (!p.includes('/api/market/orders/') && !p.includes('/market/orders/')) return path;
         const sep = path.includes('?') ? '&' : '?';
         return `${path}${sep}_cb=${Date.now()}`;
       })();
@@ -3858,9 +3870,9 @@ function runBootSequence() {
         if (marketState.ordersAbortController) marketState.ordersAbortController.abort();
         marketState.ordersAbortController = new AbortController();
         const refreshTag = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const path = reason === 'refresh'
-          ? `/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`
-          : `/api/market/orders/${encodeURIComponent(item.url_name)}`;
+        const path = buildMarketOrdersPath(item.url_name, reason === 'refresh'
+          ? { refresh: true, t: refreshTag }
+          : {});
         console.log('[MARKET] exact orders URL called', buildMarketProxyUrl(path));
         const fetchStart = marketNow();
         const ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
@@ -3872,7 +3884,7 @@ function runBootSequence() {
       } catch (error) {
         if (error?.name === 'AbortError') return;
         const httpStatus = Number(error?.httpStatus || 0);
-        const fetchUrl = error?.fetchUrl || buildMarketProxyUrl(`/api/market/orders/${encodeURIComponent(item?.url_name || '')}`);
+        const fetchUrl = error?.fetchUrl || buildMarketProxyUrl(buildMarketOrdersPath(item?.url_name || ''));
         const reason = error?.message === 'Market proxy required'
           ? 'Market proxy required'
           : error?.message?.includes('HTTP') || httpStatus > 0
