@@ -156,6 +156,7 @@ const sectionAccordionState = {
   bodies: new Map(),
   toggles: new Map()
 };
+let mobileTrackerObserver = null;
 
 let currentSectionName = 'dashboard';
 const sectionNames = Array.from(sections)
@@ -433,6 +434,7 @@ function runBootSequence() {
         setupSectionAccordion();
         sections.forEach(section => section.classList.remove('hidden-panel'));
         sectionNames.forEach(name => setSectionOpen(name, name === currentSectionName));
+        setupMobileTrackerAutoLoad();
         return;
       }
 
@@ -449,6 +451,7 @@ function runBootSequence() {
         }
       });
       sections.forEach(section => section.classList.toggle('hidden-panel', section.id !== `section-${currentSectionName}`));
+      setupMobileTrackerAutoLoad();
     }
 
     function showSection(sectionName) {
@@ -507,6 +510,26 @@ function runBootSequence() {
       document.querySelectorAll('[data-searchable]').forEach(el => el.classList.remove('ring-1','ring-terminal'));
     }
 
+    function setupMobileTrackerAutoLoad() {
+      if (mobileTrackerObserver) {
+        mobileTrackerObserver.disconnect();
+        mobileTrackerObserver = null;
+      }
+      if (!sectionAccordionState.enabled || typeof IntersectionObserver !== 'function') return;
+      const trackerSection = document.getElementById('section-trackers');
+      if (!trackerSection) return;
+      mobileTrackerObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          // Mobile only: when Trackers enters view, make sure the panel opens and data is refreshed.
+          setSectionOpen('trackers', true);
+          maybeShowTrackerDragTooltip();
+          refreshDashboardTrackers();
+        });
+      }, { root: null, threshold: 0.15 });
+      mobileTrackerObserver.observe(trackerSection);
+    }
+
     setupSectionAccordion();
     hydrateApiLinks();
     if (accordionMql) {
@@ -515,6 +538,7 @@ function runBootSequence() {
       else if (typeof accordionMql.addListener === 'function') accordionMql.addListener(syncAccordionMode);
     }
     syncAccordionMode();
+    setupMobileTrackerAutoLoad();
     navButtons.forEach(btn => btn.addEventListener('click', () => {
       const targetSection = btn.dataset.section;
       if (targetSection !== 'trackers' && typeof closeTrackerModal === 'function') closeTrackerModal();
