@@ -162,9 +162,13 @@ function normalizeOrders(payload = {}, itemName = '') {
   for (const order of orders) {
     if (!order || order.visible === false) continue;
     const user = order.user || {};
+    const rawType = String(order.order_type || order.type || order.side || '').toLowerCase().trim();
+    const normalizedType = rawType === 'seller' ? 'sell'
+      : rawType === 'buyer' ? 'buy'
+        : rawType;
     const normalized = {
       id: order.id || '',
-      order_type: order.order_type || '',
+      order_type: normalizedType,
       platinum: Number(order.platinum),
       quantity: Number(order.quantity || 1),
       visible: order.visible !== false,
@@ -321,6 +325,19 @@ async function handleSearch(request, url) {
 
 function normalizeOrdersFromV2(data = {}) {
   const top = data || {};
+  if (Array.isArray(top?.data)) {
+    return {
+      payload: {
+        orders: top.data.map(order => {
+          const rawType = String(order?.order_type || order?.type || order?.side || '').toLowerCase().trim();
+          const mappedType = rawType === 'seller' ? 'sell'
+            : rawType === 'buyer' ? 'buy'
+              : rawType;
+          return { ...order, order_type: mappedType };
+        })
+      }
+    };
+  }
   const pickArray = (candidates) => candidates.find(Array.isArray) || [];
   const digArray = (node, path) => {
     try {
@@ -456,6 +473,7 @@ async function fetchAllV2Orders(normalizedName) {
   const maxPages = 30;
   const allSell = [];
   const allBuy = [];
+  const allGeneric = [];
   let firstError = null;
 
   for (let page = 1; page <= maxPages; page += 1) {
@@ -470,9 +488,25 @@ async function fetchAllV2Orders(normalizedName) {
     const combined = normalizedPage?.payload?.orders || [];
     const sellPage = combined.filter(order => String(order?.order_type || '').toLowerCase() === 'sell');
     const buyPage = combined.filter(order => String(order?.order_type || '').toLowerCase() === 'buy');
+    const genericPage = combined.filter(order => {
+      const type = String(order?.order_type || '').toLowerCase();
+      return type === 'sell' || type === 'buy';
+    });
     allSell.push(...sellPage);
     allBuy.push(...buyPage);
+    allGeneric.push(...genericPage);
+    if (Array.isArray(result.data?.data)) break;
     if (sellPage.length < perPage && buyPage.length < perPage) break;
+  }
+
+  const uniqueGeneric = uniqueOrdersById(allGeneric);
+  if (uniqueGeneric.length) {
+    return {
+      ok: true,
+      source: 'cloudflare-worker:v2-fallback',
+      warning: firstError || null,
+      ordersPayload: { payload: { orders: uniqueGeneric } }
+    };
   }
 
   return {

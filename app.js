@@ -42,8 +42,7 @@ function buildMarketProxyUrl(path) {
 
 function buildMarketOrdersPath(urlName, options = {}) {
   const encoded = encodeURIComponent(String(urlName || '').trim());
-  const baseHasApiSuffix = /\/api$/i.test(MARKET_PROXY_URL || '');
-  const routeBase = baseHasApiSuffix ? '/market/orders/' : '/api/market/orders/';
+  const routeBase = '/api/market/orders/';
   const query = [];
   if (options.refresh) query.push('refresh=1');
   if (options.t) query.push(`t=${encodeURIComponent(String(options.t))}`);
@@ -2948,11 +2947,8 @@ function runBootSequence() {
 
     function getOrdersFromResponse(data) {
       return pickFirstArray([
-        data?.orders,
         data?.payload?.orders,
-        data?.payload?.payload?.orders,
-        data?.data?.orders,
-        data?.data?.payload?.orders,
+        data?.orders,
         Array.isArray(data) ? data : null
       ]);
     }
@@ -3435,17 +3431,19 @@ function runBootSequence() {
     }
 
     function applyStatusFilter(orders, statusValue) {
-      void statusValue;
-      return orders.filter(order => getOrderStatus(order) === 'ingame');
+      const status = String(statusValue || 'all').toLowerCase().trim();
+      if (status === 'all') return orders;
+      return orders.filter(order => getOrderStatus(order) === status);
     }
 
     function filterOrders(orders, activeTab, filters = {}) {
       const tab = activeTab === 'buy' ? 'buy' : 'sell';
       const minInput = filters.minInput || null;
       const maxInput = filters.maxInput || null;
+      const status = filters.statusValue || 'all';
       const tabOrders = (orders || []).filter(order => order?.visible !== false && getOrderType(order) === tab);
-      const ingame = applyStatusFilter(tabOrders, 'ingame');
-      return applyPlatFilter(ingame, minInput, maxInput);
+      const statusFiltered = applyStatusFilter(tabOrders, status);
+      return applyPlatFilter(statusFiltered, minInput, maxInput);
     }
 
     function applyPriceSort(orders, sortValue, defaultValue) {
@@ -3500,10 +3498,10 @@ function runBootSequence() {
       const sideType = isBuy ? 'buy' : 'sell';
       const sellStage = raw.filter(order => order?.visible !== false && getOrderType(order) === 'sell');
       const buyStage = raw.filter(order => order?.visible !== false && getOrderType(order) === 'buy');
-      const filteredByTabAndIngame = filterOrders(raw, sideType, { minInput: null, maxInput: null });
+      const filteredByTabAndStatus = filterOrders(raw, sideType, { minInput: null, maxInput: null, statusValue: status });
       const typeStage = sideType === 'buy' ? buyStage : sellStage;
-      const ingameStage = filteredByTabAndIngame;
-      const statusStage = ingameStage;
+      const ingameStage = filterOrders(raw, sideType, { minInput: null, maxInput: null, statusValue: 'ingame' });
+      const statusStage = filteredByTabAndStatus;
       const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
       const regionPlatformStage = filteredByPlat;
       const debug = {
@@ -3672,8 +3670,8 @@ function runBootSequence() {
       const filteredSell = sellResult.orders;
       const filteredBuy = buyResult.orders;
       marketDebugLog('filter', `sell=${filteredSell.length}/${marketState.sellOrders.length} buy=${filteredBuy.length}/${marketState.buyOrders.length} duration=${(marketNow() - filterStart).toFixed(1)}ms`);
-      if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} ingame sellers of ${marketState.sellOrders.length} total orders`;
-      if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} ingame buyers of ${marketState.buyOrders.length} total orders`;
+      if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} of ${marketState.sellOrders.length}`;
+      if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
       const activeDebug = marketUi.activeSide === 'buy' ? buyResult.debug : sellResult.debug;
 
       const cheapestOnline = applyPriceSort(
@@ -3767,32 +3765,19 @@ function runBootSequence() {
 
       const applyOrdersData = (ordersData, sourceLabel = '') => {
         console.log('[MARKET] raw orders response JSON', ordersData);
-        const rawOrders = ordersData?.payload?.orders ||
-          ordersData?.orders ||
-          ordersData?.payload?.order ||
-          getOrdersFromResponse(ordersData) ||
-          [];
-        const uniqPlatform = [...new Set(rawOrders.map(o => String(o?.platform || o?.user?.platform || '').toLowerCase().trim()))];
-        const uniqPlatinum = [...new Set(rawOrders.map(o => String(o?.platinum ?? o?.price ?? '')))].slice(0, 20);
-        const directSell = pickFirstArray([
-          ordersData?.sellOrders,
-          ordersData?.payload?.sellOrders,
-          ordersData?.data?.payload?.sellOrders
-        ]);
-        const directBuy = pickFirstArray([
-          ordersData?.buyOrders,
-          ordersData?.payload?.buyOrders,
-          ordersData?.data?.payload?.buyOrders
-        ]);
-        const combinedDirect = [...directSell, ...directBuy];
-        const sourceOrders = rawOrders.length ? rawOrders : combinedDirect;
+        const rawOrders = ordersData?.payload?.orders || ordersData?.orders || [];
+        const normalized = normalizeOrdersFromRaw(rawOrders);
+        const sourceOrders = [...normalized.sellOrders, ...normalized.buyOrders];
+        // Store raw orders before any status/min/max filtering.
         marketState.rawOrders = sourceOrders;
-        const sellers = marketState.rawOrders.filter(o => o?.order_type === 'sell');
-        const ingameSellers = sellers.filter(o => o?.user?.status === 'ingame');
-        const buyers = marketState.rawOrders.filter(o => o?.order_type === 'buy');
-        const ingameBuyers = buyers.filter(o => o?.user?.status === 'ingame');
-        const sellOrders = ingameSellers;
-        const buyOrders = ingameBuyers;
+        const uniqPlatform = [...new Set(sourceOrders.map(o => String(o?.platform || o?.user?.platform || '').toLowerCase().trim()))];
+        const uniqPlatinum = [...new Set(sourceOrders.map(o => String(o?.platinum ?? o?.price ?? '')))].slice(0, 20);
+        const sellers = marketState.rawOrders.filter(o => getOrderType(o) === 'sell');
+        const ingameSellers = sellers.filter(o => getOrderStatus(o) === 'ingame');
+        const buyers = marketState.rawOrders.filter(o => getOrderType(o) === 'buy');
+        const ingameBuyers = buyers.filter(o => getOrderStatus(o) === 'ingame');
+        const sellOrders = sellers;
+        const buyOrders = buyers;
         const orderTypeCounts = marketState.rawOrders.reduce((acc, order) => {
           const type = String(order?.order_type || '').toLowerCase().trim() || '(empty)';
           acc[type] = (acc[type] || 0) + 1;
