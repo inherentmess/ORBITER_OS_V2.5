@@ -2939,7 +2939,9 @@ function runBootSequence() {
       return pickFirstArray([
         data?.orders,
         data?.payload?.orders,
+        data?.payload?.payload?.orders,
         data?.data?.orders,
+        data?.data?.payload?.orders,
         Array.isArray(data) ? data : null
       ]);
     }
@@ -3162,6 +3164,8 @@ function runBootSequence() {
             logClientError('market suggestion select', new Error('Selected suggestion not found'), { url: btn.dataset.url || '' });
             return;
           }
+          console.log('[MARKET] selected item name', item.item_name);
+          console.log('[MARKET] selected item url_name', item.url_name);
           marketItemSearch.value = item.item_name;
           hideMarketAutocomplete();
           renderMarketResults([item], item.item_name);
@@ -3203,6 +3207,8 @@ function runBootSequence() {
             logClientError('market result select', new Error('Selected result not found'), { url: btn.dataset.url || '' });
             return;
           }
+          console.log('[MARKET] selected item name', item.item_name);
+          console.log('[MARKET] selected item url_name', item.url_name);
           marketItemSearch.value = item.item_name;
           loadMarketItem(item);
         });
@@ -3627,6 +3633,8 @@ function runBootSequence() {
     }
 
     function openMarketModal(side) {
+      console.log('[MARKET] View Orders selected item name', marketState.selectedItem?.item_name || '(unknown)');
+      console.log('[MARKET] View Orders selected item url_name', marketState.selectedItem?.url_name || '(empty)');
       setMarketModalSide(side);
       // Keep modal controls in sync with the small panel settings.
       syncMarketModalControlsFromPanel();
@@ -3730,6 +3738,8 @@ function runBootSequence() {
       if (!item) return;
       const loadStart = marketNow();
       const itemKey = String(item.url_name || '');
+      console.log('[MARKET] loadMarketItem selected item name', item.item_name || '(unknown)');
+      console.log('[MARKET] loadMarketItem selected item url_name', itemKey || '(empty)');
       marketState.selectedItem = item;
       marketSelectedTitle.textContent = item.item_name;
       if (marketModalState.open) setMarketModalSide(marketModalState.side);
@@ -3737,6 +3747,7 @@ function runBootSequence() {
       setMarketStatus('Loading ingame sellers...');
 
       const applyOrdersData = (ordersData, sourceLabel = '') => {
+        console.log('[MARKET] raw orders response JSON', ordersData);
         const rawOrders = getOrdersFromResponse(ordersData);
         const uniqPlatform = [...new Set(rawOrders.map(o => String(o?.platform || o?.user?.platform || '').toLowerCase().trim()))];
         const uniqPlatinum = [...new Set(rawOrders.map(o => String(o?.platinum ?? o?.price ?? '')))].slice(0, 20);
@@ -3783,6 +3794,9 @@ function runBootSequence() {
         console.log('[MARKET] counts by user.status', statusCounts);
         console.log('[MARKET] count of sell + ingame orders', sellIngameCount);
         console.log('[MARKET] first 5 sell orders with user.status', firstFiveSell);
+        console.log('[MARKET] normalized rawOrders.length', normalizedRows.length);
+        console.log('[MARKET] sell orders count', sellOrders.length);
+        console.log('[MARKET] ingame sell orders count', sellIngameCount);
         if (MARKET_DEBUG) {
           console.log('[MARKET_DEBUG] market raw orders first 3', sourceOrders.slice(0, 3));
           console.log('[MARKET_DEBUG] market raw unique platform', uniqPlatform);
@@ -3836,6 +3850,7 @@ function runBootSequence() {
         const path = reason === 'refresh'
           ? `/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`
           : `/api/market/orders/${encodeURIComponent(item.url_name)}`;
+        console.log('[MARKET] exact orders URL called', buildMarketProxyUrl(path));
         const fetchStart = marketNow();
         const ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
         marketDebugLog('orders-fetch', `item=${itemKey} path=${path} duration=${(marketNow() - fetchStart).toFixed(1)}ms`);
@@ -4004,6 +4019,8 @@ function runBootSequence() {
           setMarketStatus('Refresh failed: no item selected');
           return;
         }
+        console.log('[MARKET] Refresh Orders selected item name', marketState.selectedItem?.item_name || '(unknown)');
+        console.log('[MARKET] Refresh Orders selected item url_name', marketState.selectedItem?.url_name || '(empty)');
         setMarketStatus('Refreshing orders...');
         loadMarketItem(marketState.selectedItem, { reason: 'refresh' }).catch(error => logClientError('market refresh orders', error));
       });
