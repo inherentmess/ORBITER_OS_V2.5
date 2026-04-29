@@ -188,8 +188,7 @@ function runBootSequence() {
     return;
   }
   if (!overlay || !linesEl) return;
-  if (sessionStorage.getItem('orbiter_boot_closed') === '1' || isMobileOrTouch()) {
-    sessionStorage.setItem('orbiter_boot_closed', '1');
+  if (sessionStorage.getItem('orbiter_boot_closed') === '1') {
     overlay.classList.add('hidden');
     overlay.remove();
     return;
@@ -233,11 +232,9 @@ function runBootSequence() {
   if (continueBtn) continueBtn.addEventListener('click', closeOverlay);
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
   const closeFromTouch = (e) => {
-    if (!isMobileOrTouch()) return;
     e.preventDefault();
     closeOverlay();
   };
-  overlay.addEventListener('click', closeFromTouch);
   overlay.addEventListener('touchstart', closeFromTouch, { passive: false });
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -2743,11 +2740,6 @@ function runBootSequence() {
       failed: false,
       error: null,
       activeSource: 'direct',
-<<<<<<< HEAD
-=======
-      catalogFetchedAt: 0,
-      catalogCacheTtlMs: 10 * 60 * 1000,
->>>>>>> 30addf1 (Initial commit)
       ordersUpdatedAt: null,
       ordersUpdatedSource: '',
       suggestions: [],
@@ -2763,11 +2755,7 @@ function runBootSequence() {
       autoRefreshIntervalMs: Number(localStorage.getItem(MARKET_AUTO_REFRESH_INTERVAL_KEY) || 45000) || 45000,
       autoRefreshTimer: 0,
       ordersCache: new Map(),
-<<<<<<< HEAD
       ordersCacheTtlMs: 25000,
-=======
-      ordersCacheTtlMs: 30000,
->>>>>>> 30addf1 (Initial commit)
       ordersAbortController: null,
       inputDebounceTimer: 0
     };
@@ -3005,12 +2993,7 @@ function runBootSequence() {
         setMarketStatus('Market proxy required');
         throw marketState.error;
       }
-<<<<<<< HEAD
       if (marketState.loaded) return marketState.catalog;
-=======
-      const now = Date.now();
-      if (marketState.loaded && (now - (marketState.catalogFetchedAt || 0)) <= marketState.catalogCacheTtlMs) return marketState.catalog;
->>>>>>> 30addf1 (Initial commit)
       if (marketState.loading && marketState.loadPromise) return marketState.loadPromise;
       marketState.loading = true;
       marketState.failed = false;
@@ -3046,10 +3029,6 @@ function runBootSequence() {
           throw new Error(`empty result: market item dataset returned zero usable items (${diag.detectedPath || detectedPath || 'unknown path'})`);
         }
         marketState.loaded = true;
-<<<<<<< HEAD
-=======
-        marketState.catalogFetchedAt = Date.now();
->>>>>>> 30addf1 (Initial commit)
         marketState.failed = false;
         marketState.error = null;
         const source = data?.source || marketState.activeSource;
@@ -3203,10 +3182,6 @@ function runBootSequence() {
     function renderOrderBook(target, orders, emptyText, action, options = {}) {
       if (!target) return;
       const cheapestId = options?.cheapestId || '';
-<<<<<<< HEAD
-=======
-      target.classList.add('market-order-list');
->>>>>>> 30addf1 (Initial commit)
       if (!orders.length) {
         target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
         return;
@@ -3215,7 +3190,6 @@ function runBootSequence() {
       const fragment = document.createDocumentFragment();
       const header = document.createElement('div');
       header.className = 'market-order-head';
-<<<<<<< HEAD
       header.innerHTML = `
         <span>Price</span>
         <span>User</span>
@@ -3223,9 +3197,6 @@ function runBootSequence() {
         <span>Rank</span>
         <span>Platform</span>
       `;
-=======
-      header.innerHTML = '<span>Price</span><span>User</span><span>Qty</span><span>Rank</span><span>Platform</span><span>Copy</span>';
->>>>>>> 30addf1 (Initial commit)
       fragment.appendChild(header);
       orders.forEach(order => {
         const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
@@ -3243,7 +3214,6 @@ function runBootSequence() {
         row.dataset.price = String(price);
 
         row.innerHTML = `
-<<<<<<< HEAD
           <div class="market-order-row__metric market-order-row__metric--price">
             <span class="market-order-row__label">Price</span>
             <span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span>
@@ -3261,14 +3231,6 @@ function runBootSequence() {
             <span class="market-order-row__value">${htmlEscape(rep)}</span>
           </div>
           <div class="market-order-row__platform">${htmlEscape(platform)}</div>
-=======
-          <div class="market-order-row__left">
-            <span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span>
-            <div class="market-order-row__meta">${htmlEscape(username)} • qty ${htmlEscape(qty)} • rank ${htmlEscape(rep)} • ${htmlEscape(platform)}</div>
-            <button type="button" class="market-order-row__copy-btn">Copy Whisper</button>
-          </div>
-          <div class="market-order-row__right">${cheapestId && cheapestId === uid ? '<span class="market-order-row__chip">Best</span>' : ''}</div>
->>>>>>> 30addf1 (Initial commit)
         `;
 
         const doCopy = async () => {
@@ -3306,84 +3268,6 @@ function runBootSequence() {
       target.appendChild(fragment);
     }
 
-<<<<<<< HEAD
-=======
-    // Final row renderer: full-width market-style columns with row + button copy actions.
-    function renderOrderBook(target, orders, emptyText, action, options = {}) {
-      if (!target) return;
-      const cheapestId = options?.cheapestId || '';
-      target.classList.add('market-order-list');
-      if (!orders.length) {
-        target.innerHTML = `<div class="border border-terminal/25 p-2 text-xs">${emptyText}</div>`;
-        return;
-      }
-      target.innerHTML = '';
-      const fragment = document.createDocumentFragment();
-      const header = document.createElement('div');
-      header.className = 'market-order-head';
-      header.innerHTML = '<span>Price</span><span>User</span><span>Qty</span><span>Rank</span><span>Platform</span><span>Copy</span>';
-      fragment.appendChild(header);
-
-      orders.forEach(order => {
-        const username = order.user?.ingameName || order.user?.ingame_name || order.user || 'Unknown';
-        const platform = String(order.user?.platform || order.platform || 'pc').toUpperCase();
-        const rep = order.user?.reputation ?? order.reputation ?? 'n/a';
-        const price = Number(order.platinum);
-        const qty = order.quantity || 1;
-        const uid = `${username}|${price}|${qty}`;
-
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = `market-order-row${cheapestId && cheapestId === uid ? ' market-order-row--best' : ''}`;
-        row.dataset.action = String(action || '');
-        row.dataset.user = String(username);
-        row.dataset.price = String(price);
-        row.innerHTML = `
-          <div class="market-order-row__col market-order-row__col--price"><span class="market-order-row__value market-order-row__value--price">${htmlEscape(price)}p</span></div>
-          <div class="market-order-row__col market-order-row__col--user"><span class="market-order-row__name">${htmlEscape(username)}</span>${cheapestId && cheapestId === uid ? '<span class="market-order-row__chip">Best</span>' : ''}</div>
-          <div class="market-order-row__col market-order-row__col--qty">${htmlEscape(qty)}</div>
-          <div class="market-order-row__col market-order-row__col--rank">${htmlEscape(rep)}</div>
-          <div class="market-order-row__col market-order-row__col--platform">${htmlEscape(platform)}</div>
-          <div class="market-order-row__col market-order-row__col--copy"><button type="button" class="market-order-row__copy-btn">Copy Whisper</button></div>
-        `;
-
-        const doCopy = async () => {
-          const priceEl = row.querySelector('.market-order-row__value--price');
-          const originalPriceText = priceEl ? priceEl.textContent : '';
-          if (priceEl) priceEl.textContent = '...';
-          try {
-            await copyMarketWhisper(row.dataset.action, row.dataset.user, row.dataset.price);
-            if (priceEl) priceEl.textContent = 'Copied ✓';
-            row.classList.add('is-copied');
-            window.setTimeout(() => {
-              row.classList.remove('is-copied');
-              if (priceEl) priceEl.textContent = originalPriceText;
-            }, 900);
-          } catch {
-            if (priceEl) priceEl.textContent = 'Error';
-            window.setTimeout(() => {
-              if (priceEl) priceEl.textContent = originalPriceText;
-            }, 900);
-          }
-        };
-
-        row.addEventListener('click', doCopy);
-        const copyBtn = row.querySelector('.market-order-row__copy-btn');
-        if (copyBtn) {
-          copyBtn.addEventListener('click', async (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            await doCopy();
-          });
-        }
-
-        fragment.appendChild(row);
-      });
-
-      target.appendChild(fragment);
-    }
-
->>>>>>> 30addf1 (Initial commit)
     function marketWhisper(action, username, price) {
       const itemName = (marketState.selectedItem?.item_name || '').replace(/"/g, '\\"');
       const verb = action === 'buy' ? 'buy' : 'sell';
@@ -3675,12 +3559,6 @@ function runBootSequence() {
       setMarketModalSide(side);
       // Keep modal controls in sync with the small panel settings.
       syncMarketModalControlsFromPanel();
-<<<<<<< HEAD
-=======
-      if (marketState.selectedItem && !marketState.sellOrders.length && !marketState.buyOrders.length) {
-        loadMarketItem(marketState.selectedItem, { reason: 'select' }).catch(error => logClientError('market modal prefetch', error));
-      }
->>>>>>> 30addf1 (Initial commit)
       setMarketModalOpen(true);
       renderMarketModalList();
     }
@@ -3765,12 +3643,7 @@ function runBootSequence() {
 
     async function loadMarketItem(item, { reason = 'select' } = {}) {
       if (!item) return;
-<<<<<<< HEAD
       const itemKey = String(item.url_name || '');
-=======
-      const baseKey = String(item.url_name || '');
-      const itemKey = `${baseKey}::all`;
->>>>>>> 30addf1 (Initial commit)
       marketState.selectedItem = item;
       marketSelectedTitle.textContent = item.item_name;
       if (marketModalState.open) setMarketModalSide(marketModalState.side);
@@ -3840,14 +3713,7 @@ function runBootSequence() {
           ? `/api/market/orders/${encodeURIComponent(item.url_name)}?refresh=1&t=${refreshTag}`
           : `/api/market/orders/${encodeURIComponent(item.url_name)}`;
         const ordersData = await fetchMarketJson(path, { signal: marketState.ordersAbortController.signal });
-<<<<<<< HEAD
         marketState.ordersCache.set(itemKey, { data: ordersData, timestamp: Date.now() });
-=======
-        const stamped = { data: ordersData, timestamp: Date.now() };
-        marketState.ordersCache.set(itemKey, stamped);
-        marketState.ordersCache.set(`${baseKey}::sell`, stamped);
-        marketState.ordersCache.set(`${baseKey}::buy`, stamped);
->>>>>>> 30addf1 (Initial commit)
         if (marketState.selectedItem?.url_name !== item.url_name) return;
         applyOrdersData(ordersData, 'fetch');
       } catch (error) {
@@ -4356,8 +4222,4 @@ function runBootSequence() {
     document.querySelectorAll('[data-subtabs]').forEach(group => {
       const firstBtn = group.querySelector('.subtab-btn');
       if (firstBtn) firstBtn.click();
-<<<<<<< HEAD
     });
-=======
-    });
->>>>>>> 30addf1 (Initial commit)
