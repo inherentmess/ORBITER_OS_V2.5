@@ -259,11 +259,42 @@ async function handleSearch(request, url) {
 }
 
 function normalizeOrdersFromV2(data = {}) {
+  const top = data || {};
+  const sell = [
+    top?.data?.sell,
+    top?.data?.sell_orders,
+    top?.payload?.sell,
+    top?.payload?.sell_orders,
+    top?.sell,
+    top?.sell_orders
+  ].find(Array.isArray) || [];
+  const buy = [
+    top?.data?.buy,
+    top?.data?.buy_orders,
+    top?.payload?.buy,
+    top?.payload?.buy_orders,
+    top?.buy,
+    top?.buy_orders
+  ].find(Array.isArray) || [];
+  const genericOrders = [
+    top?.data?.orders,
+    top?.payload?.orders,
+    top?.orders
+  ].find(Array.isArray) || [];
+
+  const ordersFromGeneric = genericOrders.map(order => {
+    const side = String(order?.order_type || order?.orderType || order?.type || order?.side || '').toLowerCase();
+    if (side === 'seller') return { ...order, order_type: 'sell' };
+    if (side === 'buyer') return { ...order, order_type: 'buy' };
+    return { ...order, order_type: side };
+  });
+
   return {
     payload: {
       orders: [
-        ...((data?.data?.sell || []).map(order => ({ ...order, order_type: 'sell' }))),
-        ...((data?.data?.buy || []).map(order => ({ ...order, order_type: 'buy' })))
+        ...sell.map(order => ({ ...order, order_type: 'sell' })),
+        ...buy.map(order => ({ ...order, order_type: 'buy' })),
+        ...ordersFromGeneric
       ]
     }
   };
@@ -323,8 +354,10 @@ async function fetchAllV2Orders(normalizedName) {
       firstError = firstError || result.error;
       break;
     }
-    const sellPage = result.data?.data?.sell || [];
-    const buyPage = result.data?.data?.buy || [];
+    const normalizedPage = normalizeOrdersFromV2(result.data);
+    const combined = normalizedPage?.payload?.orders || [];
+    const sellPage = combined.filter(order => String(order?.order_type || '').toLowerCase() === 'sell');
+    const buyPage = combined.filter(order => String(order?.order_type || '').toLowerCase() === 'buy');
     allSell.push(...sellPage);
     allBuy.push(...buyPage);
     if (sellPage.length < perPage && buyPage.length < perPage) break;
