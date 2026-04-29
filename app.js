@@ -194,6 +194,11 @@ function runBootSequence() {
     return;
   }
 
+  // First-load/session-visible reset: ensure the overlay is shown and starts clean.
+  overlay.classList.remove('hidden', 'closing', 'opening');
+  linesEl.textContent = '';
+  if (hintEl && hintEl.firstChild) hintEl.firstChild.textContent = '';
+
   const lines = [
     '[LINK_ESTABLISHED]  Cephalon_Link online',
     '[MOUNT]  archives://tenno',
@@ -212,6 +217,7 @@ function runBootSequence() {
     sessionStorage.setItem('orbiter_boot_closed', '1');
 
     // Animate out via CSS, then remove only after it completes.
+    overlay.classList.remove('opening');
     overlay.classList.add('closing');
     const finalize = () => {
       overlay.removeEventListener('animationend', finalize);
@@ -231,11 +237,12 @@ function runBootSequence() {
   // Only explicit interactions should close the welcome screen.
   if (continueBtn) continueBtn.addEventListener('click', closeOverlay);
   if (closeBtn) closeBtn.addEventListener('click', closeOverlay);
-  const closeFromTouch = (e) => {
-    e.preventDefault();
+  const closeFromTap = (e) => {
+    if (e.type === 'touchstart') e.preventDefault();
     closeOverlay();
   };
-  overlay.addEventListener('touchstart', closeFromTouch, { passive: false });
+  overlay.addEventListener('touchstart', closeFromTap, { passive: false });
+  overlay.addEventListener('click', closeFromTap);
   overlay.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
