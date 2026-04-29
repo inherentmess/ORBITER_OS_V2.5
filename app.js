@@ -3132,6 +3132,7 @@ function runBootSequence() {
 
     function applyPlatFilter(orders, minInput, maxInput) {
       const { min, max } = getPlatFilter(minInput, maxInput);
+      if (min === null && max === null) return orders;
       return orders.filter(order => {
         const price = Number(order.platinum);
         if (!Number.isFinite(price)) return false;
@@ -3149,6 +3150,12 @@ function runBootSequence() {
     function applyStatusFilter(orders, statusValue) {
       const value = String(statusValue || 'all').toLowerCase();
       if (value === 'all') return orders;
+      if (value === 'ingame') {
+        return orders.filter(order => {
+          const status = orderStatus(order);
+          return status === 'ingame' || status === 'online';
+        });
+      }
       return orders.filter(order => orderStatus(order) === value);
     }
 
@@ -3192,23 +3199,56 @@ function runBootSequence() {
       });
     }
 
-    function getMarketFilteredOrders(side) {
+    function getMarketFilteredOrdersWithDebug(side) {
       const isBuy = side === 'buy';
       const status = isBuy ? (marketBuyStatus?.value || 'all') : (marketSellStatus?.value || 'all');
       const sort = isBuy ? (marketBuySort?.value || 'price_desc') : (marketSellSort?.value || 'price_asc');
       const minInput = isBuy ? marketBuyMin : marketSellMin;
       const maxInput = isBuy ? marketBuyMax : marketSellMax;
       const raw = isBuy ? marketState.buyOrders : marketState.sellOrders;
-      const filteredByPlat = applyPlatFilter(raw, minInput, maxInput);
+      const sellStage = raw.filter(order => order?.visible !== false);
+      const ingameUsersStage = sellStage.filter(order => {
+        const s = orderStatus(order);
+        return s === 'ingame' || s === 'online';
+      });
+      const statusStage = applyStatusFilter(sellStage, status);
+      const filteredByPlat = applyPlatFilter(statusStage, minInput, maxInput);
+      const regionPlatformStage = filteredByPlat;
+      const debug = {
+        raw: raw.length,
+        sell: sellStage.length,
+        ingameUsers: ingameUsersStage.length,
+        status: statusStage.length,
+        price: filteredByPlat.length,
+        regionPlatform: regionPlatformStage.length
+      };
+      console.log('[orbiter] market filter counts', {
+        side,
+        status,
+        min: minInput?.value ?? '',
+        max: maxInput?.value ?? '',
+        raw: debug.raw,
+        sell: debug.sell,
+        ingameUsers: debug.ingameUsers,
+        statusFiltered: debug.status,
+        priceFiltered: debug.price,
+        regionPlatformFiltered: debug.regionPlatform
+      });
       if (String(status).toLowerCase() === 'all') {
         // Show ingame first (then online/offline), while still sorting by price within each status group.
-        return applyStatusThenPriceSort(filteredByPlat, sort, isBuy ? 'price_desc' : 'price_asc');
+        return {
+          orders: applyStatusThenPriceSort(regionPlatformStage, sort, isBuy ? 'price_desc' : 'price_asc'),
+          debug
+        };
       }
-      return applyPriceSort(
-        applyStatusFilter(filteredByPlat, status),
-        sort,
-        isBuy ? 'price_desc' : 'price_asc'
-      );
+      return {
+        orders: applyPriceSort(regionPlatformStage, sort, isBuy ? 'price_desc' : 'price_asc'),
+        debug
+      };
+    }
+
+    function getMarketFilteredOrders(side) {
+      return getMarketFilteredOrdersWithDebug(side).orders;
     }
 
     function setMarketActiveSide(side) {
@@ -3297,7 +3337,7 @@ function runBootSequence() {
         if (marketModalCount) marketModalCount.textContent = 'Showing 0 of 0';
         return;
       }
-      const orders = getMarketFilteredOrders(marketModalState.side);
+      const { orders } = getMarketFilteredOrdersWithDebug(marketModalState.side);
       const total = marketModalState.side === 'buy' ? marketState.buyOrders.length : marketState.sellOrders.length;
       if (marketModalCount) marketModalCount.textContent = `Showing ${orders.length} of ${total}`;
       renderOrderBook(
@@ -3321,16 +3361,17 @@ function runBootSequence() {
     }
 
     function renderFilteredMarketOrders() {
-      const filteredSell = getMarketFilteredOrders('sell');
-      const filteredBuy = getMarketFilteredOrders('buy');
-      const ingameSellCount = filteredSell.filter(order => orderStatus(order) === 'ingame').length;
+      const sellResult = getMarketFilteredOrdersWithDebug('sell');
+      const buyResult = getMarketFilteredOrdersWithDebug('buy');
+      const filteredSell = sellResult.orders;
+      const filteredBuy = buyResult.orders;
       if (marketSellCount) marketSellCount.textContent = `Showing ${filteredSell.length} of ${marketState.sellOrders.length}`;
       if (marketBuyCount) marketBuyCount.textContent = `Showing ${filteredBuy.length} of ${marketState.buyOrders.length}`;
 
       renderOrderBook(marketSellOrders, filteredSell, 'No sell orders match these filters.', 'buy');
       renderOrderBook(marketBuyOrders, filteredBuy, 'No buy orders match these filters.', 'sell');
       renderMarketStats(getOrderStats(filteredSell), 'Sell');
-      setMarketStatus(`filtered ingame sellers count | ${ingameSellCount} of ${marketState.sellOrders.length}`);
+      setMarketStatus(`Raw ${sellResult.debug.raw} → Sell ${sellResult.debug.sell} → Status ${sellResult.debug.status} → Price ${sellResult.debug.price} → Showing ${filteredSell.length} of ${sellResult.debug.raw}`);
 
       if (marketModalState.open) {
         // If modal is open, keep it live-updated with local changes.
