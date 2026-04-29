@@ -33,6 +33,52 @@ function json(request, data, status = 200, extraHeaders = {}) {
   });
 }
 
+function applyCorsAndCacheHeaders(request, response, cacheControl) {
+  const headers = new Headers(response.headers || {});
+  const cors = corsHeaders(request);
+  Object.entries(cors).forEach(([key, value]) => headers.set(key, value));
+  if (cacheControl) headers.set('cache-control', cacheControl);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function buildCacheKeyRequest(request, pathOnly) {
+  const url = new URL(request.url);
+  const keyUrl = `${url.origin}${pathOnly}`;
+  return new Request(keyUrl, { method: 'GET' });
+}
+
+async function cacheRoute(request, {
+  pathOnly,
+  cacheControl,
+  ttlSeconds,
+  bypassCache,
+  produce
+}) {
+  const cache = caches.default;
+  const cacheKey = buildCacheKeyRequest(request, pathOnly);
+
+  if (!bypassCache) {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      return applyCorsAndCacheHeaders(request, hit, cacheControl);
+    }
+  }
+
+  const fresh = await produce();
+  const shaped = applyCorsAndCacheHeaders(request, fresh, cacheControl);
+
+  if (shaped.status >= 200 && shaped.status < 300) {
+    const cacheable = applyCorsAndCacheHeaders(request, shaped.clone(), `public, max-age=${ttlSeconds}`);
+    await cache.put(cacheKey, cacheable);
+  }
+
+  return shaped;
+}
+
 async function fetchJson(upstreamUrl) {
   console.log(`[market-proxy] upstream request: ${upstreamUrl}`);
   const response = await fetch(upstreamUrl, {
@@ -525,10 +571,17 @@ export default {
 
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, '');
+      const refreshRequested = url.searchParams.get('refresh') === '1';
       console.log(`[market-proxy] incoming route: ${path} query=${url.search}`);
 
       if (path === '/api/market/items' || path === '/market/items') {
-        return handleItems(request);
+        return cacheRoute(request, {
+          pathOnly: path,
+          cacheControl: 'public, max-age=600',
+          ttlSeconds: 600,
+          bypassCache: refreshRequested,
+          produce: () => handleItems(request)
+        });
       }
 
       if (path === '/api/market/search' || path === '/market/search') {
@@ -537,7 +590,13 @@ export default {
 
       const orderMatch = path.match(/^\/(?:api\/)?market\/orders\/([^/]+)$/);
       if (orderMatch) {
-        return handleOrders(url, orderMatch[1]);
+        return cacheRoute(request, {
+          pathOnly: path,
+          cacheControl: 'public, max-age=30',
+          ttlSeconds: 30,
+          bypassCache: refreshRequested,
+          produce: () => handleOrders(url, orderMatch[1])
+        });
       }
 
       return json(request, {
