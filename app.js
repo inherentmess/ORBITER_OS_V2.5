@@ -23,6 +23,10 @@ const FULLSCREEN_PREF_KEY = 'orbiterFullscreenPreferred';
 const READABLE_MODE_KEY = 'orbiterReadableMode';
 const SIDEBAR_COLLAPSED_KEY = 'orbiterSidebarCollapsed';
 const ACCENT_THEME_KEY = 'orbiterAccentTheme';
+const NAV_ORDER_KEY = 'orbiterNavOrder';
+const MOVABLE_NAV_SECTIONS = ['dashboard', 'trackers', 'market'];
+const STATIC_NAV_SECTIONS = ['codex'];
+const PINNED_NAV_SECTION = 'arsenal';
 
 function isFullscreenActive() {
   return Boolean(
@@ -87,6 +91,160 @@ function applyAccentTheme(theme) {
   document.documentElement.dataset.theme = next;
   localStorage.setItem(ACCENT_THEME_KEY, next);
   if (themeAccentSelect && themeAccentSelect.value !== next) themeAccentSelect.value = next;
+}
+
+function initSidebarReorder() {
+  const navContainer = document.getElementById('navButtons');
+  if (!navContainer) return;
+
+  const readStoredOrder = () => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) || '[]');
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map(value => String(value || '').toLowerCase().trim())
+        .filter(section => MOVABLE_NAV_SECTIONS.includes(section));
+    } catch {
+      return [];
+    }
+  };
+
+  const writeStoredOrder = (order) => {
+    const clean = order.filter(section => MOVABLE_NAV_SECTIONS.includes(section));
+    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(clean));
+  };
+
+  const getButton = (section) => navContainer.querySelector(`.nav-btn[data-section="${section}"]`);
+  const currentMovableOrder = () => Array.from(navContainer.querySelectorAll('.nav-btn[data-section]'))
+    .map(btn => String(btn.dataset.section || '').toLowerCase())
+    .filter(section => MOVABLE_NAV_SECTIONS.includes(section));
+
+  const applyVisualAffordances = () => {
+    Array.from(navContainer.querySelectorAll('.nav-btn[data-section]')).forEach((btn) => {
+      const section = String(btn.dataset.section || '').toLowerCase();
+      if (MOVABLE_NAV_SECTIONS.includes(section)) {
+        btn.classList.add('nav-reorderable');
+        btn.setAttribute('draggable', 'true');
+        if (!btn.querySelector('.nav-drag-handle')) {
+          const handle = document.createElement('span');
+          handle.className = 'nav-drag-handle';
+          handle.textContent = '⋮⋮';
+          handle.setAttribute('aria-hidden', 'true');
+          btn.appendChild(handle);
+        }
+        if (!btn.querySelector('.nav-move-controls')) {
+          const controls = document.createElement('span');
+          controls.className = 'nav-move-controls';
+          controls.innerHTML = '<span class="nav-move-btn" data-nav-move="up" role="button" tabindex="0" aria-label="Move up">▲</span><span class="nav-move-btn" data-nav-move="down" role="button" tabindex="0" aria-label="Move down">▼</span>';
+          btn.appendChild(controls);
+        }
+      } else if (section === PINNED_NAV_SECTION) {
+        btn.classList.add('nav-pinned');
+        btn.setAttribute('draggable', 'false');
+        if (!btn.querySelector('.nav-pin-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'nav-pin-badge';
+          badge.textContent = 'PINNED';
+          btn.appendChild(badge);
+        }
+      } else {
+        btn.setAttribute('draggable', 'false');
+      }
+    });
+  };
+
+  const applyOrder = (orderedMovableSections) => {
+    const known = orderedMovableSections.filter(section => MOVABLE_NAV_SECTIONS.includes(section));
+    const mergedMovable = [...known, ...MOVABLE_NAV_SECTIONS.filter(section => !known.includes(section))];
+    const navSequence = [...mergedMovable, ...STATIC_NAV_SECTIONS, PINNED_NAV_SECTION];
+    navSequence.forEach((section) => {
+      const btn = getButton(section);
+      if (btn) navContainer.appendChild(btn);
+    });
+    applyVisualAffordances();
+  };
+
+  applyOrder(readStoredOrder());
+
+  let dragSection = '';
+
+  navContainer.addEventListener('dragstart', (event) => {
+    const btn = event.target.closest('.nav-btn[data-section]');
+    if (!btn) return;
+    const section = String(btn.dataset.section || '').toLowerCase();
+    if (!MOVABLE_NAV_SECTIONS.includes(section)) {
+      event.preventDefault();
+      return;
+    }
+    dragSection = section;
+    btn.classList.add('nav-dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', section);
+    }
+  });
+
+  navContainer.addEventListener('dragover', (event) => {
+    const target = event.target.closest('.nav-btn[data-section]');
+    if (!target || !dragSection) return;
+    const targetSection = String(target.dataset.section || '').toLowerCase();
+    if (!MOVABLE_NAV_SECTIONS.includes(targetSection) || targetSection === dragSection) return;
+    event.preventDefault();
+    target.classList.add('nav-drop-target');
+  });
+
+  navContainer.addEventListener('dragleave', (event) => {
+    const target = event.target.closest('.nav-btn[data-section]');
+    if (target) target.classList.remove('nav-drop-target');
+  });
+
+  navContainer.addEventListener('drop', (event) => {
+    const target = event.target.closest('.nav-btn[data-section]');
+    if (!target || !dragSection) return;
+    const targetSection = String(target.dataset.section || '').toLowerCase();
+    if (!MOVABLE_NAV_SECTIONS.includes(targetSection) || targetSection === dragSection) return;
+    event.preventDefault();
+    const order = currentMovableOrder();
+    const from = order.indexOf(dragSection);
+    const to = order.indexOf(targetSection);
+    if (from < 0 || to < 0) return;
+    order.splice(from, 1);
+    order.splice(to, 0, dragSection);
+    applyOrder(order);
+    writeStoredOrder(order);
+  });
+
+  navContainer.addEventListener('dragend', () => {
+    dragSection = '';
+    navContainer.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('nav-dragging', 'nav-drop-target'));
+  });
+
+  navContainer.addEventListener('click', (event) => {
+    const controlBtn = event.target.closest('.nav-move-btn');
+    if (!controlBtn) return;
+    const row = event.target.closest('.nav-btn[data-section]');
+    if (!row) return;
+    const section = String(row.dataset.section || '').toLowerCase();
+    if (!MOVABLE_NAV_SECTIONS.includes(section)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const direction = controlBtn.dataset.navMove === 'up' ? -1 : 1;
+    const order = currentMovableOrder();
+    const index = order.indexOf(section);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    applyOrder(order);
+    writeStoredOrder(order);
+  });
+
+  navContainer.addEventListener('keydown', (event) => {
+    const controlBtn = event.target.closest('.nav-move-btn');
+    if (!controlBtn) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    controlBtn.click();
+  });
 }
 
 function toggleFullscreen() {
@@ -160,7 +318,7 @@ function isAbsoluteHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
 }
 
-const API_BASE = "https://orbiter-os.up.railway.app";
+const API_BASE = "https://orbiter-market-proxy.jrque.workers.dev";
 const API_BASE_URL = normalizeApiBase(
   window.ORBITER_API_BASE_URL ||
   document.querySelector('meta[name="orbiter-api-base"]')?.content ||
@@ -181,8 +339,11 @@ const CODEX_WORKER_BASE_URL = normalizeApiBase(
 ) || DEFAULT_MARKET_PROXY_URL;
 const MARKET_DEBUG = (new URLSearchParams(window.location.search).get('market_debug') || '').toLowerCase() === '1'
   || localStorage.getItem('orbiter_market_debug') === '1';
+const TRACKER_DEBUG = (new URLSearchParams(window.location.search).get('tracker_debug') || '').toLowerCase() === '1'
+  || localStorage.getItem('orbiter_tracker_debug') === '1';
 
 if (MARKET_DEBUG) console.log('[MARKET_DEBUG] market proxy base', MARKET_PROXY_URL || '(missing)');
+if (TRACKER_DEBUG) console.log('[TRACKER_DEBUG] enabled');
 console.log('[CODEX] environment hostname:', window.location.hostname || '(unknown)');
 console.log('[CODEX] environment href:', window.location.href || '(unknown)');
 console.log('[CODEX] worker base URL:', MARKET_PROXY_URL || '(missing)');
@@ -759,6 +920,7 @@ function showSection(sectionName) {
     }
     syncAccordionMode();
     setupMobileTrackerAutoLoad();
+    initSidebarReorder();
     navButtons.forEach(btn => btn.addEventListener('click', () => {
       const targetSection = btn.dataset.section;
       if (targetSection !== 'trackers' && typeof closeTrackerModal === 'function') closeTrackerModal();
@@ -1221,10 +1383,10 @@ function showSection(sectionName) {
 
     let dashboardWorldstateRequest = null;
 
-    async function fetchDashboardWorldstateJson() {
+    async function fetchDashboardWorldstateJson(options = {}) {
       if (dashboardWorldstateRequest) return dashboardWorldstateRequest;
       dashboardWorldstateRequest = (async () => {
-        const backendUrl = API_BASE_URL ? apiUrl('/api/worldstate') : '';
+        const backendUrl = API_BASE_URL ? apiUrl(`/api/worldstate${options.refresh ? '?refresh=1' : ''}`) : '';
         if (backendUrl) {
           try {
             logRequest('dashboard backend worldstate', backendUrl);
@@ -1240,18 +1402,7 @@ function showSection(sectionName) {
           }
         }
 
-        const fallbackUrl = 'https://api.tenno.tools/worldstate/pc';
-        logRequest('dashboard tenno.tools direct', fallbackUrl);
-        const fallbackResponse = await fetch(fallbackUrl, { cache: 'no-store', headers: { Accept: 'application/json' } });
-        logResponse('dashboard tenno.tools direct', fallbackResponse);
-        if (!fallbackResponse.ok) throw new Error(`tenno.tools HTTP ${fallbackResponse.status} from ${fallbackUrl}`);
-        const fallbackJson = await parseJsonResponse(fallbackResponse, 'dashboard tenno.tools direct');
-        if (!fallbackJson || typeof fallbackJson !== 'object') throw new Error('tenno.tools response missing object payload');
-        logJson('dashboard tenno.tools direct summary', { keys: Object.keys(fallbackJson || {}).slice(0, 20) });
-        return {
-          source: 'tenno.tools (direct fallback)',
-          data: fallbackJson
-        };
+        throw new Error('WarframeStat.us worldstate proxy is not configured.');
       })();
       try {
         return await dashboardWorldstateRequest;
@@ -1261,11 +1412,11 @@ function showSection(sectionName) {
     }
 
     const dashboardCategoryDefs = [
-      { id: 'environments', title: 'Cycles', source: '/api/worldstate (Tenno Tools)' },
-      { id: 'missions', title: 'Missions & Rotations', source: '/api/worldstate (Tenno Tools)' },
-      { id: 'bounties', title: 'Bounties', source: '/api/worldstate (Tenno Tools)' },
-      { id: 'syndicate-missions', title: 'Nightwave & Events', source: '/api/worldstate (Tenno Tools)' },
-      { id: 'utility', title: 'Utility / Info', source: '/api/worldstate (Tenno Tools)' }
+      { id: 'environments', title: 'Cycles', source: '/api/worldstate (WarframeStat.us)' },
+      { id: 'missions', title: 'Missions & Rotations', source: '/api/worldstate (WarframeStat.us)' },
+      { id: 'bounties', title: 'Bounties', source: '/api/worldstate (WarframeStat.us)' },
+      { id: 'syndicate-missions', title: 'Nightwave & Events', source: '/api/worldstate (WarframeStat.us)' },
+      { id: 'utility', title: 'Utility / Info', source: '/api/worldstate (WarframeStat.us)' }
     ];
 
     function browseDate(value) {
@@ -2050,21 +2201,49 @@ function showSection(sectionName) {
       return trackerCard(id, label, title, state || 'Unavailable', expiresAt || '', detail || 'No details returned.', options);
     }
 
-    function tennoData(data, key) {
+    function worldstateArray(data, key) {
       const component = data?.[key];
       if (Array.isArray(component)) return component;
       return Array.isArray(component?.data) ? component.data : [];
     }
 
-    function tennoIso(seconds) {
-      const value = Number(seconds);
-      if (!Number.isFinite(value) || value <= 0) return '';
-      return new Date(value * 1000).toISOString();
+    function worldstateIso(value) {
+      if (!value) return '';
+      if (typeof value === 'number') return new Date(value > 10_000_000_000 ? value : value * 1000).toISOString();
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const numeric = Number(trimmed);
+        const date = new Date(Number.isFinite(numeric) ? (numeric > 10_000_000_000 ? numeric : numeric * 1000) : trimmed);
+        return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+      }
+      return browseDate(value);
     }
 
-    function tennoSoonestEnd(rows = []) {
+    function worldstateTimeMs(value) {
+      if (!value) return NaN;
+      if (typeof value === 'number') return value > 10_000_000_000 ? value : value * 1000;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const numeric = Number(trimmed);
+        return Number.isFinite(numeric)
+          ? (numeric > 10_000_000_000 ? numeric : numeric * 1000)
+          : new Date(trimmed).getTime();
+      }
+      const iso = browseDate(value);
+      return iso ? new Date(iso).getTime() : NaN;
+    }
+
+    function worldstateEnd(row = {}) {
+      return worldstateIso(row?.expiry || row?.expiresAt || row?.end || row?.expiration || row?.Expiry || row?.Expiration);
+    }
+
+    function worldstateActivation(row = {}) {
+      return worldstateIso(row?.activation || row?.start || row?.Activation);
+    }
+
+    function worldstateSoonestEnd(rows = []) {
       return rows
-        .map(row => row?.expiresAt || tennoIso(row?.end))
+        .map(row => row?.expiresAt || worldstateEnd(row))
         .filter(Boolean)
         .sort((a, b) => new Date(a) - new Date(b))[0] || '';
     }
@@ -2088,8 +2267,8 @@ function showSection(sectionName) {
       return flat.slice(0, 6).join(', ') || fallback;
     }
 
-    function genericDetail(id, title, entries, source = 'Tenno Tools') {
-      return { id, title, entries, source, expiresAt: tennoSoonestEnd(entries), type: 'generic' };
+    function genericDetail(id, title, entries, source = 'WarframeStat.us') {
+      return { id, title, entries, source, expiresAt: worldstateSoonestEnd(entries), type: 'generic' };
     }
 
     function hasRenderableDetail(detail) {
@@ -2122,119 +2301,168 @@ function showSection(sectionName) {
       return { ...trackerCategory(id, usefulCards), details: usefulDetails };
     }
 
-    function cycleFromTenno(row) {
-      const nowSec = Math.floor(Date.now() / 1000);
-      const length = Number(row.length);
-      const start = Number(row.start);
-      const dayStart = Number(row.dayStart);
-      const dayEnd = Number(row.dayEnd);
-      if (!Number.isFinite(length) || !Number.isFinite(start) || !Number.isFinite(dayStart) || !Number.isFinite(dayEnd)) return null;
-      const elapsed = ((nowSec - start) % length + length) % length;
-      const isDay = dayStart <= dayEnd
-        ? elapsed >= dayStart && elapsed < dayEnd
-        : elapsed >= dayStart || elapsed < dayEnd;
-      let nextOffset = isDay ? dayEnd : dayStart;
-      if (nextOffset <= elapsed) nextOffset += length;
-      const expiresAt = new Date((nowSec + Math.max(0, nextOffset - elapsed)) * 1000).toISOString();
-      return { state: isDay ? 'Day' : 'Night', expiresAt };
+    function cycleFromWarframeStat(name, row) {
+      if (!row || typeof row !== 'object') return null;
+      const state = row.state || (row.isWarm ? 'Warm' : row.isDay ? 'Day' : '');
+      const rawExpiry = row.expiry || row.expiresAt || row.end || row.expiration;
+      const expiryTime = worldstateTimeMs(rawExpiry);
+      const remainingMs = expiryTime - Date.now();
+      if (TRACKER_DEBUG) {
+        console.log('[TRACKER_DEBUG] cycle', {
+          name,
+          rawExpiry,
+          parsedExpiry: Number.isFinite(expiryTime) ? new Date(expiryTime).toISOString() : null,
+          remainingMs
+        });
+      }
+      if (!state || !Number.isFinite(expiryTime)) return null;
+      return { state: dashboardToken(state), expiresAt: new Date(expiryTime).toISOString(), expired: remainingMs <= 0 };
     }
 
-    function mapTennoToolsWorldstateToDashboardCategories(data) {
+    function hasExpiredWarframeStatCycles(data) {
+      const rows = [
+        data?.cetusCycle || data?.cycles?.cetusCycle,
+        data?.earthCycle || data?.cycles?.earthCycle,
+        data?.vallisCycle || data?.cycles?.vallisCycle,
+        data?.cambionCycle || data?.cycles?.cambionCycle
+      ].filter(Boolean);
+      return rows.some(row => {
+        const expiryTime = worldstateTimeMs(row.expiry || row.expiresAt || row.end || row.expiration);
+        return Number.isFinite(expiryTime) && expiryTime <= Date.now();
+      });
+    }
+
+    function activeWorldstateItems(items = []) {
+      return items.filter(item => {
+        const expiry = worldstateEnd(item);
+        return !expiry || new Date(expiry).getTime() > Date.now();
+      });
+    }
+
+    function warframeStatRewardText(value, fallback = '') {
+      if (!value) return fallback;
+      if (typeof value === 'string') return value;
+      if (Array.isArray(value)) return value.map(item => warframeStatRewardText(item, '')).filter(Boolean).join(', ') || fallback;
+      if (Array.isArray(value.items)) return value.items.join(', ') || fallback;
+      if (Array.isArray(value.countedItems)) return value.countedItems.map(item => rewardName(item)).filter(Boolean).join(', ') || fallback;
+      return rewardName(value) || fallback;
+    }
+
+    function mapWarframeStatWorldstateToDashboardCategories(data) {
       if (data?.upstreamError) {
-        return unavailableDashboardCategories(data.message || 'Tenno Tools returned an empty worldstate body.');
+        return unavailableDashboardCategories(data.message || 'WarframeStat.us returned an empty worldstate body.');
       }
 
-      const fissures = tennoData(data, 'fissures');
-      const invasions = tennoData(data, 'invasions');
-      const sorties = tennoData(data, 'sorties');
-      const voidTraders = tennoData(data, 'voidtraders');
-      const challenges = tennoData(data, 'challenges');
-      const events = tennoData(data, 'news');
-      const daynight = tennoData(data, 'daynight');
-      const bounties = tennoData(data, 'bounties');
-      const voidStorms = tennoData(data, 'voidstorms');
-      const boosters = tennoData(data, 'upgrades');
-      const dailyDeals = tennoData(data, 'dailydeals');
-      const factionProjects = tennoData(data, 'factionprojects');
-
-      const cycleTitles = { earth: 'Earth', fortuna: 'Orb Vallis' };
-      const cycleCards = daynight.map(row => {
-        if (row.id === 'cetus') return null;
-        const cycle = cycleFromTenno(row) || {};
-        const title = cycleTitles[row.id] || dashboardToken(row.id);
-        return cycle.expiresAt && title ? statusCard(`cycle-${row.id}`, 'Cycle', title, cycle.state, cycle.expiresAt, `Tenno Tools cycle id: ${row.id}`) : null;
+      const cycles = [
+        ['cetus', 'Cetus', data?.cetusCycle || data?.cycles?.cetusCycle],
+        ['earth', 'Earth', data?.earthCycle || data?.cycles?.earthCycle],
+        ['vallis', 'Orb Vallis', data?.vallisCycle || data?.cycles?.vallisCycle],
+        ['cambion', 'Cambion Drift', data?.cambionCycle || data?.cycles?.cambionCycle]
+      ];
+      const cycleCards = cycles.map(([id, title, row]) => {
+        const cycle = cycleFromWarframeStat(title, row) || {};
+        return cycle.expiresAt && !cycle.expired ? statusCard(`cycle-${id}`, 'Cycle', title, cycle.state, cycle.expiresAt, `WarframeStat.us cycle id: ${row?.id || id}`) : null;
       }).filter(Boolean);
 
-      const sortie = sorties[0] || {};
-      const voidTrader = voidTraders[0] || {};
-      const nightwave = challenges[0] || {};
-      const normalFissures = fissures.filter(row => !row.hard);
-      const hardFissures = fissures.filter(row => row.hard);
+      const fissures = activeWorldstateItems(worldstateArray(data, 'fissures'));
+      const invasions = worldstateArray(data, 'invasions').filter(row => !row.completed);
+      const alerts = activeWorldstateItems(worldstateArray(data, 'alerts'));
+      const events = activeWorldstateItems(worldstateArray(data, 'events'));
+      const sortie = data?.sortie || {};
+      const voidTrader = data?.voidTrader || {};
+      const steelPath = data?.steelPath || {};
+      const archonHunt = data?.archonHunt || {};
+      const arbitration = data?.arbitration || {};
+      const nightwave = data?.nightwave || {};
+      const dailyDeals = activeWorldstateItems(worldstateArray(data, 'dailyDeals'));
+      const syndicateMissions = activeWorldstateItems(worldstateArray(data, 'syndicateMissions'));
+      const normalFissures = fissures.filter(row => !row.isHard && !row.hard && !row.isStorm);
+      const hardFissures = fissures.filter(row => row.isHard || row.hard);
+      const voidStorms = fissures.filter(row => row.isStorm || row.isVoidStorm || row.storm);
+      const sortieMissions = Array.isArray(sortie.missions) ? sortie.missions : (Array.isArray(sortie.variants) ? sortie.variants : []);
+      const archonMissions = Array.isArray(archonHunt.missions) ? archonHunt.missions : (Array.isArray(archonHunt.variants) ? archonHunt.variants : []);
+      const nightwaveChallenges = Array.isArray(nightwave.activeChallenges) ? nightwave.activeChallenges : [];
 
       const missionCards = [
-        Array.isArray(sortie.missions) && sortie.missions.length ? statusCard('sortie', 'Daily', 'Sortie', sortie.bossName || sortie.faction, tennoIso(sortie.end), `${sortie.missions.length} missions // ${sortie.faction || 'Faction pending'}`, { selectable: true }) : null,
-        normalFissures.length ? statusCard('fissures-normal', 'Relics', 'Void Fissures', `${normalFissures.length} active`, tennoSoonestEnd(normalFissures), `${normalFissures[0].tier || ''} ${normalFissures[0].missionType || ''} // ${normalFissures[0].location || ''}`.trim(), { selectable: true }) : null,
-        hardFissures.length ? statusCard('fissures-hard', 'Steel Path', 'Steel Path Fissures', `${hardFissures.length} active`, tennoSoonestEnd(hardFissures), `${hardFissures[0].tier || ''} ${hardFissures[0].missionType || ''} // ${hardFissures[0].location || ''}`.trim(), { selectable: true }) : null,
-        voidStorms.length ? statusCard('void-storms', 'Railjack', 'Void Storms', `${voidStorms.length} active`, tennoSoonestEnd(voidStorms), `${voidStorms[0].tier || ''} ${voidStorms[0].missionType || ''} // ${voidStorms[0].location || ''}`.trim(), { selectable: true }) : null,
-        invasions.length ? statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', `${invasions[0].location || 'Invasion'} // ${invasions[0].factionAttacker || ''} vs ${invasions[0].factionDefender || ''}`, { selectable: true, hideTimer: true }) : null
+        sortie.id ? statusCard('sortie', 'Daily', 'Sortie', sortie.boss || sortie.faction || 'Active', worldstateEnd(sortie), `${sortieMissions.length} missions // ${sortie.faction || 'Faction pending'}`, { selectable: true }) : null,
+        archonHunt.id ? statusCard('archon', 'Weekly', 'Archon Hunt', archonHunt.boss || archonHunt.faction || 'Active', worldstateEnd(archonHunt), `${archonMissions.length} missions // ${archonHunt.rewardPool || 'Reward pool pending'}`, { selectable: true }) : null,
+        steelPath.currentReward ? statusCard('steel-path', 'Steel Path', 'Steel Path Honors', steelPath.currentReward.name, worldstateEnd(steelPath), `${steelPath.currentReward.cost ?? '?'} Steel Essence`, { selectable: true }) : null,
+        arbitration.id && !arbitration.expired ? statusCard('arbitration', 'Arbitration', 'Arbitration', arbitration.type || 'Active', worldstateEnd(arbitration), [arbitration.node, arbitration.enemy].filter(Boolean).join(' // '), { selectable: true }) : null,
+        normalFissures.length ? statusCard('fissures-normal', 'Relics', 'Void Fissures', `${normalFissures.length} active`, worldstateSoonestEnd(normalFissures), `${normalFissures[0].tier || ''} ${normalFissures[0].missionType || ''} // ${normalFissures[0].node || ''}`.trim(), { selectable: true }) : null,
+        hardFissures.length ? statusCard('fissures-hard', 'Steel Path', 'Steel Path Fissures', `${hardFissures.length} active`, worldstateSoonestEnd(hardFissures), `${hardFissures[0].tier || ''} ${hardFissures[0].missionType || ''} // ${hardFissures[0].node || ''}`.trim(), { selectable: true }) : null,
+        voidStorms.length ? statusCard('void-storms', 'Railjack', 'Void Storms', `${voidStorms.length} active`, worldstateSoonestEnd(voidStorms), `${voidStorms[0].tier || ''} ${voidStorms[0].missionType || ''} // ${voidStorms[0].node || ''}`.trim(), { selectable: true }) : null,
+        invasions.length ? statusCard('invasions', 'Invasions', 'Invasions', `${invasions.length} active`, '', `${invasions[0].node || 'Invasion'} // ${invasions[0].attacker?.faction || ''} vs ${invasions[0].defender?.faction || ''}`, { selectable: true, hideTimer: true }) : null
       ];
 
       const missionDetails = [
-        genericDetail('sortie', 'Sortie', (sortie.missions || []).map((row, index) => ({ id: `sortie-${index}`, name: row.location || row.node || `Sortie ${index + 1}`, tier: row.missionType || '', factionLocation: sortie.faction || '', rewards: rewardsText(sortie.rewards, 'Sortie reward table'), detail: row.modifier || row.modifierDescription || '', expiresAt: tennoIso(sortie.end) }))),
-        genericDetail('fissures-normal', 'Void Fissures', normalFissures.map((row, index) => ({ id: `fissure-${index}`, name: row.location || 'Fissure', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Relic rewards', detail: `Hard: ${row.hard ? 'yes' : 'no'}`, expiresAt: tennoIso(row.end) }))),
-        genericDetail('fissures-hard', 'Steel Path Fissures', hardFissures.map((row, index) => ({ id: `hard-fissure-${index}`, name: row.location || 'Fissure', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Steel Path relic rewards', detail: `Hard: ${row.hard ? 'yes' : 'no'}`, expiresAt: tennoIso(row.end) }))),
-        genericDetail('void-storms', 'Void Storms', voidStorms.map((row, index) => ({ id: `voidstorm-${index}`, name: row.location || 'Void Storm', tier: row.tier || '', factionLocation: [row.faction, row.missionType].filter(Boolean).join(' // '), rewards: 'Railjack relic rewards', detail: tennoIso(row.start) ? `Starts ${tennoIso(row.start)}` : '', expiresAt: tennoIso(row.end) }))),
-        genericDetail('invasions', 'Invasions', invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.location || 'Invasion', tier: [row.factionAttacker, 'vs', row.factionDefender].filter(Boolean).join(' '), factionLocation: row.location || '', rewards: [rewardsText(row.rewardsAttacker, ''), rewardsText(row.rewardsDefender, '')].filter(Boolean).join(' // '), detail: `Score ${row.score ?? '?'} / ${row.endScore ?? '?'}` })))
+        genericDetail('sortie', 'Sortie', sortieMissions.map((row, index) => ({ id: `sortie-${index}`, name: row.node || `Sortie ${index + 1}`, tier: row.missionType || row.type || '', factionLocation: sortie.faction || '', rewards: sortie.rewardPool || 'Sortie reward table', detail: row.modifier || row.modifierDescription || '', expiresAt: worldstateEnd(sortie) }))),
+        genericDetail('archon', 'Archon Hunt', archonMissions.map((row, index) => ({ id: `archon-${index}`, name: row.node || `Archon ${index + 1}`, tier: row.missionType || row.type || '', factionLocation: archonHunt.faction || '', rewards: archonHunt.rewardPool || 'Archon reward table', detail: archonHunt.boss || '', expiresAt: worldstateEnd(archonHunt) }))),
+        genericDetail('steel-path', 'Steel Path Honors', (steelPath.rotation || []).map((row, index) => ({ id: `steel-path-${index}`, name: row.name || `Reward ${index + 1}`, tier: `${row.cost ?? '?'} Steel Essence`, factionLocation: 'Teshin', rewards: row.name || '', detail: row === steelPath.currentReward ? 'Current reward' : '', expiresAt: worldstateEnd(steelPath) }))),
+        genericDetail('arbitration', 'Arbitration', arbitration.id ? [{ id: 'arbitration-current', name: arbitration.node || 'Arbitration', tier: arbitration.type || '', factionLocation: arbitration.enemy || '', rewards: 'Arbitration honors', detail: arbitration.archwing ? 'Archwing' : '', expiresAt: worldstateEnd(arbitration) }] : []),
+        genericDetail('fissures-normal', 'Void Fissures', normalFissures.map((row, index) => ({ id: `fissure-${index}`, name: row.node || 'Fissure', tier: row.tier || '', factionLocation: [row.enemy, row.missionType].filter(Boolean).join(' // '), rewards: 'Relic rewards', detail: `Steel Path: ${row.isHard ? 'yes' : 'no'}`, expiresAt: worldstateEnd(row) }))),
+        genericDetail('fissures-hard', 'Steel Path Fissures', hardFissures.map((row, index) => ({ id: `hard-fissure-${index}`, name: row.node || 'Fissure', tier: row.tier || '', factionLocation: [row.enemy, row.missionType].filter(Boolean).join(' // '), rewards: 'Steel Path relic rewards', detail: `Void Storm: ${row.isStorm ? 'yes' : 'no'}`, expiresAt: worldstateEnd(row) }))),
+        genericDetail('void-storms', 'Void Storms', voidStorms.map((row, index) => ({ id: `voidstorm-${index}`, name: row.node || 'Void Storm', tier: row.tier || '', factionLocation: [row.enemy, row.missionType].filter(Boolean).join(' // '), rewards: 'Railjack relic rewards', detail: worldstateActivation(row) ? `Starts ${worldstateActivation(row)}` : '', expiresAt: worldstateEnd(row) }))),
+        genericDetail('invasions', 'Invasions', invasions.map((row, index) => ({ id: `invasion-${index}`, name: row.node || 'Invasion', tier: [row.attacker?.faction, 'vs', row.defender?.faction].filter(Boolean).join(' '), factionLocation: row.node || '', rewards: [warframeStatRewardText(row.attackerReward, ''), warframeStatRewardText(row.defenderReward, '')].filter(Boolean).join(' // '), detail: `${Math.round(Number(row.completion) || 0)}% complete` })))
       ];
 
-      const bountyEntries = bounties.flatMap(group => (group.jobs || []).map((job, index) => ({
-        id: `bounty-${group.id}-${index}`,
-        name: group.syndicate || group.id || 'Bounty',
-        tier: `${job.minLevel ?? '?'}-${job.maxLevel ?? '?'} Level`,
+      const bountyEntries = syndicateMissions
+        .filter(group => /cetus|solaris|entrati/i.test(`${group.syndicateKey || group.syndicate || ''}`))
+        .flatMap(group => (group.jobs || []).map((job, index) => ({
+        id: `bounty-${group.id || group.syndicateKey}-${index}`,
+        name: group.syndicate || group.syndicateKey || 'Bounty',
+        tier: `${job.minEnemyLevel ?? job.minLevel ?? '?'}-${job.maxEnemyLevel ?? job.maxLevel ?? '?'} Level`,
         factionLocation: group.syndicate || '',
-        rewards: rewardsText(job.rewards, 'Bounty reward table'),
-        detail: (job.xpAmounts || []).length ? `Standing: ${(job.xpAmounts || []).join(', ')}` : '',
-        expiresAt: tennoIso(group.end)
+        rewards: warframeStatRewardText(job.rewards, 'Bounty reward table'),
+        detail: [job.type, job.jobType, job.locationTag].filter(Boolean).join(' // '),
+        expiresAt: worldstateEnd(group)
       })));
       const bountyDetail = genericDetail('bounties', 'Bounties', bountyEntries);
 
-      const nightwaveEntries = (nightwave.challenges || []).map((row, index) => ({
+      const nightwaveEntries = nightwaveChallenges.map((row, index) => ({
         id: `nightwave-${index}`,
-        name: row.description || 'Nightwave challenge',
-        tier: row.daily ? 'Daily' : 'Weekly',
+        name: row.title || row.description || 'Nightwave challenge',
+        tier: row.isDaily || row.daily ? 'Daily' : 'Weekly',
         factionLocation: `Season ${nightwave.season ?? '?'}`,
-        rewards: `${row.xpAmount ?? 0} standing`,
-        detail: row.id || '',
-        expiresAt: tennoIso(row.end)
+        rewards: `${row.reputation ?? row.xpAmount ?? 0} standing`,
+        detail: row.desc || row.id || '',
+        expiresAt: worldstateEnd(row) || worldstateEnd(nightwave)
       }));
       const eventEntries = events.slice(0, 12).map((row, index) => ({
         id: `event-${index}`,
-        name: row.text || 'News / Event',
-        tier: 'News',
-        factionLocation: row.link || '',
-        rewards: 'Info',
+        name: row.description || row.message || 'Event',
+        tier: row.node || 'Event',
+        factionLocation: row.node || row.link || '',
+        rewards: warframeStatRewardText(row.rewards, 'Info'),
+        detail: row.id || row.tag || '',
+        expiresAt: worldstateEnd(row)
+      }));
+      const alertEntries = alerts.map((row, index) => ({
+        id: `alert-${index}`,
+        name: row.mission?.node || row.node || 'Alert',
+        tier: row.mission?.type || row.missionType || '',
+        factionLocation: row.mission?.faction || row.faction || '',
+        rewards: warframeStatRewardText(row.reward, 'Alert reward'),
         detail: row.id || '',
-        expiresAt: tennoIso(row.end)
+        expiresAt: worldstateEnd(row)
       }));
 
       const utilityCards = [
-        voidTrader.id ? statusCard('void-trader', 'Vendor', "Baro Ki'Teer", voidTrader.active ? 'Active' : 'Away', tennoIso(voidTrader.end || voidTrader.start), [voidTrader.location, voidTrader.active ? 'Inventory available' : 'Arrival pending'].filter(Boolean).join(' // '), { selectable: true }) : null,
-        dailyDeals.length ? statusCard('daily-deal', 'Store', "Darvo's Deal", dailyDeals[0]?.item?.name, tennoIso(dailyDeals[0]?.end), `${dailyDeals[0].price ?? '?'} credits // ${dailyDeals[0].sold ?? 0}/${dailyDeals[0].stock ?? '?'}`, { selectable: true }) : null,
-        factionProjects.length && factionProjects[0]?.type ? statusCard('faction-projects', 'World', 'Faction Projects', `${factionProjects.length} tracked`, '', `${factionProjects[0].type} // ${Math.round(factionProjects[0].progress || 0)}%`, { selectable: true, hideTimer: true }) : null
+        voidTrader.id ? statusCard('void-trader', 'Vendor', "Baro Ki'Teer", Date.now() >= new Date(voidTrader.activation).getTime() ? 'Active' : 'Away', worldstateEnd(voidTrader) || worldstateActivation(voidTrader), [voidTrader.location, (voidTrader.inventory || []).length ? `${voidTrader.inventory.length} inventory items` : 'Arrival pending'].filter(Boolean).join(' // '), { selectable: true }) : null,
+        dailyDeals.length ? statusCard('daily-deal', 'Store', "Darvo's Deal", dailyDeals[0]?.item, worldstateEnd(dailyDeals[0]), `${dailyDeals[0].salePrice ?? '?'} credits // ${dailyDeals[0].sold ?? 0}/${dailyDeals[0].total ?? '?'}`, { selectable: true }) : null
       ];
 
       return [
         compactCategory('environments', cycleCards),
         compactCategory('missions', missionCards, missionDetails),
-        compactCategory('bounties', bountyEntries.length ? [statusCard('bounties', 'Bounties', 'Bounties', `${bountyEntries.length} jobs`, tennoSoonestEnd(bountyEntries), `${bountyEntries[0].name} // ${bountyEntries[0].tier}`, { selectable: true })] : [], [bountyDetail]),
+        compactCategory('bounties', bountyEntries.length ? [statusCard('bounties', 'Bounties', 'Bounties', `${bountyEntries.length} jobs`, worldstateSoonestEnd(bountyEntries), `${bountyEntries[0].name} // ${bountyEntries[0].tier}`, { selectable: true })] : [], [bountyDetail]),
         compactCategory('syndicate-missions', [
-          nightwaveEntries.length ? statusCard('nightwave', 'Nightwave', 'Nightwave', `Season ${nightwave.season ?? '?'}`, tennoIso(nightwave.end), `${nightwaveEntries.length} active challenges`, { selectable: true }) : null,
-          events.length ? statusCard('events', 'Events', 'Events / News', `${events.length} posts`, '', events[0]?.text, { selectable: true, hideTimer: true }) : null
-        ], [genericDetail('nightwave', 'Nightwave', nightwaveEntries), genericDetail('events', 'Events / News', eventEntries)]),
+          nightwaveEntries.length ? statusCard('nightwave', 'Nightwave', 'Nightwave', `Season ${nightwave.season ?? '?'}`, worldstateEnd(nightwave), `${nightwaveEntries.length} active challenges`, { selectable: true }) : null,
+          events.length ? statusCard('events', 'Events', 'Events', `${events.length} active`, worldstateSoonestEnd(events), events[0]?.description || events[0]?.message, { selectable: true }) : null,
+          alerts.length ? statusCard('alerts', 'Alerts', 'Alerts', `${alerts.length} active`, worldstateSoonestEnd(alerts), alertEntries[0]?.name || 'Active alert', { selectable: true }) : null
+        ], [genericDetail('nightwave', 'Nightwave', nightwaveEntries), genericDetail('events', 'Events', eventEntries), genericDetail('alerts', 'Alerts', alertEntries)]),
         compactCategory('utility', utilityCards, [
-          genericDetail('void-trader', "Baro Ki'Teer", voidTraders.map((row, index) => ({ id: `baro-${index}`, name: row.name || "Baro Ki'Teer", tier: row.active ? 'Active' : 'Away', factionLocation: row.location || '', rewards: 'Void trader inventory', detail: tennoIso(row.start) ? `Starts ${tennoIso(row.start)}` : '', expiresAt: tennoIso(row.end) }))),
-          genericDetail('daily-deal', "Darvo's Deal", dailyDeals.map((row, index) => ({ id: `deal-${index}`, name: row.item?.name || 'Daily Deal', tier: `${row.price ?? '?'} credits`, factionLocation: 'Market', rewards: `${row.originalPrice ?? '?'} original credits`, detail: `${row.sold ?? 0}/${row.stock ?? '?'} sold`, expiresAt: tennoIso(row.end) }))),
-          genericDetail('faction-projects', 'Faction Projects', factionProjects.map((row, index) => ({ id: `project-${index}`, name: row.type || 'Faction Project', tier: `${Math.round(row.progress || 0)}%`, factionLocation: row.id || '', rewards: 'World event progress', detail: `${(row.progressHistory || []).length} history points` })))
+          genericDetail('void-trader', "Baro Ki'Teer", voidTrader.id ? [{ id: 'baro-0', name: voidTrader.character || "Baro Ki'Teer", tier: Date.now() >= new Date(voidTrader.activation).getTime() ? 'Active' : 'Away', factionLocation: voidTrader.location || '', rewards: `${(voidTrader.inventory || []).length} inventory items`, detail: worldstateActivation(voidTrader) ? `Starts ${worldstateActivation(voidTrader)}` : '', expiresAt: worldstateEnd(voidTrader) }] : []),
+          genericDetail('daily-deal', "Darvo's Deal", dailyDeals.map((row, index) => ({ id: `deal-${index}`, name: row.item || 'Daily Deal', tier: `${row.salePrice ?? '?'} credits`, factionLocation: 'Market', rewards: `${row.originalPrice ?? '?'} original credits`, detail: `${row.sold ?? 0}/${row.total ?? '?'} sold`, expiresAt: worldstateEnd(row) })))
         ])
       ].filter(Boolean);
     }
@@ -2983,7 +3211,7 @@ function showSection(sectionName) {
         trackerSortMode.value = dashboardTrackerState.sortMode;
       }
       if (!dashboardTrackerState.categories?.length) {
-        dashboardTrackerGrid.innerHTML = '<div class="panel-card p-5 text-sm text-green-200/80">No valid active tracker sections are available right now.</div>';
+        dashboardTrackerGrid.innerHTML = '<div class="panel-card p-5 text-sm text-green-200/80">No active data.</div>';
         return;
       }
       dashboardTrackerGrid.innerHTML = dashboardTrackerState.categories.map(renderTrackerCategory).join('');
@@ -3257,35 +3485,36 @@ function showSection(sectionName) {
     async function refreshDashboardTrackers() {
       const now = Date.now();
       const refreshAge = now - (dashboardTrackerState.lastFetchAt || 0);
-      if ((dashboardTrackerState.lastData || dashboardTrackerState.lastFetchAt) && refreshAge < 60000) {
+      const cachedCyclesExpired = dashboardTrackerState.lastData && hasExpiredWarframeStatCycles(dashboardTrackerState.lastData);
+      if ((dashboardTrackerState.lastData || dashboardTrackerState.lastFetchAt) && refreshAge < 60000 && !cachedCyclesExpired) {
         if (dashboardTrackerState.lastData) {
-          setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(dashboardTrackerState.lastData));
+          setDashboardCategories(mapWarframeStatWorldstateToDashboardCategories(dashboardTrackerState.lastData));
           renderDashboardTrackerCards();
           updateDashboardCountdowns();
           if (dashboardTrackerState.syncedAt) {
-            setDashboardTrackerStatus(`Live via ${dashboardTrackerState.source || 'Tenno Tools'} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
+            setDashboardTrackerStatus(`Live via ${dashboardTrackerState.source || 'WarframeStat.us'} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
           }
         } else {
           renderDashboardTrackerCards();
-          setDashboardTrackerStatus('Tenno Tools unavailable');
+          setDashboardTrackerStatus('WarframeStat.us unavailable');
         }
         return;
       }
 
-      setDashboardTrackerStatus('Syncing Tenno Tools...');
+      setDashboardTrackerStatus('Syncing WarframeStat.us...');
       ensureDashboardNodeLookup().then(() => {
         if (!dashboardTrackerState.lastData) return;
         // Re-map in place so readable node/type text appears without refetching.
-        setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(dashboardTrackerState.lastData));
+        setDashboardCategories(mapWarframeStatWorldstateToDashboardCategories(dashboardTrackerState.lastData));
         renderDashboardTrackerCards();
         updateDashboardCountdowns();
       });
-      setDashboardCategories(loadingDashboardCategories('Loading Tenno Tools data for this category...'));
+      setDashboardCategories(loadingDashboardCategories('Loading WarframeStat.us data for this category...'));
       renderDashboardTrackerCards();
       try {
         dashboardTrackerState.lastFetchAt = Date.now();
-        const result = await fetchDashboardWorldstateJson();
-        setDashboardCategories(mapTennoToolsWorldstateToDashboardCategories(result.data));
+        const result = await fetchDashboardWorldstateJson({ refresh: cachedCyclesExpired });
+        setDashboardCategories(mapWarframeStatWorldstateToDashboardCategories(result.data));
         dashboardTrackerState.source = result.source;
         dashboardTrackerState.syncedAt = new Date();
         dashboardTrackerState.lastData = result.data;
@@ -3293,9 +3522,9 @@ function showSection(sectionName) {
         updateDashboardCountdowns();
         setDashboardTrackerStatus(`Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
       } catch (error) {
-        setDashboardCategories(unavailableDashboardCategories(error?.message || 'Tenno Tools did not return world-state data.'));
+        setDashboardCategories(unavailableDashboardCategories(error?.message || 'WarframeStat.us did not return world-state data.'));
         renderDashboardTrackerCards();
-        setDashboardTrackerStatus('Tenno Tools unavailable');
+        setDashboardTrackerStatus('WarframeStat.us unavailable');
         logClientError('dashboard world-state refresh', error);
       }
     }
