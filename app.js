@@ -4,6 +4,9 @@ const searchInput = document.getElementById('searchInput');
 const refreshBtn = document.getElementById('refreshBtn');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
 const fullscreenToggleBtn = document.getElementById('fullscreenToggleBtn');
+const readableModeBtn = document.getElementById('readableModeBtn');
+const sidebarCollapseBtn = document.getElementById('sidebarCollapseBtn');
+const themeAccentSelect = document.getElementById('themeAccentSelect');
 
 function detectEmbedMode() {
   if (window.ORBITER_EMBED_MODE) return true;
@@ -17,6 +20,9 @@ function detectEmbedMode() {
 
 const EMBED_MODE = detectEmbedMode();
 const FULLSCREEN_PREF_KEY = 'orbiterFullscreenPreferred';
+const READABLE_MODE_KEY = 'orbiterReadableMode';
+const SIDEBAR_COLLAPSED_KEY = 'orbiterSidebarCollapsed';
+const ACCENT_THEME_KEY = 'orbiterAccentTheme';
 
 function isFullscreenActive() {
   return Boolean(
@@ -42,6 +48,45 @@ function updateFullscreenToggleUi() {
   fullscreenToggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
   fullscreenToggleBtn.setAttribute('aria-label', active ? 'Exit Fullscreen' : 'Fullscreen');
   fullscreenToggleBtn.setAttribute('title', preferred && !active ? 'Fullscreen preferred (click to enter)' : (active ? 'Exit Fullscreen' : 'Fullscreen'));
+}
+
+function readReadableModePreference() {
+  return localStorage.getItem(READABLE_MODE_KEY) === '1';
+}
+
+function readSidebarCollapsedPreference() {
+  return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+}
+
+function readAccentThemePreference() {
+  const raw = String(localStorage.getItem(ACCENT_THEME_KEY) || 'green').toLowerCase().trim();
+  if (raw === 'red' || raw === 'yellow' || raw === 'blue' || raw === 'green') return raw;
+  return 'green';
+}
+
+function applyReadableMode(enabled) {
+  document.body.classList.toggle('readable-mode', Boolean(enabled));
+  localStorage.setItem(READABLE_MODE_KEY, enabled ? '1' : '0');
+  if (!readableModeBtn) return;
+  readableModeBtn.textContent = enabled ? 'Readable On' : 'Readable';
+  readableModeBtn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  readableModeBtn.setAttribute('title', enabled ? 'Disable Readable Mode' : 'Enable Readable Mode');
+}
+
+function applySidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', Boolean(collapsed));
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+  if (!sidebarCollapseBtn) return;
+  sidebarCollapseBtn.textContent = collapsed ? 'Expand' : 'Collapse';
+  sidebarCollapseBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+  sidebarCollapseBtn.setAttribute('title', collapsed ? 'Expand Sidebar' : 'Collapse Sidebar');
+}
+
+function applyAccentTheme(theme) {
+  const next = (theme === 'red' || theme === 'yellow' || theme === 'blue' || theme === 'green') ? theme : 'green';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem(ACCENT_THEME_KEY, next);
+  if (themeAccentSelect && themeAccentSelect.value !== next) themeAccentSelect.value = next;
 }
 
 function toggleFullscreen() {
@@ -728,6 +773,26 @@ function showSection(sectionName) {
         if (!nextMuted) Sound.play('click', { cooldownMs: 0 }).catch(() => {});
       });
     }
+    applyReadableMode(readReadableModePreference());
+    applySidebarCollapsed(readSidebarCollapsedPreference());
+    applyAccentTheme(readAccentThemePreference());
+    if (readableModeBtn) {
+      readableModeBtn.addEventListener('click', () => {
+        const next = !document.body.classList.contains('readable-mode');
+        applyReadableMode(next);
+      });
+    }
+    if (sidebarCollapseBtn) {
+      sidebarCollapseBtn.addEventListener('click', () => {
+        const next = !document.body.classList.contains('sidebar-collapsed');
+        applySidebarCollapsed(next);
+      });
+    }
+    if (themeAccentSelect) {
+      themeAccentSelect.addEventListener('change', () => {
+        applyAccentTheme(themeAccentSelect.value);
+      });
+    }
     updateFullscreenToggleUi();
     if (fullscreenToggleBtn) {
       fullscreenToggleBtn.addEventListener('click', toggleFullscreen);
@@ -986,7 +1051,14 @@ function showSection(sectionName) {
     const dashTrackerHighlights = document.getElementById('dashTrackerHighlights');
     const dashCodexRecent = document.getElementById('dashCodexRecent');
     const dashMarketQuickInput = document.getElementById('dashMarketQuickInput');
+    const dashMarketQuickSuggest = document.getElementById('dashMarketQuickSuggest');
     const dashMarketQuickGo = document.getElementById('dashMarketQuickGo');
+    const dashboardCardModal = document.getElementById('dashboardCardModal');
+    const dashboardCardModalTitle = document.getElementById('dashboardCardModalTitle');
+    const dashboardCardModalSub = document.getElementById('dashboardCardModalSub');
+    const dashboardCardModalBody = document.getElementById('dashboardCardModalBody');
+    const dashboardCardModalClose = document.getElementById('dashboardCardModalClose');
+    const dashboardCardModalOpenSection = document.getElementById('dashboardCardModalOpenSection');
     const trackerModal = document.getElementById('trackerModal');
     const trackerModalTitle = document.getElementById('trackerModalTitle');
     const trackerModalSub = document.getElementById('trackerModalSub');
@@ -1015,6 +1087,12 @@ function showSection(sectionName) {
       detailId: '',
       categoryId: '',
       detailType: '',
+      prevBodyOverflow: ''
+    };
+    const dashboardCardModalState = {
+      open: false,
+      section: '',
+      cardType: '',
       prevBodyOverflow: ''
     };
 
@@ -2675,6 +2753,94 @@ function showSection(sectionName) {
 
     function closeTrackerModal() {
       return setTrackerModalOpen(false);
+    }
+
+    function setDashboardCardModalOpen(open) {
+      if (!dashboardCardModal) return Promise.resolve();
+      const wantOpen = Boolean(open);
+      if (dashboardCardModalState.open === wantOpen) return Promise.resolve();
+      dashboardCardModalState.open = wantOpen;
+      if (wantOpen) {
+        dashboardCardModal.classList.add('is-visible');
+        dashboardCardModal.setAttribute('aria-hidden', 'false');
+        dashboardCardModalState.prevBodyOverflow = document.body.style.overflow || '';
+        document.body.style.overflow = 'hidden';
+        dashboardCardModal.dataset.open = '0';
+        dashboardCardModal.getBoundingClientRect();
+        dashboardCardModal.dataset.open = '1';
+        return Promise.resolve();
+      }
+      dashboardCardModal.dataset.open = '0';
+      dashboardCardModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = dashboardCardModalState.prevBodyOverflow;
+      return new Promise(resolve => {
+        window.setTimeout(() => {
+          if (!dashboardCardModalState.open) dashboardCardModal.classList.remove('is-visible');
+          resolve();
+        }, 220);
+      });
+    }
+
+    function dashboardCardPreviewBody(cardType) {
+      if (cardType === 'reset-status') {
+        const reset = escapeHtml(dashResetSummary?.textContent || 'Waiting for tracker sync...');
+        const daily = escapeHtml(dashDailyStatus?.textContent || 'No active daily data yet');
+        return `
+          <div class="border border-terminal/25 p-3 text-sm text-green-200/85">${reset}</div>
+          <div class="border border-terminal/20 p-3 text-xs text-green-200/75 uppercase tracking-[0.16em]">${daily}</div>
+        `;
+      }
+      if (cardType === 'market-quick') {
+        const query = escapeHtml(String(dashMarketQuickInput?.value || '').trim() || 'No query entered.');
+        return `
+          <div class="border border-terminal/25 p-3 text-sm text-green-200/85">Quick query: ${query}</div>
+          <div class="text-xs text-green-200/75">Use “Open Full Section” to continue in Market terminal.</div>
+        `;
+      }
+      if (cardType === 'tracker-highlights') {
+        const rows = Array.from(dashTrackerHighlights?.querySelectorAll('.dash-list-row') || []).slice(0, 5);
+        if (!rows.length) {
+          return '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">No tracker highlights yet.</div>';
+        }
+        return rows.map(row => `<div class="border border-terminal/20 p-3 text-sm text-green-200/85">${escapeHtml(row.textContent || '')}</div>`).join('');
+      }
+      if (cardType === 'codex-recent') {
+        const rows = Array.from(dashCodexRecent?.querySelectorAll('.dash-list-row') || []).slice(0, 6);
+        if (!rows.length) {
+          return '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">No pinned codex entries yet.</div>';
+        }
+        return rows.map(row => `<div class="border border-terminal/20 p-3 text-sm text-green-200/85">${escapeHtml(row.textContent || '')}</div>`).join('');
+      }
+      if (cardType === 'quick-links') {
+        const buttons = Array.from(document.querySelectorAll('[data-dash-nav]'));
+        if (!buttons.length) {
+          return '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">No preview data available yet.</div>';
+        }
+        return `
+          <div class="grid grid-cols-2 gap-2">
+            ${buttons.map(btn => `<button type="button" class="border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-modal-nav="${escapeHtml(btn.dataset.dashNav || 'dashboard')}">${escapeHtml(btn.textContent || '')}</button>`).join('')}
+          </div>
+        `;
+      }
+      return '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">No preview data available yet.</div>';
+    }
+
+    function openDashboardCardModal({ section = 'dashboard', cardType = '', title = 'Dashboard Preview', subtitle = '' } = {}) {
+      dashboardCardModalState.section = section;
+      dashboardCardModalState.cardType = cardType;
+      if (dashboardCardModalTitle) dashboardCardModalTitle.textContent = title;
+      if (dashboardCardModalSub) dashboardCardModalSub.textContent = subtitle || 'Preview details';
+      if (dashboardCardModalBody) {
+        const previewHtml = dashboardCardPreviewBody(cardType);
+        dashboardCardModalBody.innerHTML = previewHtml || '<div class="border border-terminal/25 p-3 text-sm text-green-200/80">No preview data available yet.</div>';
+        dashboardCardModalBody.querySelectorAll('[data-dash-modal-nav]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const target = btn.dataset.dashModalNav || 'dashboard';
+            setDashboardCardModalOpen(false).then(() => showSection(target));
+          });
+        });
+      }
+      setDashboardCardModalOpen(true);
     }
 
     function renderDetailPanelByType(detail) {
@@ -4884,8 +5050,8 @@ function showSection(sectionName) {
         .replace(/<\/\s*p\s*>/gi, '\n\n')
         .replace(/<\/\s*li\s*>/gi, '\n')
         .replace(/<\/\s*h[1-6]\s*>/gi, '\n');
-      container.querySelectorAll('a[href*="action=edit"], a[href*="veaction=edit"], a[href*="edit"]').forEach(el => el.remove());
-      container.querySelectorAll('script, style, table, nav, .mw-editsection, .navbox, .toc, .reference, .reflist, .hatnote, .noprint, .portable-infobox, .thumb, .gallery').forEach(el => el.remove());
+      container.querySelectorAll('a[href*="action=edit"], a[href*="veaction=edit"], a[href*="edit"], a[href*="#cite"], a[href*="Help:Citation"]').forEach(el => el.remove());
+      container.querySelectorAll('script, style, table, nav, sup, .mw-editsection, .navbox, .toc, .reference, .reflist, .hatnote, .noprint, .portable-infobox, .thumb, .gallery').forEach(el => el.remove());
       return container.textContent || '';
     }
 
@@ -4898,8 +5064,9 @@ function showSection(sectionName) {
         .replace(/\[edit\]/gi, ' ')
         .replace(/\[\s*edit\s*\]/gi, ' ')
         .replace(/edit source/gi, ' ')
-        .replace(/\[\s*\|\s*\]/g, ' ')
         .replace(/\[\d+\]/g, ' ')
+        .replace(/\[\s*\]/g, ' ')
+        .replace(/\[\s*\|\s*\]/g, ' ')
         .replace(/__TOC__/gi, ' ')
         .replace(/\bContents\b/gi, ' ')
         .replace(/You're not supposed to be in here\.?/gi, ' ')
@@ -5720,10 +5887,29 @@ function showSection(sectionName) {
     document.querySelectorAll('[data-dash-open]').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('button, a, input, select, textarea, label')) return;
-        const section = card.dataset.dashOpen || '';
-        if (section) showSection(section);
+        const sourceCard = e.currentTarget;
+        const section = sourceCard.dataset.dashOpen || '';
+        const cardType = sourceCard.dataset.dashCard || '';
+        const title = sourceCard.dataset.dashTitle || sourceCard.querySelector('h2')?.textContent?.trim() || 'Dashboard Preview';
+        const subtitle = sourceCard.dataset.dashSubtitle || sourceCard.querySelector('div')?.textContent?.trim() || 'Dashboard card';
+        openDashboardCardModal({ section, cardType, title, subtitle });
       });
     });
+    if (dashboardCardModalClose) {
+      dashboardCardModalClose.addEventListener('click', () => setDashboardCardModalOpen(false));
+    }
+    if (dashboardCardModal) {
+      dashboardCardModal.addEventListener('click', (e) => {
+        const backdropClick = e.target === dashboardCardModal || e.target?.classList?.contains('terminal-modal__backdrop');
+        if (backdropClick) setDashboardCardModalOpen(false);
+      });
+    }
+    if (dashboardCardModalOpenSection) {
+      dashboardCardModalOpenSection.addEventListener('click', () => {
+        const target = dashboardCardModalState.section || 'dashboard';
+        setDashboardCardModalOpen(false).then(() => showSection(target));
+      });
+    }
 
     const runDashboardMarketQuickSearch = () => {
       const query = String(dashMarketQuickInput?.value || '').trim();
@@ -5736,14 +5922,133 @@ function showSection(sectionName) {
       if (marketSearchBtn) marketSearchBtn.click();
     };
 
+    const dashMarketQuickState = {
+      items: [],
+      activeIndex: -1,
+      open: false,
+      timer: null
+    };
+
+    const closeDashMarketSuggest = () => {
+      dashMarketQuickState.items = [];
+      dashMarketQuickState.activeIndex = -1;
+      dashMarketQuickState.open = false;
+      if (!dashMarketQuickSuggest) return;
+      dashMarketQuickSuggest.innerHTML = '';
+      dashMarketQuickSuggest.hidden = true;
+    };
+
+    const renderDashMarketSuggest = () => {
+      if (!dashMarketQuickSuggest) return;
+      if (!dashMarketQuickState.items.length) {
+        closeDashMarketSuggest();
+        return;
+      }
+      dashMarketQuickSuggest.hidden = false;
+      dashMarketQuickState.open = true;
+      dashMarketQuickSuggest.innerHTML = dashMarketQuickState.items.map((item, idx) => `
+        <button type="button" class="dash-market-suggest__item${idx === dashMarketQuickState.activeIndex ? ' is-active' : ''}" data-dash-market-suggest-index="${idx}">
+          <span>${escapeHtml(item.item_name || item.url_name || 'Unknown item')}</span>
+          <span class="dash-market-suggest__meta">${escapeHtml(item.url_name || '')}</span>
+        </button>
+      `).join('');
+      dashMarketQuickSuggest.querySelectorAll('[data-dash-market-suggest-index]').forEach(btn => {
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.dashMarketSuggestIndex);
+          const item = dashMarketQuickState.items[idx];
+          if (!item) return;
+          dashMarketQuickInput.value = item.item_name || item.url_name || '';
+          closeDashMarketSuggest();
+          runDashboardMarketQuickSearch();
+        });
+      });
+    };
+
+    const searchDashMarketSuggest = async () => {
+      if (!dashMarketQuickInput) return;
+      const q = String(dashMarketQuickInput.value || '').trim().toLowerCase();
+      if (!q) {
+        closeDashMarketSuggest();
+        return;
+      }
+      try {
+        await ensureMarketCatalog();
+      } catch {
+        closeDashMarketSuggest();
+        return;
+      }
+      const pool = Array.isArray(marketState?.catalog) ? marketState.catalog : [];
+      const startsWith = [];
+      const includes = [];
+      for (const item of pool) {
+        const name = String(item?.item_name || '').toLowerCase();
+        const slug = String(item?.url_name || '').toLowerCase();
+        if (!name && !slug) continue;
+        if (name.startsWith(q) || slug.startsWith(q)) startsWith.push(item);
+        else if (name.includes(q) || slug.includes(q)) includes.push(item);
+        if (startsWith.length + includes.length >= 12) break;
+      }
+      dashMarketQuickState.items = [...startsWith, ...includes].slice(0, 10);
+      dashMarketQuickState.activeIndex = dashMarketQuickState.items.length ? 0 : -1;
+      renderDashMarketSuggest();
+    };
+
     if (dashMarketQuickGo) dashMarketQuickGo.addEventListener('click', runDashboardMarketQuickSearch);
     if (dashMarketQuickInput) {
+      dashMarketQuickInput.addEventListener('input', () => {
+        if (dashMarketQuickState.timer) clearTimeout(dashMarketQuickState.timer);
+        dashMarketQuickState.timer = window.setTimeout(searchDashMarketSuggest, 250);
+      });
       dashMarketQuickInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' && dashMarketQuickState.open && dashMarketQuickState.items.length) {
+          e.preventDefault();
+          dashMarketQuickState.activeIndex = (dashMarketQuickState.activeIndex + 1) % dashMarketQuickState.items.length;
+          renderDashMarketSuggest();
+          return;
+        }
+        if (e.key === 'ArrowUp' && dashMarketQuickState.open && dashMarketQuickState.items.length) {
+          e.preventDefault();
+          dashMarketQuickState.activeIndex = (dashMarketQuickState.activeIndex - 1 + dashMarketQuickState.items.length) % dashMarketQuickState.items.length;
+          renderDashMarketSuggest();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeDashMarketSuggest();
+          return;
+        }
         if (e.key !== 'Enter') return;
         e.preventDefault();
+        if (dashMarketQuickState.open && dashMarketQuickState.items.length && dashMarketQuickState.activeIndex >= 0) {
+          const active = dashMarketQuickState.items[dashMarketQuickState.activeIndex];
+          if (active) {
+            dashMarketQuickInput.value = active.item_name || active.url_name || '';
+          }
+        }
+        closeDashMarketSuggest();
         runDashboardMarketQuickSearch();
       });
+      dashMarketQuickInput.addEventListener('blur', () => {
+        window.setTimeout(() => {
+          if (dashMarketQuickSuggest?.matches(':hover')) return;
+          closeDashMarketSuggest();
+        }, 120);
+      });
     }
+    document.addEventListener('click', (e) => {
+      if (!dashMarketQuickSuggest || !dashMarketQuickInput) return;
+      const inside = e.target instanceof Element && (e.target.closest('#dashMarketQuickSuggest') || e.target.closest('#dashMarketQuickInput'));
+      if (inside) return;
+      closeDashMarketSuggest();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !dashboardCardModalState.open) return;
+      e.preventDefault();
+      setDashboardCardModalOpen(false);
+    });
 
 
     setupSubtabs();

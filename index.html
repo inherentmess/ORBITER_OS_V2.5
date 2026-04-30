@@ -36,6 +36,28 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700;900&display=swap" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
   <style>
+    :root {
+      --accent: #00ff9f;
+      --accent-rgb: 0, 255, 159;
+      --accent-soft: rgba(var(--accent-rgb), 0.15);
+      --accent-glow: 0 0 6px rgba(var(--accent-rgb), 0.42);
+      --bg-main: #020403;
+      --bg-grid: rgba(var(--accent-rgb), 0.06);
+      --border-color: rgba(var(--accent-rgb), 0.25);
+      --text-main: #caffea;
+      --text-dim: #7bc7a5;
+      --readable-bg: #07140e;
+      --readable-panel: rgba(8, 24, 16, 0.86);
+      --readable-text: #d7fbe6;
+      --readable-muted: #b6e7cf;
+      --readable-border: rgba(var(--accent-rgb), 0.62);
+      --readable-highlight: rgba(var(--accent-rgb), 0.24);
+    }
+    :root[data-theme="green"] { --accent: #00ff9f; --accent-rgb: 0, 255, 159; --accent-soft: rgba(var(--accent-rgb), 0.15); --accent-glow: 0 0 6px rgba(var(--accent-rgb), 0.42); --text-main: #caffea; --text-dim: #7bc7a5; --readable-bg: #07140e; --readable-panel: rgba(8, 24, 16, 0.86); --readable-text: #d7fbe6; --readable-muted: #b6e7cf; --readable-border: rgba(var(--accent-rgb), 0.62); --readable-highlight: rgba(var(--accent-rgb), 0.24); }
+    :root[data-theme="red"] { --accent: #ff4d4d; --accent-rgb: 255, 77, 77; --accent-soft: rgba(var(--accent-rgb), 0.11); --accent-glow: 0 0 4px rgba(var(--accent-rgb), 0.22); --text-main: #ffd8d8; --text-dim: #d9a2a2; --readable-bg: #170b0b; --readable-panel: rgba(34, 14, 14, 0.84); --readable-text: #ffe3e3; --readable-muted: #e7b7b7; --readable-border: rgba(var(--accent-rgb), 0.52); --readable-highlight: rgba(var(--accent-rgb), 0.19); }
+    :root[data-theme="yellow"] { --accent: #ffd84d; --accent-rgb: 255, 216, 77; --accent-soft: rgba(var(--accent-rgb), 0.10); --accent-glow: 0 0 3px rgba(var(--accent-rgb), 0.20); --text-main: #fff2c9; --text-dim: #d0be8a; --readable-bg: #151209; --readable-panel: rgba(30, 24, 12, 0.82); --readable-text: #fff4d6; --readable-muted: #e5d5a5; --readable-border: rgba(var(--accent-rgb), 0.48); --readable-highlight: rgba(var(--accent-rgb), 0.17); }
+    :root[data-theme="blue"] { --accent: #4da6ff; --accent-rgb: 77, 166, 255; --accent-soft: rgba(var(--accent-rgb), 0.16); --accent-glow: 0 0 6px rgba(var(--accent-rgb), 0.34); --text-main: #d7eaff; --text-dim: #95b7dd; --readable-bg: #0a1220; --readable-panel: rgba(12, 22, 40, 0.84); --readable-text: #e1efff; --readable-muted: #b7d1ef; --readable-border: rgba(var(--accent-rgb), 0.58); --readable-highlight: rgba(var(--accent-rgb), 0.22); }
+
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
     .cursor-blink { animation: blink 1s step-end infinite; }
     .scanlines {
@@ -48,6 +70,14 @@
       background: radial-gradient(circle, rgba(18,16,16,0) 0%, rgba(0,0,0,.14) 100%);
       pointer-events:none; z-index:100;
     }
+    html, body, #app {
+      background: var(--bg-main) !important;
+      color: var(--text-main);
+    }
+    ::selection {
+      background: rgba(var(--accent-rgb), 0.28);
+      color: #020403;
+    }
 
     /* Boot overlay */
     .boot-overlay {
@@ -55,11 +85,11 @@
       inset: 0;
       z-index: 200;
       background: rgba(0, 0, 0, 0.94);
-      border: 2px solid rgba(74, 222, 128, 0.6);
-      box-shadow: 0 0 40px rgba(74, 222, 128, 0.1) inset;
+      border: 2px solid rgba(var(--accent-rgb), 0.6);
+      box-shadow: 0 0 40px rgba(var(--accent-rgb), 0.1) inset;
       padding: 18px 16px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      color: #4ade80;
+      color: var(--accent);
       overflow: hidden;
     }
     .boot-overlay.hidden { display: none; }
@@ -79,12 +109,45 @@
       55%  { opacity: 0.75; transform: translateY(-10px); filter: saturate(1.15) contrast(1.25); }
       100% { opacity: 0; transform: translateY(-14px); filter: saturate(0.95) contrast(1.1); }
     }
-    .boot-glow { text-shadow: 0 0 12px rgba(74, 222, 128, 0.35); }
+    .boot-glow { text-shadow: 0 0 12px rgba(var(--accent-rgb), 0.35); }
     .boot-lines { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
-    .boot-hint { color: rgba(74, 222, 128, 0.7); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
+    .boot-hint { color: rgba(var(--accent-rgb), 0.7); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
     .boot-topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
     .boot-title { font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
-    .boot-cursor { display: inline-block; width: 10px; height: 18px; background: #4ade80; vertical-align: -3px; margin-left: 6px; }
+    .boot-cursor { display: inline-block; width: 10px; height: 18px; background: var(--accent); vertical-align: -3px; margin-left: 6px; }
+
+    /* Accent-color system: controls/highlights only, not body text/background. */
+    .text-terminal { color: var(--accent) !important; text-shadow: var(--accent-glow); }
+    button.border,
+    .terminal-link.border,
+    .nav-btn,
+    .subtab-btn,
+    .dash-link-btn,
+    .dash-market-suggest__item,
+    .archive-suggest__item {
+      border-color: color-mix(in srgb, var(--accent) 58%, transparent) !important;
+    }
+    .nav-btn.nav-active,
+    .subtab-btn.subtab-active,
+    .archive-suggest__item.is-active,
+    .dash-market-suggest__item.is-active,
+    .dash-market-suggest__item:hover {
+      background: var(--accent-soft) !important;
+      box-shadow: var(--accent-glow);
+    }
+    .dash-market-suggest__meta,
+    .archive-suggest__meta,
+    .text-terminal\/70,
+    .text-terminal\/60 {
+      color: color-mix(in srgb, var(--accent) 64%, var(--text-dim) 36%) !important;
+    }
+    [class*="text-green-"] { color: var(--text-main) !important; }
+    [class*="placeholder-green-"]::placeholder { color: color-mix(in srgb, var(--text-dim) 78%, #111 22%) !important; }
+    :focus-visible {
+      outline: 2px solid var(--accent) !important;
+      outline-offset: 2px !important;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5), var(--accent-glow) !important;
+    }
 
     /* Market order tabs (mobile shows one panel at a time). */
     .market-tab-btn { touch-action: manipulation; }
@@ -96,21 +159,21 @@
     #section-market input,
     #section-market select {
       background: rgba(0, 0, 0, 0.55);
-      color: #4ade80;
-      border-color: rgba(74, 222, 128, 0.55);
+      color: var(--accent);
+      border-color: rgba(var(--accent-rgb), 0.55);
     }
     #section-market input::placeholder { color: rgba(20, 83, 45, 0.9); }
     #section-market input:focus,
     #section-market select:focus {
       outline: none;
-      box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.22), 0 0 18px rgba(74, 222, 128, 0.12);
+      box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22), 0 0 18px rgba(var(--accent-rgb), 0.12);
     }
     #marketAutoRefreshToggle {
       appearance: none;
       -webkit-appearance: none;
       width: 16px;
       height: 16px;
-      border: 1px solid rgba(74, 222, 128, 0.65);
+      border: 1px solid rgba(var(--accent-rgb), 0.65);
       background: rgba(0, 0, 0, 0.75);
       border-radius: 2px;
       display: inline-grid;
@@ -123,31 +186,31 @@
       content: '';
       width: 8px;
       height: 8px;
-      background: #4ade80;
+      background: var(--accent);
       transform: scale(0);
       transition: transform 120ms ease;
-      box-shadow: 0 0 8px rgba(74, 222, 128, 0.45);
+      box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.45);
     }
     #marketAutoRefreshToggle:checked {
-      background: rgba(74, 222, 128, 0.16);
-      border-color: #4ade80;
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.35) inset;
+      background: rgba(var(--accent-rgb), 0.16);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.35) inset;
     }
     #marketAutoRefreshToggle:checked::after {
       transform: scale(1);
     }
     #marketAutoRefreshToggle:focus-visible {
-      outline: 2px solid rgba(74, 222, 128, 0.72);
+      outline: 2px solid rgba(var(--accent-rgb), 0.72);
       outline-offset: 2px;
     }
     .market-order-row {
       background: linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.25));
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.12) inset;
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.12) inset;
     }
-    .market-order-row:hover { box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.35) inset, 0 0 18px rgba(74, 222, 128, 0.08); }
+    .market-order-row:hover { box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.35) inset, 0 0 18px rgba(var(--accent-rgb), 0.08); }
     .market-order-row--best {
-      border-color: rgba(74, 222, 128, 0.6) !important;
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.42) inset, 0 0 22px rgba(74, 222, 128, 0.14);
+      border-color: rgba(var(--accent-rgb), 0.6) !important;
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.42) inset, 0 0 22px rgba(var(--accent-rgb), 0.14);
     }
     .market-result-row {
       display: grid;
@@ -157,21 +220,21 @@
       transition: background 180ms ease, border-color 180ms ease, transform 180ms ease, opacity 180ms ease;
     }
     .market-result-row:hover {
-      background: rgba(74, 222, 128, 0.08);
-      border-color: rgba(74, 222, 128, 0.5);
+      background: rgba(var(--accent-rgb), 0.08);
+      border-color: rgba(var(--accent-rgb), 0.5);
       transform: translateY(-1px);
     }
     .market-favorite-btn.is-active,
     #marketFavoriteToggle.is-active {
-      background: rgba(74, 222, 128, 0.25);
-      border-color: rgba(74, 222, 128, 0.7);
+      background: rgba(var(--accent-rgb), 0.25);
+      border-color: rgba(var(--accent-rgb), 0.7);
       color: #b9ffd7;
     }
     .market-favorite-row {
       transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
     }
     .market-favorite-row:hover {
-      border-color: rgba(74, 222, 128, 0.5);
+      border-color: rgba(var(--accent-rgb), 0.5);
       transform: translateY(-1px);
     }
     .market-order-head,
@@ -188,16 +251,16 @@
       min-width: 700px;
     }
     .market-order-head {
-      border: 1px solid rgba(74, 222, 128, 0.24);
+      border: 1px solid rgba(var(--accent-rgb), 0.24);
       background: rgba(0, 0, 0, 0.45);
       padding: 7px 9px;
       font-size: 9px;
       letter-spacing: 0.18em;
       text-transform: uppercase;
-      color: rgba(74, 222, 128, 0.7);
+      color: rgba(var(--accent-rgb), 0.7);
     }
     .market-order-row {
-      border: 1px solid rgba(74, 222, 128, 0.22);
+      border: 1px solid rgba(var(--accent-rgb), 0.22);
       padding: 7px 9px;
       min-height: 48px;
       cursor: pointer;
@@ -206,10 +269,10 @@
     }
     .market-order-row:hover {
       transform: translateY(-1px);
-      border-color: rgba(74, 222, 128, 0.45);
+      border-color: rgba(var(--accent-rgb), 0.45);
     }
     .market-order-row:focus-visible {
-      outline: 2px solid rgba(74, 222, 128, 0.65);
+      outline: 2px solid rgba(var(--accent-rgb), 0.65);
       outline-offset: 1px;
     }
     .market-order-cell {
@@ -223,7 +286,7 @@
     .market-order-cell--price {
       font-size: 17px;
       font-weight: 800;
-      color: #4ade80;
+      color: var(--accent);
     }
     .market-order-cell--copy {
       min-width: 0;
@@ -264,8 +327,8 @@
       line-height: 1.1;
     }
     .market-status-badge--ingame {
-      border-color: rgba(74, 222, 128, 0.62);
-      background: rgba(74, 222, 128, 0.2);
+      border-color: rgba(var(--accent-rgb), 0.62);
+      background: rgba(var(--accent-rgb), 0.2);
       color: #86efac;
     }
     .market-status-badge--online {
@@ -280,9 +343,9 @@
       color: #cbd5e1;
     }
     .market-order-row__copy-btn {
-      border: 1px solid rgba(74, 222, 128, 0.55);
+      border: 1px solid rgba(var(--accent-rgb), 0.55);
       background: rgba(0, 0, 0, 0.58);
-      color: #4ade80;
+      color: var(--accent);
       padding: 6px 9px;
       font-size: 10px;
       letter-spacing: 0.12em;
@@ -297,16 +360,16 @@
       box-sizing: border-box;
     }
     .market-order-row__copy-btn:hover {
-      background: rgba(74, 222, 128, 0.12);
+      background: rgba(var(--accent-rgb), 0.12);
     }
     .market-order-row.is-copied .market-order-cell--price {
       color: #bbf7d0;
     }
     .market-order-row.copied,
     .market-order-row.is-copied {
-      border-color: rgba(74, 222, 128, 0.9);
+      border-color: rgba(var(--accent-rgb), 0.9);
       background: rgba(16, 64, 36, 0.45);
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.5), 0 0 24px rgba(74, 222, 128, 0.24);
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.5), 0 0 24px rgba(var(--accent-rgb), 0.24);
       transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease, color 220ms ease, transform 220ms ease;
     }
     .market-order-row.copied .market-order-cell,
@@ -319,8 +382,8 @@
     }
     .market-order-row.copied .market-order-row__copy-btn,
     .market-order-row.is-copied .market-order-row__copy-btn {
-      border-color: rgba(74, 222, 128, 0.88);
-      background: rgba(74, 222, 128, 0.25);
+      border-color: rgba(var(--accent-rgb), 0.88);
+      background: rgba(var(--accent-rgb), 0.25);
       color: #ecfdf5;
     }
     .market-order-row.copied::after,
@@ -329,14 +392,14 @@
       position: absolute;
       right: 8px;
       top: -8px;
-      border: 1px solid rgba(74, 222, 128, 0.85);
+      border: 1px solid rgba(var(--accent-rgb), 0.85);
       background: rgba(7, 29, 18, 0.95);
       color: #86efac;
       font-size: 10px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       padding: 2px 7px;
-      box-shadow: 0 0 12px rgba(74, 222, 128, 0.35);
+      box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.35);
       pointer-events: none;
     }
     #marketSellOrders,
@@ -442,7 +505,7 @@
       .market-order-cell--user { grid-area: user; }
       .market-order-cell--qty { grid-area: qty; text-align: left; }
       .market-order-cell--status { grid-area: status; }
-      .market-order-cell--platform { grid-area: platform; font-size: 11px; color: rgba(74, 222, 128, 0.75); text-align: left; }
+      .market-order-cell--platform { grid-area: platform; font-size: 11px; color: rgba(var(--accent-rgb), 0.75); text-align: left; }
       .market-order-cell--seen-rep { grid-area: seen; }
       .market-order-cell--copy {
         grid-area: copy;
@@ -479,18 +542,18 @@
     #section-codex .codex-chip {
       background: rgba(0, 0, 0, 0.58);
       color: #86efac;
-      border-color: rgba(74, 222, 128, 0.48);
+      border-color: rgba(var(--accent-rgb), 0.48);
       transition: background 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
     }
     #section-codex #codexSearchInput::placeholder {
-      color: rgba(74, 222, 128, 0.45);
+      color: rgba(var(--accent-rgb), 0.45);
     }
     #section-codex #codexCategoryFilter {
       -webkit-appearance: none;
       appearance: none;
       background-image:
-        linear-gradient(45deg, transparent 50%, rgba(74, 222, 128, 0.85) 50%),
-        linear-gradient(135deg, rgba(74, 222, 128, 0.85) 50%, transparent 50%);
+        linear-gradient(45deg, transparent 50%, rgba(var(--accent-rgb), 0.85) 50%),
+        linear-gradient(135deg, rgba(var(--accent-rgb), 0.85) 50%, transparent 50%);
       background-position:
         calc(100% - 18px) calc(50% - 3px),
         calc(100% - 12px) calc(50% - 3px);
@@ -509,26 +572,26 @@
     #section-codex #codexPinBtn:focus-visible,
     #section-codex .codex-chip:focus-visible {
       outline: none;
-      border-color: rgba(74, 222, 128, 0.8);
-      box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.22), 0 0 14px rgba(74, 222, 128, 0.15);
+      border-color: rgba(var(--accent-rgb), 0.8);
+      box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22), 0 0 14px rgba(var(--accent-rgb), 0.15);
     }
     #section-codex #codexSearchBtn:hover,
     #section-codex #codexOpenBtn:hover,
     #section-codex #codexPinBtn:hover,
     #section-codex .codex-chip:hover {
-      background: rgba(74, 222, 128, 0.12);
+      background: rgba(var(--accent-rgb), 0.12);
       color: #dcfce7;
-      border-color: rgba(74, 222, 128, 0.7);
+      border-color: rgba(var(--accent-rgb), 0.7);
       transform: translateY(-1px);
     }
     #section-codex #codexCategoryFilter:hover,
     #section-codex #codexSearchInput:hover {
-      border-color: rgba(74, 222, 128, 0.66);
+      border-color: rgba(var(--accent-rgb), 0.66);
       background: rgba(0, 0, 0, 0.65);
     }
     #section-codex #codexSuggestions {
       background: rgba(0, 0, 0, 0.96);
-      border-color: rgba(74, 222, 128, 0.42);
+      border-color: rgba(var(--accent-rgb), 0.42);
       box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45);
     }
     #section-codex .codex-suggestion,
@@ -539,25 +602,25 @@
     #section-codex .codex-suggestion:hover,
     #section-codex .codex-result:hover,
     #section-codex .codex-favorite-item:hover {
-      background: rgba(74, 222, 128, 0.1);
-      border-color: rgba(74, 222, 128, 0.58);
+      background: rgba(var(--accent-rgb), 0.1);
+      border-color: rgba(var(--accent-rgb), 0.58);
     }
     #section-codex .codex-suggestion.bg-terminal\/10 {
-      background: rgba(74, 222, 128, 0.12);
+      background: rgba(var(--accent-rgb), 0.12);
       color: #dcfce7;
-      border-color: rgba(74, 222, 128, 0.6);
+      border-color: rgba(var(--accent-rgb), 0.6);
     }
     #section-codex .codex-open-result,
     #section-codex .codex-load-result {
       background: rgba(0, 0, 0, 0.48);
       color: #86efac;
-      border-color: rgba(74, 222, 128, 0.45);
+      border-color: rgba(var(--accent-rgb), 0.45);
       transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
     }
     #section-codex .codex-open-result:hover,
     #section-codex .codex-load-result:hover {
-      background: rgba(74, 222, 128, 0.12);
-      border-color: rgba(74, 222, 128, 0.72);
+      background: rgba(var(--accent-rgb), 0.12);
+      border-color: rgba(var(--accent-rgb), 0.72);
       color: #dcfce7;
     }
     #section-codex #codex-entries .xl\:grid-cols-3 {
@@ -580,7 +643,7 @@
     }
     #section-codex #codexPageDetails {
       margin-top: 12px;
-      border: 1px solid rgba(74, 222, 128, 0.22);
+      border: 1px solid rgba(var(--accent-rgb), 0.22);
       background: rgba(0, 0, 0, 0.42);
       padding: 12px;
     }
@@ -605,7 +668,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      border: 1px solid rgba(74, 222, 128, 0.28);
+      border: 1px solid rgba(var(--accent-rgb), 0.28);
       background: rgba(0, 0, 0, 0.55);
       padding: 6px 8px;
       font-size: 11px;
@@ -613,8 +676,8 @@
       text-decoration: none;
     }
     #section-codex .codex-detail-chip:hover {
-      border-color: rgba(74, 222, 128, 0.55);
-      background: rgba(74, 222, 128, 0.11);
+      border-color: rgba(var(--accent-rgb), 0.55);
+      background: rgba(var(--accent-rgb), 0.11);
     }
     @media (max-width: 900px) {
       #section-codex #codexPageLink {
@@ -645,8 +708,8 @@
       width: min(980px, calc(100% - 20px));
       height: min(86vh, 820px);
       background: rgba(0, 0, 0, 0.92);
-      border: 1px solid rgba(74, 222, 128, 0.65);
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.15) inset, 0 0 36px rgba(74, 222, 128, 0.08);
+      border: 1px solid rgba(var(--accent-rgb), 0.65);
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.15) inset, 0 0 36px rgba(var(--accent-rgb), 0.08);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -658,42 +721,79 @@
     .terminal-modal__header,
     .terminal-modal__head {
       padding: 12px 12px 10px;
-      border-bottom: 1px solid rgba(74, 222, 128, 0.35);
+      border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
       display: flex;
       gap: 12px;
       align-items: center;
       justify-content: space-between;
     }
     .terminal-modal__title { font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
-    .terminal-modal__sub { font-size: 12px; color: rgba(74, 222, 128, 0.75); overflow-wrap: anywhere; }
+    .terminal-modal__sub { font-size: 12px; color: rgba(var(--accent-rgb), 0.75); overflow-wrap: anywhere; }
     .terminal-modal__controls {
       padding: 10px 12px;
-      border-bottom: 1px solid rgba(74, 222, 128, 0.22);
+      border-bottom: 1px solid rgba(var(--accent-rgb), 0.22);
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
     .terminal-modal__controls .terminal-modal__row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .terminal-modal__controls label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(74, 222, 128, 0.7); }
+    .terminal-modal__controls label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(var(--accent-rgb), 0.7); }
     .terminal-modal__controls select,
     .terminal-modal__controls input {
       width: 100%;
-      border: 1px solid rgba(74, 222, 128, 0.55);
+      border: 1px solid rgba(var(--accent-rgb), 0.55);
       padding: 10px 10px;
       font-size: 12px;
       background: rgba(0,0,0,0.6);
-      color: #4ade80;
+      color: var(--accent);
     }
     .terminal-modal__list { padding: 12px; overflow: auto; flex: 1; }
     .terminal-modal__list .market-order-row { padding: 10px; font-size: 12px; }
     .terminal-modal__close {
-      border: 1px solid rgba(74, 222, 128, 0.55);
+      border: 1px solid rgba(var(--accent-rgb), 0.55);
       padding: 10px 12px;
       font-size: 12px;
       letter-spacing: 0.2em;
       text-transform: uppercase;
     }
-    .terminal-modal__close:hover { background: #4ade80; color: #000; }
+    .terminal-modal__close:hover { background: var(--accent); color: #000; }
+    /* Dashboard preview modal mobile fit */
+    #dashboardCardModal {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: calc(env(safe-area-inset-top, 0px) + 10px) calc(env(safe-area-inset-right, 0px) + 10px) calc(env(safe-area-inset-bottom, 0px) + 10px) calc(env(safe-area-inset-left, 0px) + 10px);
+      box-sizing: border-box;
+    }
+    #dashboardCardModal .terminal-modal__panel {
+      margin: 0 auto;
+      width: min(94vw, 720px);
+      max-height: 85dvh;
+      height: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    #dashboardCardModal .terminal-modal__head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(0, 0, 0, 0.94);
+    }
+    #dashboardCardModal .terminal-modal__controls {
+      grid-template-columns: 1fr;
+      align-items: center;
+    }
+    #dashboardCardModal .terminal-modal__controls > * {
+      width: 100%;
+      min-height: 38px;
+    }
+    #dashboardCardModalBody {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
     /* Codex entry modal polish */
     #codexEntryModal {
       display: flex;
@@ -711,8 +811,8 @@
       max-width: 1040px;
       max-height: 85vh;
       height: auto;
-      border-color: rgba(74, 222, 128, 0.75);
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.2) inset, 0 18px 48px rgba(0, 0, 0, 0.6), 0 0 34px rgba(74, 222, 128, 0.1);
+      border-color: rgba(var(--accent-rgb), 0.75);
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.2) inset, 0 18px 48px rgba(0, 0, 0, 0.6), 0 0 34px rgba(var(--accent-rgb), 0.1);
     }
     #codexEntryModal .terminal-modal__head {
       padding: 14px 16px 12px;
@@ -762,11 +862,11 @@
       gap: 12px;
     }
     #codexEntryModalBody > .border {
-      border-color: rgba(74, 222, 128, 0.3) !important;
+      border-color: rgba(var(--accent-rgb), 0.3) !important;
       background: rgba(0, 0, 0, 0.5) !important;
     }
     #codexEntryModalBody .codex-detail-group {
-      border: 1px solid rgba(74, 222, 128, 0.22);
+      border: 1px solid rgba(var(--accent-rgb), 0.22);
       background: rgba(0, 0, 0, 0.46);
       padding: 10px;
     }
@@ -786,7 +886,7 @@
       text-align: left;
     }
     #codexEntryModalBody .codex-detail-chip:hover {
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.2) inset;
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.2) inset;
     }
     #codexEntryModalBody .codex-accordion-item {
       list-style: none;
@@ -810,7 +910,7 @@
     }
     #codexSectionContent {
       background: rgba(0, 0, 0, 0.58);
-      border-color: rgba(74, 222, 128, 0.34) !important;
+      border-color: rgba(var(--accent-rgb), 0.34) !important;
     }
     #codexSectionContent p:last-child {
       margin-bottom: 0;
@@ -819,6 +919,11 @@
       .terminal-modal__panel { margin: 0; width: 100%; height: 100dvh; }
       .terminal-modal__controls { grid-template-columns: 1fr; }
       .terminal-modal__controls .terminal-modal__row { grid-template-columns: 1fr 1fr; }
+      #dashboardCardModal .terminal-modal__panel {
+        width: min(94vw, 720px);
+        height: auto;
+        max-height: 85dvh;
+      }
       #codexEntryModal .terminal-modal__panel {
         width: calc(100% - 10px);
         max-height: 92vh;
@@ -840,6 +945,36 @@
     @media (max-width: 520px) {
       .terminal-modal__controls .terminal-modal__row { grid-template-columns: 1fr; }
     }
+    @media (max-width: 700px) {
+      #dashboardCardModal .terminal-modal__panel {
+        width: min(94vw, 720px);
+        max-height: 85dvh;
+      }
+      #dashboardCardModal .terminal-modal__head {
+        padding: 12px 12px 10px;
+      }
+      #dashboardCardModal .terminal-modal__controls {
+        padding: 10px 12px;
+        gap: 8px;
+      }
+      #dashboardCardModalBody {
+        padding: 10px 12px 12px;
+      }
+    }
+    @media (max-height: 500px) and (orientation: landscape) {
+      #dashboardCardModal {
+        align-items: stretch;
+        padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+        padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+      }
+      #dashboardCardModal .terminal-modal__panel {
+        width: min(94vw, 900px);
+        max-height: 85dvh;
+      }
+      #dashboardCardModal .terminal-modal__controls {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
 
     /* Detail panel transitions */
     [data-dashboard-detail].popout-enter { animation: popoutIn 220ms ease both; }
@@ -855,9 +990,154 @@
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
     }
-    .panel-card { border: 1px solid rgba(74, 222, 128, 0.45); background: rgba(7,17,6,0.92); }
+    .panel-card { border: 1px solid rgba(var(--accent-rgb), 0.45); background: rgba(7,17,6,0.92); }
+    /* Arsenal WIP / intentionally unstable presentation */
+    #section-arsenal.arsenal-wip {
+      position: relative;
+      overflow: hidden;
+    }
+    .arsenal-wip-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(248, 113, 113, 0.55);
+      color: #fecaca;
+      background: rgba(127, 29, 29, 0.28);
+      padding: 6px 10px;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+    .arsenal-glitch-title {
+      position: relative;
+      display: inline-block;
+      color: #fca5a5;
+      text-shadow: 0 0 8px rgba(248, 113, 113, 0.35);
+      animation: arsenalGlitchSkew 2200ms infinite steps(2, end);
+    }
+    .arsenal-glitch-title::before,
+    .arsenal-glitch-title::after {
+      content: attr(data-text);
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.4;
+      mix-blend-mode: screen;
+    }
+    .arsenal-glitch-title::before {
+      color: #22d3ee;
+      transform: translate(1px, -1px);
+      clip-path: polygon(0 2%, 100% 2%, 100% 45%, 0 45%);
+      animation: arsenalGlitchShiftA 1800ms infinite steps(2, end);
+    }
+    .arsenal-glitch-title::after {
+      color: #f43f5e;
+      transform: translate(-1px, 1px);
+      clip-path: polygon(0 52%, 100% 52%, 100% 100%, 0 100%);
+      animation: arsenalGlitchShiftB 1300ms infinite steps(2, end);
+    }
+    .arsenal-wip-warning {
+      border: 1px solid rgba(248, 113, 113, 0.5);
+      background: linear-gradient(180deg, rgba(127, 29, 29, 0.28), rgba(0, 0, 0, 0.64));
+      color: #fecaca;
+      padding: 12px 14px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.18);
+    }
+    .arsenal-wip-warning strong {
+      color: #fee2e2;
+      letter-spacing: 0.14em;
+      margin-right: 8px;
+    }
+    .arsenal-wip-controls {
+      opacity: 0.56;
+      filter: grayscale(0.25);
+      pointer-events: none;
+    }
+    .arsenal-wip-controls .subtab-btn {
+      cursor: not-allowed;
+    }
+    .arsenal-wip-dim {
+      opacity: 0.62;
+      filter: saturate(0.7);
+    }
+    .arsenal-wip-placeholders {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .arsenal-wip-placeholder {
+      border: 1px dashed rgba(var(--accent-rgb), 0.45);
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(0, 0, 0, 0.42),
+        rgba(0, 0, 0, 0.42) 10px,
+        rgba(var(--accent-rgb), 0.04) 10px,
+        rgba(var(--accent-rgb), 0.04) 20px
+      );
+      min-height: 88px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .arsenal-wip-placeholder .label {
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(var(--accent-rgb), 0.7);
+    }
+    .arsenal-wip-placeholder .value {
+      font-size: 12px;
+      color: rgba(220, 252, 231, 0.85);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    #section-arsenal.arsenal-wip::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(var(--accent-rgb), 0.04) 0px,
+        rgba(var(--accent-rgb), 0.04) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      opacity: 0.35;
+      animation: arsenalScanline 4s linear infinite;
+    }
+    @keyframes arsenalScanline {
+      0% { transform: translateY(-8px); }
+      100% { transform: translateY(8px); }
+    }
+    @keyframes arsenalGlitchSkew {
+      0%, 86%, 100% { transform: none; }
+      87% { transform: skewX(5deg); }
+      88% { transform: skewX(-4deg); }
+      89% { transform: none; }
+    }
+    @keyframes arsenalGlitchShiftA {
+      0%, 82%, 100% { transform: translate(1px, -1px); opacity: 0.35; }
+      83% { transform: translate(2px, -2px); opacity: 0.55; }
+      84% { transform: translate(-1px, 0); opacity: 0.25; }
+    }
+    @keyframes arsenalGlitchShiftB {
+      0%, 68%, 100% { transform: translate(-1px, 1px); opacity: 0.32; }
+      69% { transform: translate(-2px, 2px); opacity: 0.5; }
+      70% { transform: translate(1px, -1px); opacity: 0.24; }
+    }
+    @media (max-width: 900px) {
+      .arsenal-wip-placeholders {
+        grid-template-columns: 1fr;
+      }
+    }
     .subtab-active, .nav-active {
-      background: #4ade80 !important;
+      background: var(--accent) !important;
       color: #000 !important;
       font-weight: 700;
     }
@@ -885,13 +1165,13 @@
     .hidden-panel { display:none; }
     html, body, #app {
       background: #000;
-      color: #4ade80;
+      color: var(--accent);
     }
-    .terminal-link:hover { background:#4ade80; color:#000; }
+    .terminal-link:hover { background:var(--accent); color:#000; }
     /* Global ORBITER scrollbar theme */
     * {
       scrollbar-width: thin;
-      scrollbar-color: rgba(74, 222, 128, 0.42) transparent;
+      scrollbar-color: rgba(var(--accent-rgb), 0.42) transparent;
     }
     ::-webkit-scrollbar {
       width: 6px;
@@ -901,7 +1181,7 @@
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(74, 222, 128, 0.42);
+      background: rgba(var(--accent-rgb), 0.42);
       border-radius: 10px;
       transition: background 0.2s ease;
     }
@@ -1022,7 +1302,7 @@
         width: 100% !important;
         height: 74px !important;
         border-right: 0;
-        border-bottom: 2px solid #4ade80;
+        border-bottom: 2px solid var(--accent);
         flex-direction: row;
         align-items: center;
         gap: 12px;
@@ -1046,7 +1326,7 @@
         padding-bottom: 4px;
       }
       #navButtons::-webkit-scrollbar { height: 4px; }
-      #navButtons::-webkit-scrollbar-thumb { background: rgba(74, 222, 128, 0.6); }
+      #navButtons::-webkit-scrollbar-thumb { background: rgba(var(--accent-rgb), 0.6); }
       #navButtons .nav-btn {
         white-space: nowrap;
         flex: 0 0 auto;
@@ -1129,7 +1409,7 @@
       top: 10px;
       max-width: min(280px, calc(100% - 28px));
       padding: 8px 10px;
-      border: 1px solid rgba(74, 222, 128, 0.78);
+      border: 1px solid rgba(var(--accent-rgb), 0.78);
       background: rgba(0, 0, 0, 0.88);
       color: rgba(200, 255, 217, 0.92);
       font-size: 11px;
@@ -1148,8 +1428,8 @@
       width: 10px;
       height: 10px;
       background: rgba(0, 0, 0, 0.88);
-      border-left: 1px solid rgba(74, 222, 128, 0.78);
-      border-top: 1px solid rgba(74, 222, 128, 0.78);
+      border-left: 1px solid rgba(var(--accent-rgb), 0.78);
+      border-top: 1px solid rgba(var(--accent-rgb), 0.78);
       transform: rotate(45deg);
     }
     .tracker-drag-tooltip.is-visible {
@@ -1207,7 +1487,7 @@
     .tracker-control-label {
       margin: 0;
       line-height: 1;
-      color: rgba(74, 222, 128, 0.76);
+      color: rgba(var(--accent-rgb), 0.76);
       font-size: 10px;
       letter-spacing: 0.2em;
       text-transform: uppercase;
@@ -1225,29 +1505,29 @@
       width: 100%;
       appearance: none;
       background:
-        linear-gradient(45deg, transparent 50%, rgba(74, 222, 128, 0.9) 50%) calc(100% - 18px) calc(50% - 2px) / 6px 6px no-repeat,
-        linear-gradient(135deg, rgba(74, 222, 128, 0.9) 50%, transparent 50%) calc(100% - 13px) calc(50% - 2px) / 6px 6px no-repeat,
+        linear-gradient(45deg, transparent 50%, rgba(var(--accent-rgb), 0.9) 50%) calc(100% - 18px) calc(50% - 2px) / 6px 6px no-repeat,
+        linear-gradient(135deg, rgba(var(--accent-rgb), 0.9) 50%, transparent 50%) calc(100% - 13px) calc(50% - 2px) / 6px 6px no-repeat,
         rgba(0,0,0,0.78);
-      border: 1px solid rgba(74, 222, 128, 0.78);
+      border: 1px solid rgba(var(--accent-rgb), 0.78);
       color: #79f7a8;
       font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       padding: 9px 34px 9px 11px;
-      box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.12), 0 0 14px rgba(74, 222, 128, 0.08);
+      box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.12), 0 0 14px rgba(var(--accent-rgb), 0.08);
       transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
     }
     .tracker-select:focus-visible {
       outline: none;
-      border-color: rgba(74, 222, 128, 1);
-      box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.18), 0 0 18px rgba(74, 222, 128, 0.18);
+      border-color: rgba(var(--accent-rgb), 1);
+      box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.18), 0 0 18px rgba(var(--accent-rgb), 0.18);
     }
     .tracker-action-btn {
       flex: 0 0 auto;
       min-height: 42px;
       padding: 10px 12px;
-      border: 1px solid rgba(74, 222, 128, 0.78);
+      border: 1px solid rgba(var(--accent-rgb), 0.78);
       background: rgba(0, 0, 0, 0.72);
       color: #79f7a8;
       font-size: 11px;
@@ -1258,9 +1538,9 @@
     .tracker-action-btn:hover,
     .tracker-action-btn:focus-visible {
       outline: none;
-      background: rgba(74, 222, 128, 0.16);
-      border-color: rgba(74, 222, 128, 1);
-      box-shadow: 0 0 16px rgba(74, 222, 128, 0.22);
+      background: rgba(var(--accent-rgb), 0.16);
+      border-color: rgba(var(--accent-rgb), 1);
+      box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.22);
       color: #c8ffd9;
     }
     .tracker-action-btn,
@@ -1278,7 +1558,7 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
-      border-bottom: 1px solid rgba(74, 222, 128, 0.35);
+      border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
       padding-bottom: 10px;
     }
     .tracker-category-shell { overflow: visible; }
@@ -1322,10 +1602,10 @@
     }
     .tracker-card:hover,
     .tracker-card:active {
-      background-color: rgba(74, 222, 128, 0.1);
+      background-color: rgba(var(--accent-rgb), 0.1);
     }
     .tracker-card:focus-visible {
-      outline: 2px solid rgba(74, 222, 128, 0.55);
+      outline: 2px solid rgba(var(--accent-rgb), 0.55);
       outline-offset: 2px;
     }
     .archive-suggest {
@@ -1334,7 +1614,7 @@
       right: 0;
       top: calc(100% + 6px);
       z-index: 45;
-      border: 1px solid rgba(74, 222, 128, 0.45);
+      border: 1px solid rgba(var(--accent-rgb), 0.45);
       background: rgba(0, 0, 0, 0.94);
       box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
       display: none;
@@ -1348,7 +1628,7 @@
       width: 100%;
       text-align: left;
       border: 0;
-      border-bottom: 1px solid rgba(74, 222, 128, 0.2);
+      border-bottom: 1px solid rgba(var(--accent-rgb), 0.2);
       background: transparent;
       color: #bbf7d0;
       padding: 9px 10px;
@@ -1359,7 +1639,7 @@
     }
     .archive-suggest__item:hover,
     .archive-suggest__item.is-active {
-      background: rgba(74, 222, 128, 0.12);
+      background: rgba(var(--accent-rgb), 0.12);
       color: #dcfce7;
     }
     .archive-suggest__title {
@@ -1428,9 +1708,9 @@
       transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
     }
     .dash-card:hover {
-      border-color: rgba(74, 222, 128, 0.58);
-      background: rgba(74, 222, 128, 0.08);
-      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.22) inset, 0 0 18px rgba(74, 222, 128, 0.14);
+      border-color: rgba(var(--accent-rgb), 0.58);
+      background: rgba(var(--accent-rgb), 0.08);
+      box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.22) inset, 0 0 18px rgba(var(--accent-rgb), 0.14);
       transform: translateY(-1px);
     }
     .dash-card--full {
@@ -1457,7 +1737,7 @@
       display: flex;
       justify-content: space-between;
       gap: 10px;
-      border: 1px solid rgba(74, 222, 128, 0.2);
+      border: 1px solid rgba(var(--accent-rgb), 0.2);
       padding: 7px 9px;
       font-size: 11px;
       line-height: 1.35;
@@ -1469,12 +1749,198 @@
       text-align: right;
       white-space: nowrap;
     }
+    .dash-market-suggest {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      z-index: 18;
+      border: 1px solid rgba(var(--accent-rgb), 0.45);
+      background: rgba(0, 0, 0, 0.96);
+      max-height: 260px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.12);
+    }
+    .dash-market-suggest[hidden] {
+      display: none !important;
+    }
+    .dash-market-suggest__item {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-bottom: 1px solid rgba(var(--accent-rgb), 0.2);
+      background: transparent;
+      color: #bbf7d0;
+      padding: 9px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+      cursor: pointer;
+      transition: background 140ms ease, color 140ms ease;
+    }
+    .dash-market-suggest__item:last-child {
+      border-bottom: 0;
+    }
+    .dash-market-suggest__item:hover,
+    .dash-market-suggest__item.is-active {
+      background: rgba(var(--accent-rgb), 0.14);
+      color: #ecfdf5;
+    }
+    .dash-market-suggest__meta {
+      display: block;
+      margin-top: 3px;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(var(--accent-rgb), 0.66);
+    }
     @media (max-width: 1200px) {
       .dash-card { grid-column: span 12; min-height: auto; }
       .dash-link-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     @media (max-width: 760px) {
       .dash-link-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .app-nav {
+      width: 15rem !important;
+      min-width: 15rem;
+      transition: width 180ms ease, min-width 180ms ease, padding 180ms ease;
+    }
+    body.sidebar-collapsed .app-nav {
+      width: 4.6rem !important;
+      min-width: 4.6rem;
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+    body.sidebar-collapsed .app-nav .nav-title-sub,
+    body.sidebar-collapsed .app-nav .nav-label,
+    body.sidebar-collapsed .app-nav #refreshBtn {
+      display: none;
+    }
+    body.sidebar-collapsed .app-nav .nav-title-main {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+    body.sidebar-collapsed .app-nav .nav-btn {
+      justify-content: center;
+      padding-left: 0;
+      padding-right: 0;
+    }
+    body.sidebar-collapsed .app-nav .nav-btn .material-symbols-outlined {
+      margin: 0;
+    }
+    body.readable-mode { color: var(--readable-text); }
+    body.readable-mode .text-terminal {
+      color: var(--accent) !important;
+      text-shadow: 0 0 5px rgba(var(--accent-rgb), 0.18);
+    }
+    body.readable-mode p,
+    body.readable-mode li,
+    body.readable-mode .text-green-200\/85,
+    body.readable-mode .text-green-200\/90,
+    body.readable-mode .text-green-200\/80 {
+      color: var(--readable-text) !important;
+      text-shadow: none !important;
+      line-height: 1.65;
+    }
+    body.readable-mode h1,
+    body.readable-mode h2,
+    body.readable-mode h3,
+    body.readable-mode button {
+      text-shadow: 0 0 6px rgba(var(--accent-rgb), 0.2);
+    }
+    body.readable-mode .nav-btn.nav-active,
+    body.readable-mode .subtab-btn.subtab-active,
+    body.readable-mode .archive-suggest__item.is-active,
+    body.readable-mode .dash-market-suggest__item.is-active,
+    body.readable-mode .dash-market-suggest__item:hover,
+    body.readable-mode .codex-suggestion:hover,
+    body.readable-mode .codex-suggestion.bg-terminal\/10,
+    body.readable-mode .market-result-row:hover,
+    body.readable-mode .market-favorite-row:hover {
+      background: var(--readable-highlight) !important;
+      color: var(--readable-bg) !important;
+      text-shadow: none !important;
+      border-color: var(--readable-border) !important;
+    }
+    body.readable-mode .nav-btn.nav-active .material-symbols-outlined,
+    body.readable-mode .subtab-btn.subtab-active,
+    body.readable-mode .archive-suggest__item.is-active .archive-suggest__title,
+    body.readable-mode .archive-suggest__item.is-active .archive-suggest__meta {
+      color: var(--readable-bg) !important;
+      text-shadow: none !important;
+    }
+    body.readable-mode .hover\:bg-terminal:hover,
+    body.readable-mode .hover\:text-black:hover {
+      background: var(--readable-highlight) !important;
+      color: var(--readable-bg) !important;
+      text-shadow: none !important;
+    }
+    body.readable-mode .codex-detail-chip:hover,
+    body.readable-mode .codex-load-result:hover,
+    body.readable-mode .terminal-link:hover,
+    body.readable-mode button:hover {
+      text-shadow: none !important;
+    }
+    body.readable-mode .market-order-row:hover .market-order-cell,
+    body.readable-mode .market-order-row.is-copied .market-order-cell,
+    body.readable-mode .market-order-row.copied .market-order-cell {
+      color: var(--readable-text) !important;
+      text-shadow: none !important;
+    }
+    body.readable-mode .tracker-card:hover,
+    body.readable-mode .tracker-card.bg-terminal\/20,
+    body.readable-mode .tracker-card.text-terminal {
+      color: var(--readable-text) !important;
+      text-shadow: none !important;
+      background: var(--readable-panel) !important;
+      border-color: var(--readable-border) !important;
+    }
+    body.readable-mode :focus-visible {
+      outline: 2px solid var(--readable-border) !important;
+      outline-offset: 2px !important;
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--readable-bg) 80%, transparent), 0 0 0 4px color-mix(in srgb, var(--accent) 32%, transparent) !important;
+      text-shadow: none !important;
+    }
+    body.readable-mode ::selection {
+      background: color-mix(in srgb, var(--accent) 50%, transparent);
+      color: var(--readable-bg);
+      text-shadow: none;
+    }
+    body.readable-mode input,
+    body.readable-mode select,
+    body.readable-mode textarea,
+    body.readable-mode .panel-card,
+    body.readable-mode .terminal-modal__panel {
+      border-color: var(--readable-border) !important;
+    }
+    body.readable-mode ::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--accent) 42%, #202020 58%);
+    }
+    body.readable-mode * {
+      scrollbar-color: color-mix(in srgb, var(--accent) 42%, #202020 58%) transparent;
+    }
+    @media (max-width: 1024px) {
+      .app-nav {
+        width: 12.5rem !important;
+        min-width: 12.5rem;
+      }
+      body.sidebar-collapsed .app-nav {
+        width: 4rem !important;
+        min-width: 4rem;
+      }
+    }
+    @media (max-width: 900px) {
+      .app-nav {
+        width: 10.75rem !important;
+        min-width: 10.75rem;
+      }
+      body.sidebar-collapsed .app-nav {
+        width: 3.5rem !important;
+        min-width: 3.5rem;
+      }
     }
   </style>
 </head>
@@ -1496,25 +1962,25 @@
   <div class="app-shell flex h-screen overflow-hidden relative z-10">
     <nav class="app-nav h-screen w-72 flex flex-col p-4 border-r-2 border-terminal bg-black z-40">
       <div class="mb-8">
-        <div class="text-terminal font-black tracking-tighter text-xl mb-1">ORBITER_OS_V2.5</div>
-        <div class="uppercase tracking-widest text-[10px] text-terminal opacity-60">TENNO_ARCHIVE_LINKED</div>
+        <div class="nav-title-main text-terminal font-black tracking-tighter text-xl mb-1">ORBITER_OS_V2.5</div>
+        <div class="nav-title-sub uppercase tracking-widest text-[10px] text-terminal opacity-60">TENNO_ARCHIVE_LINKED</div>
       </div>
 
       <div class="flex-1 flex flex-col gap-2" id="navButtons">
         <button data-section="dashboard" class="nav-btn nav-active text-terminal px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
-          <span class="material-symbols-outlined text-sm">terminal</span> Dashboard
+          <span class="material-symbols-outlined text-sm">terminal</span><span class="nav-label">Dashboard</span>
         </button>
         <button data-section="trackers" class="nav-btn text-terminal opacity-80 px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
-          <span class="material-symbols-outlined text-sm">radar</span> Trackers
+          <span class="material-symbols-outlined text-sm">radar</span><span class="nav-label">Trackers</span>
         </button>
         <button data-section="arsenal" class="nav-btn text-terminal opacity-80 px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
-          <span class="material-symbols-outlined text-sm">shield</span> Arsenal
+          <span class="material-symbols-outlined text-sm">shield</span><span class="nav-label">Arsenal</span>
         </button>
         <button data-section="market" class="nav-btn text-terminal opacity-80 px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
-          <span class="material-symbols-outlined text-sm">shopping_cart</span> Market
+          <span class="material-symbols-outlined text-sm">shopping_cart</span><span class="nav-label">Market</span>
         </button>
         <button data-section="codex" class="nav-btn text-terminal opacity-80 px-2 py-2 flex items-center gap-3 uppercase tracking-widest text-xs cursor-pointer border border-terminal/30">
-          <span class="material-symbols-outlined text-sm">list_alt</span> Codex
+          <span class="material-symbols-outlined text-sm">list_alt</span><span class="nav-label">Codex</span>
         </button>
       </div>
 
@@ -1536,6 +2002,14 @@
           </div>
         </div>
         <div class="flex items-center justify-end gap-6">
+          <select id="themeAccentSelect" class="border border-terminal/60 px-2 py-1.5 text-[10px] uppercase tracking-widest bg-black text-terminal focus:outline-none" aria-label="Accent theme">
+            <option value="green">Green</option>
+            <option value="red">Red</option>
+            <option value="yellow">Yellow</option>
+            <option value="blue">Blue</option>
+          </select>
+          <button id="sidebarCollapseBtn" class="border border-terminal/60 px-3 py-1.5 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black transition-none" aria-label="Collapse Sidebar" aria-pressed="false" title="Collapse Sidebar">Collapse</button>
+          <button id="readableModeBtn" class="border border-terminal/60 px-3 py-1.5 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black transition-none" aria-label="Readable Mode" aria-pressed="false" title="Readable Mode">Readable</button>
           <button id="fullscreenToggleBtn" class="border border-terminal/60 px-3 py-1.5 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black transition-none" aria-label="Fullscreen" aria-pressed="false" title="Fullscreen">Fullscreen</button>
           <button id="soundToggleBtn" class="material-symbols-outlined cursor-pointer hover:text-green-200" aria-label="Toggle sound" title="Toggle sound">volume_up</button>
           <button class="material-symbols-outlined cursor-pointer hover:text-green-200">settings</button>
@@ -1559,36 +2033,39 @@
 
           <div class="space-y-4">
             <div id="dash-overview" class="subpanel dash-card-grid">
-              <div class="panel-card p-5 dash-card" data-dash-open="trackers">
+              <div class="panel-card p-5 dash-card" data-dash-open="trackers" data-dash-card="reset-status" data-dash-title="Cycle monitor" data-dash-subtitle="Reset / daily status">
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70">RESET / DAILY STATUS</div>
                 <h2 class="text-lg font-bold">Cycle monitor</h2>
                 <div id="dashResetSummary" class="text-sm text-green-200/90">Waiting for tracker sync...</div>
                 <div id="dashDailyStatus" class="text-xs text-terminal/75 uppercase tracking-[0.2em]">No active daily data yet</div>
               </div>
-              <div class="panel-card p-5 dash-card" data-dash-open="market">
+              <div class="panel-card p-5 dash-card" data-dash-open="market" data-dash-card="market-quick" data-dash-title="Jump to market" data-dash-subtitle="Market quick search">
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70">MARKET QUICK SEARCH</div>
                 <h2 class="text-lg font-bold">Jump to market</h2>
                 <p class="text-xs text-green-200/85">Enter an item and run search directly in Market.</p>
                 <div class="flex flex-col gap-2 mt-1">
-                  <input id="dashMarketQuickInput" type="text" placeholder="Octavia Prime Set" class="bg-transparent border border-terminal px-3 py-2 text-sm text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                  <div class="relative">
+                    <input id="dashMarketQuickInput" type="text" placeholder="Octavia Prime Set" autocomplete="off" class="w-full bg-transparent border border-terminal px-3 py-2 text-sm text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                    <div id="dashMarketQuickSuggest" class="dash-market-suggest" hidden></div>
+                  </div>
                   <button id="dashMarketQuickGo" class="border border-terminal px-4 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">Open Market Search</button>
                 </div>
               </div>
-              <div class="panel-card p-5 dash-card" data-dash-open="trackers">
+              <div class="panel-card p-5 dash-card" data-dash-open="trackers" data-dash-card="tracker-highlights" data-dash-title="Active / soonest" data-dash-subtitle="Tracker highlights">
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70">TRACKER HIGHLIGHTS</div>
                 <h2 class="text-lg font-bold">Active / soonest</h2>
                 <div id="dashTrackerHighlights" class="dash-list">
                   <div class="dash-list-row"><span>No tracker highlights yet.</span><span class="dash-list-row__meta">—</span></div>
                 </div>
               </div>
-              <div class="panel-card p-5 dash-card" data-dash-open="codex">
+              <div class="panel-card p-5 dash-card" data-dash-open="codex" data-dash-card="codex-recent" data-dash-title="Codex recall" data-dash-subtitle="Codex recent / favorites">
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70">CODEX RECENT / FAVORITES</div>
                 <h2 class="text-lg font-bold">Codex recall</h2>
                 <div id="dashCodexRecent" class="dash-list">
                   <div class="dash-list-row"><span>No pinned entries yet.</span><span class="dash-list-row__meta">—</span></div>
                 </div>
               </div>
-              <div class="panel-card p-5 dash-card dash-card--full">
+              <div class="panel-card p-5 dash-card dash-card--full" data-dash-open="dashboard" data-dash-card="quick-links" data-dash-title="Quick links" data-dash-subtitle="Section shortcuts">
                 <div class="text-[10px] tracking-[0.25em] text-terminal/70">QUICK LINKS</div>
                 <div class="dash-link-row mt-2">
                   <button class="dash-link-btn border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-nav="dashboard">Dashboard</button>
@@ -1661,20 +2138,31 @@
           </div>
         </section>
 
-        <section id="section-arsenal" class="content-section hidden-panel space-y-6">
+        <section id="section-arsenal" class="content-section hidden-panel space-y-6 arsenal-wip">
           <div>
             <div class="text-[10px] text-green-700 font-bold mb-3 tracking-[0.2em]">SECTION // ARSENAL</div>
-            <h1 class="text-3xl font-black tracking-tight">Arsenal Archive</h1>
-            <p class="text-sm text-green-300/80 mt-2 max-w-3xl">Organized tabs for equipment categories and safe reference notes. This version keeps the section as an index/archive instead of detailed combat guidance.</p>
+            <div class="flex flex-wrap items-center gap-3">
+              <h1 class="text-3xl font-black tracking-tight arsenal-glitch-title" data-text="ARSENAL SYSTEM OFFLINE">ARSENAL SYSTEM OFFLINE</h1>
+              <span class="arsenal-wip-badge">WIP</span>
+            </div>
+            <p class="text-sm text-green-300/80 mt-2 max-w-3xl">Module under reconstruction. Systems unstable.</p>
           </div>
 
-          <div class="flex flex-wrap gap-3" data-subtabs="arsenal">
-            <button class="subtab-btn subtab-active border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="arsenal-overview">Overview</button>
-            <button class="subtab-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="arsenal-categories">Categories</button>
-            <button class="subtab-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="arsenal-reference">Reference</button>
+          <div class="arsenal-wip-warning"><strong>Warning</strong> Module under reconstruction. Systems unstable.</div>
+
+          <div class="arsenal-wip-placeholders" aria-hidden="true">
+            <div class="arsenal-wip-placeholder"><span class="label">Primary rail</span><span class="value">Signal loss detected</span></div>
+            <div class="arsenal-wip-placeholder"><span class="label">Integrity check</span><span class="value">Checksum mismatch</span></div>
+            <div class="arsenal-wip-placeholder"><span class="label">Recovery queue</span><span class="value">Awaiting patch stream</span></div>
           </div>
 
-          <div id="arsenal-overview" class="subpanel grid md:grid-cols-2 gap-4">
+          <div class="flex flex-wrap gap-3 arsenal-wip-controls" data-subtabs="arsenal" aria-disabled="true">
+            <button class="subtab-btn subtab-active border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="arsenal-overview" tabindex="-1">Overview</button>
+            <button class="subtab-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="arsenal-categories" tabindex="-1">Categories</button>
+            <button class="subtab-btn border border-terminal px-4 py-2 text-xs uppercase tracking-widest" data-target="arsenal-reference" tabindex="-1">Reference</button>
+          </div>
+
+          <div id="arsenal-overview" class="subpanel grid md:grid-cols-2 gap-4 arsenal-wip-dim">
             <div class="panel-card p-5">
               <h3 class="text-lg font-bold mb-3">Equipment index</h3>
               <p class="text-sm text-green-200/85">Use this area for a searchable list of arsenal entries, mastery notes, crafting requirements, or links to community reference pages.</p>
@@ -1689,13 +2177,13 @@
             </div>
           </div>
 
-          <div id="arsenal-categories" class="subpanel hidden-panel grid lg:grid-cols-3 gap-4">
+          <div id="arsenal-categories" class="subpanel hidden-panel grid lg:grid-cols-3 gap-4 arsenal-wip-dim">
             <div class="panel-card p-5"><div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Primary</div><div class="text-lg font-bold">Catalog slot</div><p class="text-sm text-green-200/85 mt-2">Reserved for a future item list.</p></div>
             <div class="panel-card p-5"><div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Secondary</div><div class="text-lg font-bold">Catalog slot</div><p class="text-sm text-green-200/85 mt-2">Reserved for a future item list.</p></div>
             <div class="panel-card p-5"><div class="uppercase text-[10px] tracking-[0.25em] text-terminal/70 mb-2">Melee</div><div class="text-lg font-bold">Catalog slot</div><p class="text-sm text-green-200/85 mt-2">Reserved for a future item list.</p></div>
           </div>
 
-          <div id="arsenal-reference" class="subpanel hidden-panel panel-card p-5">
+          <div id="arsenal-reference" class="subpanel hidden-panel panel-card p-5 arsenal-wip-dim">
             <h3 class="text-lg font-bold mb-3">External reference links</h3>
             <div class="space-y-3 text-sm">
               <a class="terminal-link block border border-terminal/25 p-3" href="https://warframe.market/" target="_blank" rel="noopener noreferrer">Open Warframe Market</a>
@@ -2027,6 +2515,28 @@
     </div>
   </div>
 
+  <div id="dashboardCardModal" class="terminal-modal" data-open="0" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Dashboard preview">
+    <div class="terminal-modal__backdrop"></div>
+    <div class="terminal-modal__panel">
+      <div class="terminal-modal__header">
+        <div>
+          <div class="terminal-modal__title">Dashboard Preview</div>
+          <div id="dashboardCardModalTitle" class="terminal-modal__sub">Awaiting selection</div>
+          <div id="dashboardCardModalSub" class="terminal-modal__sub">Card details</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="dashboardCardModalClose" class="terminal-modal__close">close</button>
+        </div>
+      </div>
+      <div class="terminal-modal__controls">
+        <button id="dashboardCardModalOpenSection" class="border border-terminal px-3 py-2 text-[10px] uppercase tracking-widest hover:bg-terminal hover:text-black">Open Full Section</button>
+      </div>
+      <div id="dashboardCardModalBody" class="terminal-modal__list">
+        <div class="border border-terminal/25 p-3 text-sm text-green-200/80">Select a dashboard card to preview details.</div>
+      </div>
+    </div>
+  </div>
+
   <div id="codexEntryModal" class="terminal-modal" data-open="0" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Codex entry">
     <div class="terminal-modal__backdrop"></div>
     <div class="terminal-modal__panel">
@@ -2050,3 +2560,4 @@
 
 </body>
 </html>
+
