@@ -1,6 +1,7 @@
 const WM_V1_BASE = 'https://api.warframe.market/v1';
 const WM_V2_BASE = 'https://api.warframe.market/v2';
 const WIKI_API_BASE = 'https://wiki.warframe.com/api.php';
+const WARFRAMESTAT_WORLDSTATE_URL = 'https://api.warframestat.us/pc';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -202,6 +203,105 @@ function decodeEntities(text = '') {
 
 function wikiPageUrl(title = '') {
   return `https://wiki.warframe.com/w/${encodeURIComponent(String(title || '').replace(/\s+/g, '_'))}`;
+}
+
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeWarframeStatWorldstate(raw = {}) {
+  const cycles = {
+    cetusCycle: raw?.cetusCycle || null,
+    earthCycle: raw?.earthCycle || null,
+    vallisCycle: raw?.vallisCycle || null,
+    cambionCycle: raw?.cambionCycle || null
+  };
+
+  const fissures = toArray(raw?.fissures);
+  const normalized = {
+    // Requested mapped fields
+    cetusCycle: cycles.cetusCycle,
+    earthCycle: cycles.earthCycle,
+    vallisCycle: cycles.vallisCycle,
+    cambionCycle: cycles.cambionCycle,
+    cycles,
+    alerts: toArray(raw?.alerts),
+    sortie: raw?.sortie || null,
+    fissures,
+    invasions: toArray(raw?.invasions),
+    events: toArray(raw?.events),
+    voidTrader: raw?.voidTrader || null,
+    steelPath: raw?.steelPath || null,
+    archonHunt: raw?.archonHunt || null,
+    arbitration: raw?.arbitration || null,
+    nightwave: raw?.nightwave || null,
+    dailyDeals: toArray(raw?.dailyDeals),
+    syndicateMissions: toArray(raw?.syndicateMissions),
+    // Legacy compatibility fields consumed by existing tracker mapper
+    worldstateSource: 'WarframeStat.us',
+    fissuresRaw: fissures
+  };
+
+  // Keep existing tracker UI working by providing the current array-oriented shape.
+  normalized.fissures = fissures;
+  normalized.invasions = toArray(raw?.invasions);
+  normalized.sorties = raw?.sortie ? [raw.sortie] : [];
+  normalized.voidtraders = raw?.voidTrader ? [raw.voidTrader] : [];
+  normalized.challenges = raw?.nightwave ? [raw.nightwave] : [];
+  normalized.news = toArray(raw?.events);
+  normalized.bounties = [];
+  normalized.voidstorms = fissures.filter(row => row?.isStorm || row?.isVoidStorm || row?.storm);
+  normalized.upgrades = toArray(raw?.flashSales);
+  normalized.factionprojects = [];
+  normalized.daynight = [
+    cycles.cetusCycle ? { id: 'cetus', isDay: !!cycles.cetusCycle.isDay, state: cycles.cetusCycle.isDay ? 'Day' : 'Night', end: cycles.cetusCycle.expiry } : null,
+    cycles.earthCycle ? { id: 'earth', isDay: !!cycles.earthCycle.isDay, state: cycles.earthCycle.isDay ? 'Day' : 'Night', end: cycles.earthCycle.expiry } : null,
+    cycles.vallisCycle ? { id: 'fortuna', isDay: !!cycles.vallisCycle.isWarm, state: cycles.vallisCycle.isWarm ? 'Warm' : 'Cold', end: cycles.vallisCycle.expiry } : null,
+    cycles.cambionCycle ? { id: 'deimos', isDay: !!cycles.cambionCycle.active, state: cycles.cambionCycle.active || cycles.cambionCycle.state || 'Active', end: cycles.cambionCycle.expiry } : null
+  ].filter(Boolean);
+
+  return normalized;
+}
+
+async function handleWorldstate(request) {
+  console.log(`[worldstate-proxy] upstream request: ${WARFRAMESTAT_WORLDSTATE_URL}`);
+  const response = await fetch(WARFRAMESTAT_WORLDSTATE_URL, {
+    method: 'GET',
+    headers: { Accept: 'application/json' }
+  });
+  console.log(`[worldstate-proxy] upstream response: ${response.status} ${WARFRAMESTAT_WORLDSTATE_URL}`);
+
+  const body = await response.text();
+  if (!response.ok) {
+    return json(request, {
+      ok: false,
+      error: `worldstate_upstream_http_${response.status}`,
+      source: 'cloudflare-worker',
+      upstreamUrl: WARFRAMESTAT_WORLDSTATE_URL,
+      data: {}
+    }, response.status);
+  }
+
+  let parsed = {};
+  try {
+    parsed = JSON.parse(body || '{}');
+  } catch (error) {
+    return json(request, {
+      ok: false,
+      error: `worldstate_parse_error_${error.message}`,
+      source: 'cloudflare-worker',
+      upstreamUrl: WARFRAMESTAT_WORLDSTATE_URL,
+      data: {}
+    }, 502);
+  }
+
+  const normalized = normalizeWarframeStatWorldstate(parsed);
+  return json(request, {
+    ok: true,
+    source: 'WarframeStat.us',
+    upstreamUrl: WARFRAMESTAT_WORLDSTATE_URL,
+    data: normalized
+  }, 200, { 'cache-control': 'public, max-age=30' });
 }
 
 async function handleWikiSearch(request, url) {
@@ -982,6 +1082,16 @@ export default {
         return handleWikiPage(request, url);
       }
 
+      if (path === '/api/worldstate') {
+        return cacheRoute(request, {
+          pathOnly: path,
+          cacheControl: 'public, max-age=30',
+          ttlSeconds: 30,
+          bypassCache: refreshRequested,
+          produce: () => handleWorldstate(request)
+        });
+      }
+
       const orderMatch = path.match(/^\/(?:api\/)?market\/orders\/([^/]+)$/);
       if (orderMatch) {
         return cacheRoute(request, {
@@ -1004,6 +1114,7 @@ export default {
           '/api/market/orders/:url_name',
           '/api/wiki/search?q=',
           '/api/wiki/page?title=',
+          '/api/worldstate',
           '/market/items',
           '/market/search?q=',
           '/market/orders/:url_name'
