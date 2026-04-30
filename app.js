@@ -981,6 +981,12 @@ function showSection(sectionName) {
 
     const dashboardTrackerGrid = document.getElementById('dashboardTrackerGrid');
     const dashboardTrackerStatus = document.getElementById('dashboardTrackerStatus');
+    const dashResetSummary = document.getElementById('dashResetSummary');
+    const dashDailyStatus = document.getElementById('dashDailyStatus');
+    const dashTrackerHighlights = document.getElementById('dashTrackerHighlights');
+    const dashCodexRecent = document.getElementById('dashCodexRecent');
+    const dashMarketQuickInput = document.getElementById('dashMarketQuickInput');
+    const dashMarketQuickGo = document.getElementById('dashMarketQuickGo');
     const trackerModal = document.getElementById('trackerModal');
     const trackerModalTitle = document.getElementById('trackerModalTitle');
     const trackerModalSub = document.getElementById('trackerModalSub');
@@ -3025,6 +3031,61 @@ function showSection(sectionName) {
           node.classList.toggle('tracker-timer--urgent', diffSec <= 30);
         }
       });
+      renderDashboardHighlightsCards();
+    }
+
+    function renderDashboardHighlightsCards() {
+      const allCards = (dashboardTrackerState.categories || []).flatMap(category => category.cards || []);
+      if (dashTrackerHighlights) {
+        const highlights = [...allCards]
+          .filter(card => !card?.hideTimer && card?.expiresAt)
+          .sort((a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime())
+          .slice(0, 4);
+        dashTrackerHighlights.innerHTML = highlights.length
+          ? highlights.map(card => `
+              <div class="dash-list-row">
+                <span>${escapeHtml(card.title || card.label || 'Tracker')}</span>
+                <span class="dash-list-row__meta">${escapeHtml(formatDashboardCountdown(card.expiresAt))}</span>
+              </div>
+            `).join('')
+          : '<div class="dash-list-row"><span>No tracker highlights yet.</span><span class="dash-list-row__meta">—</span></div>';
+      }
+
+      if (dashResetSummary || dashDailyStatus) {
+        const timed = [...allCards].filter(card => card?.expiresAt && !card?.hideTimer);
+        const soonest = timed.sort((a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime())[0] || null;
+        const daily = allCards.find(card => /daily|sortie|archon|nightwave/i.test(String(card?.title || '') + ' ' + String(card?.label || ''))) || null;
+        if (dashResetSummary) {
+          dashResetSummary.textContent = soonest
+            ? `${soonest.title || soonest.label || 'Cycle'} resets in ${formatDashboardCountdown(soonest.expiresAt)}`
+            : 'No reset timers available yet.';
+        }
+        if (dashDailyStatus) {
+          dashDailyStatus.textContent = daily
+            ? `${String(daily.title || daily.label || 'Daily').toUpperCase()} // ${String(daily.state || 'Active').toUpperCase()}`
+            : 'NO DAILY STATUS YET';
+        }
+      }
+    }
+
+    function renderDashboardCodexCard() {
+      if (!dashCodexRecent) return;
+      let pinned = [];
+      try {
+        pinned = JSON.parse(localStorage.getItem('orbiterCodexPinnedEntries') || '[]');
+      } catch {
+        pinned = [];
+      }
+      if (!Array.isArray(pinned) || !pinned.length) {
+        dashCodexRecent.innerHTML = '<div class="dash-list-row"><span>No pinned entries yet.</span><span class="dash-list-row__meta">—</span></div>';
+        return;
+      }
+      dashCodexRecent.innerHTML = pinned.slice(0, 4).map(entry => `
+        <div class="dash-list-row">
+          <span>${escapeHtml(entry?.title || 'Untitled')}</span>
+          <span class="dash-list-row__meta">${escapeHtml(String(entry?.category || 'codex'))}</span>
+        </div>
+      `).join('');
     }
 
     async function refreshDashboardTrackers() {
@@ -3078,6 +3139,8 @@ function showSection(sectionName) {
       if (currentSectionName === 'trackers') refreshDashboardTrackers();
     }, 60000);
     setInterval(updateDashboardCountdowns, 1000);
+    setInterval(renderDashboardCodexCard, 8000);
+    renderDashboardCodexCard();
 
     const marketItemSearch = document.getElementById('marketItemSearch');
     const marketSearchBtn = document.getElementById('marketSearchBtn');
@@ -4787,6 +4850,74 @@ function showSection(sectionName) {
         .trim();
     }
 
+    function normalizeCodexSections(sections = []) {
+      if (!Array.isArray(sections)) return [];
+      return sections
+        .map((section, idx) => {
+          const title = normalizeCodexText(section?.title || section?.line || section?.name || '');
+          const index = String(section?.index || section?.number || idx + 1);
+          const candidates = [section?.content, section?.text, section?.html, section?.body];
+          let raw = '';
+          for (const candidate of candidates) {
+            if (typeof candidate === 'string' && candidate.trim()) {
+              raw = candidate;
+              break;
+            }
+          }
+          return {
+            title,
+            index,
+            number: String(section?.number || ''),
+            anchor: String(section?.anchor || ''),
+            raw
+          };
+        })
+        .filter(section => section.title || section.raw);
+    }
+
+    function codexHtmlToReadableText(value = '') {
+      const html = String(value || '').trim();
+      if (!html) return '';
+      const container = document.createElement('div');
+      container.innerHTML = html
+        .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+        .replace(/<\/\s*p\s*>/gi, '\n\n')
+        .replace(/<\/\s*li\s*>/gi, '\n')
+        .replace(/<\/\s*h[1-6]\s*>/gi, '\n');
+      container.querySelectorAll('a[href*="action=edit"], a[href*="veaction=edit"], a[href*="edit"]').forEach(el => el.remove());
+      container.querySelectorAll('script, style, table, nav, .mw-editsection, .navbox, .toc, .reference, .reflist, .hatnote, .noprint, .portable-infobox, .thumb, .gallery').forEach(el => el.remove());
+      return container.textContent || '';
+    }
+
+    function cleanCodexSectionText(value = '', sectionTitle = '') {
+      let text = String(value || '');
+      if (!text) return '';
+      text = decodeHtmlEntities(text)
+        .replace(/\[edit\s*\|\s*edit source\]/gi, ' ')
+        .replace(/\[\s*edit\s*\|\s*edit source\s*\]/gi, ' ')
+        .replace(/\[edit\]/gi, ' ')
+        .replace(/\[\s*edit\s*\]/gi, ' ')
+        .replace(/edit source/gi, ' ')
+        .replace(/\[\s*\|\s*\]/g, ' ')
+        .replace(/\[\d+\]/g, ' ')
+        .replace(/__TOC__/gi, ' ')
+        .replace(/\bContents\b/gi, ' ')
+        .replace(/You're not supposed to be in here\.?/gi, ' ')
+        .replace(/The following article\/section contains spoilers\.?/gi, ' ')
+        .replace(/Spoiler warning/gi, ' ')
+        .replace(/\{\{[^{}]*\}\}/g, ' ')
+        .replace(/\[\[(?:Category|File|Image):[^\]]+\]\]/gi, ' ')
+        .replace(/\{\|[\s\S]*?\|\}/g, ' ')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      if (sectionTitle) {
+        const titleLine = sectionTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`^${titleLine}\\s*\\n?`, 'i'), '');
+      }
+      return text.trim();
+    }
+
     function isCodexJunkText(value = '') {
       const text = normalizeCodexText(value).toLowerCase();
       if (!text) return true;
@@ -4805,7 +4936,7 @@ function showSection(sectionName) {
 
     function extractSectionsFromParsedHtml(details) {
       const html = String(details?.html || '').trim();
-      const metadataSections = Array.isArray(details?.sections) ? details.sections : [];
+      const metadataSections = normalizeCodexSections(details?.sections);
       if (!metadataSections.length) return [];
 
       const container = document.createElement('div');
@@ -4816,7 +4947,7 @@ function showSection(sectionName) {
       }
 
       const normalized = metadataSections.map((meta, idx) => {
-        const title = normalizeCodexText(meta?.line || '');
+        const title = normalizeCodexText(meta?.title || meta?.line || '');
         if (isCodexJunkText(title)) {
           return null;
         }
@@ -4828,7 +4959,13 @@ function showSection(sectionName) {
             return text === title.toLowerCase();
           });
 
-        let content = normalizeCodexText(meta?.content || '');
+        let content = '';
+        const rawSection = String(meta?.raw || meta?.content || meta?.text || meta?.html || meta?.body || '');
+        if (rawSection.trim()) {
+          const isHtml = /<[^>]+>/.test(rawSection);
+          const textFromRaw = isHtml ? codexHtmlToReadableText(rawSection) : rawSection;
+          content = cleanCodexSectionText(textFromRaw, title);
+        }
         if (!content && heading) {
           let node = heading.nextElementSibling;
           const chunks = [];
@@ -4839,7 +4976,7 @@ function showSection(sectionName) {
               node = node.nextElementSibling;
               continue;
             }
-            const text = normalizeCodexText(node.textContent || '');
+            const text = cleanCodexSectionText(node.textContent || '', title);
             if (!isCodexJunkText(text) && text.length > 1) chunks.push(text);
             node = node.nextElementSibling;
           }
@@ -4862,14 +4999,19 @@ function showSection(sectionName) {
           content: content.slice(0, 2400),
           anchor
         };
-      }).filter(Boolean);
+      }).filter(Boolean).filter(section => String(section?.content || '').trim().length > 0);
 
       return normalized.filter(section => section.title);
     }
 
     function buildCodexDetailMarkup(details) {
       const extractedSections = extractSectionsFromParsedHtml(details).slice(0, 14);
-      const importantSections = Array.isArray(details?.importantSections) ? details.importantSections.slice(0, 8) : [];
+      const importantSections = Array.isArray(details?.importantSections)
+        ? details.importantSections
+          .map(section => ({ line: normalizeCodexText(section?.line || section?.title || '') }))
+          .filter(section => Boolean(section.line))
+          .slice(0, 8)
+        : [];
       const links = Array.isArray(details?.links) ? details.links.slice(0, 12) : [];
       const plainText = '';
       const sectionRows = extractedSections.length
@@ -4878,7 +5020,7 @@ function showSection(sectionName) {
           const safeLabel = htmlEscape(section.number ? `${section.number} ${section.title}` : section.title);
           const paragraphs = String(section.content || '')
             .split(/\n{2,}/)
-            .map(part => normalizeCodexText(part))
+            .map(part => cleanCodexSectionText(part, section.title))
             .filter(Boolean)
             .slice(0, 14);
           const sectionHtml = paragraphs.length
@@ -4921,10 +5063,10 @@ function showSection(sectionName) {
       return {
         html: `
         ${sectionsBlock}
-        <div class="codex-detail-group">
+        ${importantSections.length ? `<div class="codex-detail-group">
           <div class="codex-detail-title">Important</div>
           <ul class="codex-detail-list">${importantRows}</ul>
-        </div>
+        </div>` : ''}
         <div class="codex-detail-group">
           <div class="codex-detail-title">Related Links</div>
           <ul class="codex-detail-list">${linkRows}</ul>
@@ -4947,7 +5089,8 @@ function showSection(sectionName) {
         return;
       }
       codexPageDetails.classList.remove('hidden');
-      codexPageDetails.innerHTML = buildCodexDetailMarkup(details);
+      const detailMarkup = buildCodexDetailMarkup(details);
+      codexPageDetails.innerHTML = detailMarkup.html;
       codexPageDetails.querySelectorAll('.codex-load-result[data-title]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
@@ -5505,6 +5648,15 @@ function showSection(sectionName) {
     }
 
     if (codexSearchBtn) codexSearchBtn.addEventListener('click', () => loadCodexEntry(codexSearchInput?.value || ''));
+    if (codexPageLink) {
+      codexPageLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const title = (codexActiveTitle || codexSearchInput?.value || '').trim();
+        if (!title) return;
+        loadCodexPageDetails(title, { openModal: true });
+      });
+    }
     if (codexOpenBtn) codexOpenBtn.addEventListener('click', () => {
       const title = (codexActiveTitle || codexSearchInput?.value || '').trim();
       if (!title) {
@@ -5558,6 +5710,40 @@ function showSection(sectionName) {
       });
     });
     renderCodexFavorites();
+
+    document.querySelectorAll('[data-dash-nav]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const section = btn.dataset.dashNav || 'dashboard';
+        showSection(section);
+      });
+    });
+    document.querySelectorAll('[data-dash-open]').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('button, a, input, select, textarea, label')) return;
+        const section = card.dataset.dashOpen || '';
+        if (section) showSection(section);
+      });
+    });
+
+    const runDashboardMarketQuickSearch = () => {
+      const query = String(dashMarketQuickInput?.value || '').trim();
+      showSection('market');
+      if (!query) return;
+      if (marketItemSearch) {
+        marketItemSearch.value = query;
+        marketItemSearch.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (marketSearchBtn) marketSearchBtn.click();
+    };
+
+    if (dashMarketQuickGo) dashMarketQuickGo.addEventListener('click', runDashboardMarketQuickSearch);
+    if (dashMarketQuickInput) {
+      dashMarketQuickInput.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        runDashboardMarketQuickSearch();
+      });
+    }
 
 
     setupSubtabs();

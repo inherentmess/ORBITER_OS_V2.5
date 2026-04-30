@@ -1412,6 +1412,70 @@
       .tracker-drag-handle { display: none; }
       .tracker-move-btn { flex: 1 1 0; padding: 9px 10px; }
     }
+    .dash-card-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+      align-items: stretch;
+    }
+    .dash-card {
+      grid-column: span 6;
+      min-height: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+    }
+    .dash-card:hover {
+      border-color: rgba(74, 222, 128, 0.58);
+      background: rgba(74, 222, 128, 0.08);
+      box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.22) inset, 0 0 18px rgba(74, 222, 128, 0.14);
+      transform: translateY(-1px);
+    }
+    .dash-card--full {
+      grid-column: 1 / -1;
+      min-height: auto;
+    }
+    .dash-link-row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .dash-link-btn {
+      width: 100%;
+      text-align: center;
+      min-height: 42px;
+    }
+    .dash-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .dash-list-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid rgba(74, 222, 128, 0.2);
+      padding: 7px 9px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: rgba(187, 247, 208, 0.9);
+      background: rgba(0, 0, 0, 0.35);
+    }
+    .dash-list-row__meta {
+      opacity: 0.74;
+      text-align: right;
+      white-space: nowrap;
+    }
+    @media (max-width: 1200px) {
+      .dash-card { grid-column: span 12; min-height: auto; }
+      .dash-link-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .dash-link-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
   </style>
 </head>
 <body class="bg-black text-terminal font-code selection:bg-terminal selection:text-black overflow-hidden">
@@ -1494,33 +1558,44 @@
           </div>
 
           <div class="space-y-4">
-            <div id="dash-overview" class="subpanel grid grid-cols-1 xl:grid-cols-3 gap-4">
-              <div class="panel-card p-5 xl:col-span-2">
-                <div class="text-[10px] tracking-[0.25em] text-terminal/70 mb-2">MISSION CONTROL</div>
-                <h2 class="text-xl font-bold mb-3">Warframe command deck</h2>
-                <div class="grid md:grid-cols-2 gap-4 text-sm">
-                  <div class="border border-terminal/25 p-4">
-                    <div class="uppercase tracking-widest text-[10px] text-terminal/70 mb-2">Quick access</div>
-                    <ul class="space-y-2 text-green-200/90">
-                      <li>• Relics and fissure tracking</li>
-                      <li>• Prime set price check shortcuts</li>
-                      <li>• Resource and drop lookup links</li>
-                      <li>• Nightwave / event reference hub</li>
-                    </ul>
-                  </div>
-                  <div class="border border-terminal/25 p-4">
-                    <div class="uppercase tracking-widest text-[10px] text-terminal/70 mb-2">Status</div>
-                    <p class="text-green-200/90">This screen is now built with selectable tabs. You can expand it later with account-specific widgets or live API cards.</p>
-                  </div>
+            <div id="dash-overview" class="subpanel dash-card-grid">
+              <div class="panel-card p-5 dash-card" data-dash-open="trackers">
+                <div class="text-[10px] tracking-[0.25em] text-terminal/70">RESET / DAILY STATUS</div>
+                <h2 class="text-lg font-bold">Cycle monitor</h2>
+                <div id="dashResetSummary" class="text-sm text-green-200/90">Waiting for tracker sync...</div>
+                <div id="dashDailyStatus" class="text-xs text-terminal/75 uppercase tracking-[0.2em]">No active daily data yet</div>
+              </div>
+              <div class="panel-card p-5 dash-card" data-dash-open="market">
+                <div class="text-[10px] tracking-[0.25em] text-terminal/70">MARKET QUICK SEARCH</div>
+                <h2 class="text-lg font-bold">Jump to market</h2>
+                <p class="text-xs text-green-200/85">Enter an item and run search directly in Market.</p>
+                <div class="flex flex-col gap-2 mt-1">
+                  <input id="dashMarketQuickInput" type="text" placeholder="Octavia Prime Set" class="bg-transparent border border-terminal px-3 py-2 text-sm text-terminal placeholder-green-900 focus:outline-none focus:ring-0" />
+                  <button id="dashMarketQuickGo" class="border border-terminal px-4 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black">Open Market Search</button>
                 </div>
               </div>
-              <div class="panel-card p-5">
-                <div class="text-[10px] tracking-[0.25em] text-terminal/70 mb-2">LINK CACHE</div>
-                <div class="space-y-2 text-sm">
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://www.warframe.com/" target="_blank" rel="noopener noreferrer">Official Warframe</a>
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="#" data-api-path="/api/worldstate" target="_blank" rel="noopener noreferrer">Local worldstate API</a>
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://api.tenno.tools/worldstate/pc" target="_blank" rel="noopener noreferrer">Tenno Tools PC Worldstate</a>
-                  <a class="terminal-link block border border-terminal/25 px-3 py-2" href="https://warframe.market/" target="_blank" rel="noopener noreferrer">Warframe Market</a>
+              <div class="panel-card p-5 dash-card" data-dash-open="trackers">
+                <div class="text-[10px] tracking-[0.25em] text-terminal/70">TRACKER HIGHLIGHTS</div>
+                <h2 class="text-lg font-bold">Active / soonest</h2>
+                <div id="dashTrackerHighlights" class="dash-list">
+                  <div class="dash-list-row"><span>No tracker highlights yet.</span><span class="dash-list-row__meta">—</span></div>
+                </div>
+              </div>
+              <div class="panel-card p-5 dash-card" data-dash-open="codex">
+                <div class="text-[10px] tracking-[0.25em] text-terminal/70">CODEX RECENT / FAVORITES</div>
+                <h2 class="text-lg font-bold">Codex recall</h2>
+                <div id="dashCodexRecent" class="dash-list">
+                  <div class="dash-list-row"><span>No pinned entries yet.</span><span class="dash-list-row__meta">—</span></div>
+                </div>
+              </div>
+              <div class="panel-card p-5 dash-card dash-card--full">
+                <div class="text-[10px] tracking-[0.25em] text-terminal/70">QUICK LINKS</div>
+                <div class="dash-link-row mt-2">
+                  <button class="dash-link-btn border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-nav="dashboard">Dashboard</button>
+                  <button class="dash-link-btn border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-nav="trackers">Trackers</button>
+                  <button class="dash-link-btn border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-nav="market">Market</button>
+                  <button class="dash-link-btn border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-nav="codex">Codex</button>
+                  <button class="dash-link-btn border border-terminal px-3 py-2 text-xs uppercase tracking-widest hover:bg-terminal hover:text-black" data-dash-nav="arsenal">Arsenal</button>
                 </div>
               </div>
             </div>

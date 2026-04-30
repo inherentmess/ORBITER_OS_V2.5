@@ -2,47 +2,52 @@ const WM_V1_BASE = 'https://api.warframe.market/v1';
 const WM_V2_BASE = 'https://api.warframe.market/v2';
 const WIKI_API_BASE = 'https://wiki.warframe.com/api.php';
 
-function corsHeaders(request) {
-  return {
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET, OPTIONS',
-    'access-control-allow-headers': 'Content-Type, Accept, Cache-Control',
-    'access-control-max-age': '86400',
-    'vary': 'Origin'
-  };
-}
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+};
 
-function preflight(request) {
-  return new Response(null, {
-    status: 204,
+function text(body = '', status = 200, extraHeaders = {}) {
+  const mergedHeaders = (extraHeaders && typeof extraHeaders === 'object' && !Array.isArray(extraHeaders))
+    ? extraHeaders
+    : {};
+  return new Response(body, {
+    status,
     headers: {
-      ...corsHeaders(request),
-      'cache-control': 'no-store'
+      ...corsHeaders,
+      ...mergedHeaders
     }
   });
 }
 
-function json(request, data, status = 200, extraHeaders = {}) {
+function preflight() {
+  return text('', 204, { 'cache-control': 'no-store' });
+}
+
+function json(...args) {
+  let data;
+  let status = 200;
+  let extraHeaders = {};
+  // Backward compatibility for existing callsites: json(request, data, status?, extraHeaders?)
+  if (args.length >= 2 && (typeof args[0] === 'object' || args[0] === null)) {
+    data = args[1];
+    status = Number(args[2] ?? 200);
+    extraHeaders = args[3] || {};
+  } else {
+    data = args[0];
+    status = Number(args[1] ?? 200);
+    extraHeaders = args[2] || {};
+  }
+  if (!Number.isFinite(status) || status < 100 || status > 999) status = 200;
+  if (!extraHeaders || typeof extraHeaders !== 'object' || Array.isArray(extraHeaders)) extraHeaders = {};
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      'content-type': 'application/json; charset=utf-8',
-      ...corsHeaders(request),
-      'cache-control': 'public, max-age=30',
+      'Content-Type': 'application/json',
+      ...corsHeaders,
       ...extraHeaders
     }
-  });
-}
-
-function applyCorsAndCacheHeaders(request, response, cacheControl) {
-  const headers = new Headers(response.headers || {});
-  const cors = corsHeaders(request);
-  Object.entries(cors).forEach(([key, value]) => headers.set(key, value));
-  if (cacheControl) headers.set('cache-control', cacheControl);
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
   });
 }
 
@@ -65,19 +70,16 @@ async function cacheRoute(request, {
   if (!bypassCache) {
     const hit = await cache.match(cacheKey);
     if (hit) {
-      return applyCorsAndCacheHeaders(request, hit, cacheControl);
+      return hit;
     }
   }
 
   const fresh = await produce();
-  const shaped = applyCorsAndCacheHeaders(request, fresh, cacheControl);
-
-  if (shaped.status >= 200 && shaped.status < 300) {
-    const cacheable = applyCorsAndCacheHeaders(request, shaped.clone(), `public, max-age=${ttlSeconds}`);
-    await cache.put(cacheKey, cacheable);
+  if (fresh.status >= 200 && fresh.status < 300) {
+    await cache.put(cacheKey, fresh.clone());
   }
 
-  return shaped;
+  return fresh;
 }
 
 async function fetchJson(upstreamUrl) {
@@ -266,67 +268,75 @@ async function handleWikiSearch(request, url) {
 }
 
 async function handleWikiPage(request, url) {
-  const title = (url.searchParams.get('title') || '').trim();
-  if (!title) {
-    return json(request, { ok: false, error: 'missing_title', source: 'cloudflare-worker', summary: null, page: null }, 400);
-  }
+  const route = '/api/wiki/page';
+  try {
+    const title = (url.searchParams.get('title') || '').trim();
+    if (!title) {
+      return json(request, { ok: false, error: 'missing_title', source: 'cloudflare-worker', summary: null, page: null }, 400);
+    }
 
-  const summaryResult = await fetchWikiJson({
-    action: 'query',
-    prop: 'extracts',
-    exintro: '1',
-    explaintext: '1',
-    redirects: '1',
-    titles: title
-  });
-  if (!summaryResult.ok) {
-    return json(request, {
-      ok: false,
-      error: summaryResult.error,
-      source: 'cloudflare-worker',
-      upstreamUrl: summaryResult.upstreamUrl,
-      summary: null,
-      page: null
-    }, summaryResult.status || 502);
-  }
-
-  const pages = summaryResult?.data?.query?.pages || {};
-  const firstPage = Object.values(pages)[0] || null;
-  if (!firstPage || firstPage.missing || firstPage.invalid) {
-    return json(request, {
-      ok: true,
-      source: 'cloudflare-worker',
-      summary: null,
-      page: null
+    const summaryResult = await fetchWikiJson({
+      action: 'query',
+      prop: 'extracts',
+      exintro: '1',
+      explaintext: '1',
+      redirects: '1',
+      titles: title
     });
-  }
+    if (!summaryResult.ok) {
+      console.error('[wiki-page] upstream failure', {
+        route,
+        upstreamUrl: summaryResult.upstreamUrl || '',
+        status: summaryResult.status || 502,
+        error: summaryResult.error || 'unknown'
+      });
+      return json(request, {
+        ok: false,
+        error: summaryResult.error,
+        source: 'cloudflare-worker',
+        upstreamUrl: summaryResult.upstreamUrl,
+        summary: null,
+        page: null
+      }, summaryResult.status || 502);
+    }
 
-  const resolvedTitle = firstPage.title || title;
-  const summary = {
-    title: resolvedTitle,
-    extract: String(firstPage.extract || '').trim(),
-    url: wikiPageUrl(resolvedTitle)
-  };
+    const pages = summaryResult?.data?.query?.pages || {};
+    const firstPage = Object.values(pages)[0] || null;
+    if (!firstPage || firstPage.missing || firstPage.invalid) {
+      return json(request, {
+        ok: true,
+        source: 'cloudflare-worker',
+        summary: null,
+        page: null
+      });
+    }
 
-  let page = {
-    title: resolvedTitle,
-    url: wikiPageUrl(resolvedTitle),
-    sections: [],
-    importantSections: [],
-    links: [],
-    images: [],
-    html: '',
-    plainText: ''
-  };
+    const resolvedTitle = firstPage.title || title;
+    const summary = {
+      title: resolvedTitle,
+      extract: String(firstPage.extract || '').trim(),
+      url: wikiPageUrl(resolvedTitle)
+    };
 
-  const parseResult = await fetchWikiJson({
-    action: 'parse',
-    page: resolvedTitle,
-    prop: 'text|sections|links|images',
-    redirects: '1'
-  });
+    let page = {
+      title: resolvedTitle,
+      url: wikiPageUrl(resolvedTitle),
+      sections: [],
+      importantSections: [],
+      links: [],
+      images: [],
+      html: '',
+      plainText: ''
+    };
 
-  if (parseResult.ok) {
+    const parseResult = await fetchWikiJson({
+      action: 'parse',
+      page: resolvedTitle,
+      prop: 'text|sections|links|images',
+      redirects: '1'
+    });
+
+    if (parseResult.ok) {
     const parse = parseResult?.data?.parse || {};
     const sections = Array.isArray(parse?.sections) ? parse.sections : [];
     const links = Array.isArray(parse?.links) ? parse.links : [];
@@ -362,7 +372,7 @@ async function handleWikiPage(request, url) {
       .filter(section => !skipSectionNames.has(section.title.toLowerCase()))
       .slice(0, 12);
 
-    normalizedSections = await Promise.all(normalizedSections.map(async (section) => {
+    normalizedSections = (await Promise.all(normalizedSections.map(async (section) => {
       const idx = String(section?.index || '').trim();
       if (!idx) return section;
       const sectionResult = await fetchWikiJson({
@@ -379,7 +389,7 @@ async function handleWikiPage(request, url) {
         ...section,
         content: sectionText
       };
-    }))
+    })))
       .filter(section => String(section?.content || '').trim().length > 0);
 
     const importantTerms = ['acquisition', 'drop', 'drops', 'farming', 'abilities', 'stats', 'build', 'notes', 'tips'];
@@ -413,15 +423,35 @@ async function handleWikiPage(request, url) {
       images: normalizedImages,
       html: html.slice(0, 20000),
       plainText
-    };
-  }
+      };
+    } else {
+      console.error('[wiki-page] parse upstream failure', {
+        route,
+        upstreamUrl: parseResult.upstreamUrl || '',
+        status: parseResult.status || 502,
+        error: parseResult.error || 'unknown'
+      });
+    }
 
-  return json(request, {
-    ok: true,
-    source: 'cloudflare-worker',
-    summary,
-    page
-  }, 200, { 'cache-control': 'public, max-age=30' });
+    return json(request, {
+      ok: true,
+      source: 'cloudflare-worker',
+      summary,
+      page
+    }, 200, { 'cache-control': 'public, max-age=30' });
+  } catch (err) {
+    console.error('[wiki-page] exception', {
+      route,
+      exception: String(err?.message || err)
+    });
+    return json(request, {
+      ok: false,
+      error: String(err?.message || err),
+      source: 'cloudflare-worker',
+      summary: null,
+      page: null
+    }, 500);
+  }
 }
 
 function detectItemArrayPaths(payload) {
@@ -979,12 +1009,16 @@ export default {
           '/market/orders/:url_name'
         ]
       }, 404);
-    } catch (error) {
-      console.error('[market-proxy] unhandled exception', {
-        message: error?.message || String(error),
-        stack: error?.stack || 'no_stack'
-      });
-      return json(request, { error: `worker_error: ${error.message}`, source: 'cloudflare-worker' }, 500);
+      } catch (error) {
+        console.error('worker_exception', {
+          message: error?.message || String(error),
+          stack: error?.stack || 'no_stack'
+        });
+        return json({
+          ok: false,
+          error: 'worker_exception',
+          message: String(error?.message || error)
+        }, 500);
+      }
     }
-  }
-};
+  };
