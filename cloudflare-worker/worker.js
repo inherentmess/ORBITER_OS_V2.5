@@ -210,76 +210,46 @@ function toArray(value) {
 }
 
 function normalizeWarframeStatWorldstate(raw = {}) {
-  // Debug: log top-level keys to verify field names from upstream.
-  console.log('TRACKERS RAW: top-level keys =', Object.keys(raw || {}).join(', '));
-  console.log('TRACKERS RAW: fissures length =', Array.isArray(raw?.fissures) ? raw.fissures.length : 'not array');
-  console.log('TRACKERS RAW: events length =', Array.isArray(raw?.events) ? raw.events.length : 'not array');
-  console.log('TRACKERS RAW: invasions length =', Array.isArray(raw?.invasions) ? raw.invasions.length : 'not array');
-  console.log('TRACKERS RAW: sortie =', raw?.sortie ? 'present' : 'missing');
-  console.log('TRACKERS RAW: arbitration =', raw?.arbitration ? 'present' : 'missing');
-  console.log('TRACKERS RAW: nightwave =', raw?.nightwave ? 'present' : 'missing');
-  console.log('TRACKERS RAW: syndicateMissions length =', Array.isArray(raw?.syndicateMissions) ? raw.syndicateMissions.length : 'not array');
-  console.log('TRACKERS RAW: cetusCycle =', raw?.cetusCycle ? 'present' : 'missing');
+  // Debug: log the upstream root so we can verify field names in Cloudflare logs.
+  console.log('TRACKERS RAW:', JSON.stringify({
+    topLevelKeys: Object.keys(raw || {}),
+    fissuresLength: Array.isArray(raw?.fissures) ? raw.fissures.length : 'not array',
+    eventsLength: Array.isArray(raw?.events) ? raw.events.length : 'not array',
+    invasionsLength: Array.isArray(raw?.invasions) ? raw.invasions.length : 'not array',
+    syndicateMissionsLength: Array.isArray(raw?.syndicateMissions) ? raw.syndicateMissions.length : 'not array',
+    sortie: raw?.sortie ? 'present' : 'missing',
+    arbitration: raw?.arbitration ? 'present' : 'missing',
+    nightwave: raw?.nightwave ? 'present' : 'missing',
+    cetusCycle: raw?.cetusCycle ? 'present' : 'missing',
+    earthCycle: raw?.earthCycle ? 'present' : 'missing',
+    vallisCycle: raw?.vallisCycle ? 'present' : 'missing',
+    cambionCycle: raw?.cambionCycle ? 'present' : 'missing'
+  }));
 
-  // Read all fields directly from the root of the WarframeStat.us response.
-  // app.js mapWarframeStatWorldstateToDashboardCategories expects these exact field names
-  // at the top level of the object — no nesting under .data or .payload.
-  const fissures = toArray(raw?.fissures);
-
+  // Map directly from the upstream root -- no .data nesting, no renaming.
+  // app.js reads these exact field names from the normalized object.
   return {
-    // Cycle fields — root level
-    cetusCycle:      raw?.cetusCycle   || null,
-    earthCycle:      raw?.earthCycle   || null,
-    vallisCycle:     raw?.vallisCycle  || null,
-    cambionCycle:    raw?.cambionCycle || null,
-
-    // Convenience grouping used by cycle helpers in app.js
-    cycles: {
-      cetusCycle:   raw?.cetusCycle   || null,
-      earthCycle:   raw?.earthCycle   || null,
-      vallisCycle:  raw?.vallisCycle  || null,
-      cambionCycle: raw?.cambionCycle || null
-    },
-
-    // Arrays — root level
-    alerts:            toArray(raw?.alerts),
     events:            toArray(raw?.events),
-    fissures,
+    fissures:          toArray(raw?.fissures),
     invasions:         toArray(raw?.invasions),
+    alerts:            toArray(raw?.alerts),
     dailyDeals:        toArray(raw?.dailyDeals),
     syndicateMissions: toArray(raw?.syndicateMissions),
 
-    // Single objects — root level
     sortie:      raw?.sortie      || null,
-    archonHunt:  raw?.archonHunt  || null,
     arbitration: raw?.arbitration || null,
+    archonHunt:  raw?.archonHunt  || null,
     nightwave:   raw?.nightwave   || null,
     voidTrader:  raw?.voidTrader  || null,
     steelPath:   raw?.steelPath   || null,
 
+    cetusCycle:   raw?.cetusCycle   || null,
+    earthCycle:   raw?.earthCycle   || null,
+    vallisCycle:  raw?.vallisCycle  || null,
+    cambionCycle: raw?.cambionCycle || null,
+
     worldstateSource: 'WarframeStat.us'
   };
-}
-
-  // Keep existing tracker UI working by providing the current array-oriented shape.
-  normalized.fissures = fissures;
-  normalized.invasions = toArray(raw?.invasions);
-  normalized.sorties = raw?.sortie ? [raw.sortie] : [];
-  normalized.voidtraders = raw?.voidTrader ? [raw.voidTrader] : [];
-  normalized.challenges = raw?.nightwave ? [raw.nightwave] : [];
-  normalized.news = toArray(raw?.events);
-  normalized.bounties = [];
-  normalized.voidstorms = fissures.filter(row => row?.isStorm || row?.isVoidStorm || row?.storm);
-  normalized.upgrades = toArray(raw?.flashSales);
-  normalized.factionprojects = [];
-  normalized.daynight = [
-    cycles.cetusCycle ? { id: 'cetus', isDay: !!cycles.cetusCycle.isDay, state: cycles.cetusCycle.isDay ? 'Day' : 'Night', end: cycles.cetusCycle.expiry } : null,
-    cycles.earthCycle ? { id: 'earth', isDay: !!cycles.earthCycle.isDay, state: cycles.earthCycle.isDay ? 'Day' : 'Night', end: cycles.earthCycle.expiry } : null,
-    cycles.vallisCycle ? { id: 'fortuna', isDay: !!cycles.vallisCycle.isWarm, state: cycles.vallisCycle.isWarm ? 'Warm' : 'Cold', end: cycles.vallisCycle.expiry } : null,
-    cycles.cambionCycle ? { id: 'deimos', isDay: !!cycles.cambionCycle.active, state: cycles.cambionCycle.active || cycles.cambionCycle.state || 'Active', end: cycles.cambionCycle.expiry } : null
-  ].filter(Boolean);
-
-  return normalized;
 }
 
 async function handleWorldstate(request) {
