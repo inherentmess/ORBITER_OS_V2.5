@@ -3514,13 +3514,24 @@ function showSection(sectionName) {
       try {
         dashboardTrackerState.lastFetchAt = Date.now();
         const result = await fetchDashboardWorldstateJson({ refresh: cachedCyclesExpired });
+        const dataKeys = Object.keys(result.data || {}).filter(k => {
+          const v = result.data[k];
+          return Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined;
+        });
+        if (TRACKER_DEBUG) console.log('[TRACKER_DEBUG] worldstate data keys with content:', dataKeys);
+        if (!dataKeys.length) {
+          console.warn('[orbiter] worldstate response has no usable fields — upstream may have changed format. Keys:', Object.keys(result.data || {}));
+        }
         setDashboardCategories(mapWarframeStatWorldstateToDashboardCategories(result.data));
         dashboardTrackerState.source = result.source;
         dashboardTrackerState.syncedAt = new Date();
         dashboardTrackerState.lastData = result.data;
         renderDashboardTrackerCards();
         updateDashboardCountdowns();
-        setDashboardTrackerStatus(`Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`);
+        const syncLabel = !dataKeys.length
+          ? `No fields from ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()} — check console`
+          : `Live via ${result.source} // ${dashboardTrackerState.syncedAt.toLocaleTimeString()}`;
+        setDashboardTrackerStatus(syncLabel);
       } catch (error) {
         setDashboardCategories(unavailableDashboardCategories(error?.message || 'WarframeStat.us did not return world-state data.'));
         renderDashboardTrackerCards();
