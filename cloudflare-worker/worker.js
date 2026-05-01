@@ -291,11 +291,15 @@ async function handleWorldstate(request) {
   }
 
   // Log what the upstream root actually contains so we can verify field names.
-  console.log(`[worldstate-proxy] upstream root keys: ${Object.keys(parsed).slice(0, 30).join(', ')}`);
+  const rootKeys = Object.keys(parsed).slice(0, 30);
+  console.log(`[worldstate-proxy] upstream root keys: ${rootKeys.join(', ')}`);
   console.log(`[worldstate-proxy] fissures: ${Array.isArray(parsed.fissures) ? parsed.fissures.length : typeof parsed.fissures}`);
   console.log(`[worldstate-proxy] events: ${Array.isArray(parsed.events) ? parsed.events.length : typeof parsed.events}`);
   console.log(`[worldstate-proxy] sortie: ${parsed.sortie ? 'present' : 'missing'}`);
   console.log(`[worldstate-proxy] arbitration: ${parsed.arbitration ? 'present' : 'missing'}`);
+  if (!rootKeys.length) {
+    console.error('[worldstate-proxy] WARNING: upstream returned an empty object — no fields to normalize. Body preview:', body.slice(0, 300));
+  }
 
   const normalized = normalizeWarframeStatWorldstate(parsed);
   return json(request, {
