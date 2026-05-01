@@ -1387,22 +1387,15 @@ function showSection(sectionName) {
       if (dashboardWorldstateRequest) return dashboardWorldstateRequest;
       dashboardWorldstateRequest = (async () => {
         const backendUrl = API_BASE_URL ? apiUrl(`/api/worldstate${options.refresh ? '?refresh=1' : ''}`) : '';
-        if (backendUrl) {
-          try {
-            logRequest('dashboard backend worldstate', backendUrl);
-            const response = await fetch(backendUrl, { cache: 'no-store' });
-            logResponse('dashboard backend worldstate', response);
-            if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status} from ${backendUrl}`);
-            const json = await parseJsonResponse(response, 'dashboard backend worldstate');
-            if (!json?.data || typeof json.data !== 'object') throw new Error('worldstate proxy response missing data object');
-            logJson('dashboard backend worldstate summary', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
-            return json;
-          } catch (error) {
-            logClientError('dashboard backend worldstate', error, { backendUrl });
-          }
-        }
-
-        throw new Error('WarframeStat.us worldstate proxy is not configured.');
+        if (!backendUrl) throw new Error('WarframeStat.us worldstate proxy is not configured.');
+        logRequest('dashboard backend worldstate', backendUrl);
+        const response = await fetch(backendUrl, { cache: 'no-store' });
+        logResponse('dashboard backend worldstate', response);
+        if (!response.ok) throw new Error(`worldstate proxy HTTP ${response.status} from ${backendUrl}`);
+        const json = await parseJsonResponse(response, 'dashboard backend worldstate');
+        if (!json?.data || typeof json.data !== 'object') throw new Error(`worldstate proxy response missing data object; keys=${Object.keys(json || {}).join(',')}`);
+        logJson('dashboard backend worldstate summary', { source: json.source, keys: Object.keys(json.data || {}).slice(0, 20) });
+        return json;
       })();
       try {
         return await dashboardWorldstateRequest;
@@ -3486,7 +3479,8 @@ function showSection(sectionName) {
       const now = Date.now();
       const refreshAge = now - (dashboardTrackerState.lastFetchAt || 0);
       const cachedCyclesExpired = dashboardTrackerState.lastData && hasExpiredWarframeStatCycles(dashboardTrackerState.lastData);
-      if ((dashboardTrackerState.lastData || dashboardTrackerState.lastFetchAt) && refreshAge < 60000 && !cachedCyclesExpired) {
+      // Only use the cache when we actually have data - a prior failed fetch must not block retries.
+      if (dashboardTrackerState.lastData && refreshAge < 60000 && !cachedCyclesExpired) {
         if (dashboardTrackerState.lastData) {
           setDashboardCategories(mapWarframeStatWorldstateToDashboardCategories(dashboardTrackerState.lastData));
           renderDashboardTrackerCards();
