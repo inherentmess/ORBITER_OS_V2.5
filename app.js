@@ -888,7 +888,7 @@ function showSection(sectionName) {
     }
 
     function clearHighlights() {
-      document.querySelectorAll('[data-searchable]').forEach(el => el.classList.remove('ring-1','ring-terminal'));
+      document.querySelectorAll('.panel-card').forEach(el => el.classList.remove('ring-1','ring-terminal'));
     }
 
     function setupMobileTrackerAutoLoad() {
@@ -1127,10 +1127,10 @@ function showSection(sectionName) {
           : [document.querySelector('.content-section:not(.hidden-panel)')].filter(Boolean);
 
         activeSections.forEach(activeSection => {
-          activeSection.querySelectorAll('.panel-card, a, li, p, h1, h2, h3, div').forEach(el => {
+          activeSection.querySelectorAll('.panel-card').forEach(el => {
             if (!q) return el.classList.remove('ring-1', 'ring-terminal');
             const text = (el.innerText || '').toLowerCase();
-            if (text.includes(q) && text.length < 500) {
+            if (text.includes(q)) {
               el.classList.add('ring-1', 'ring-terminal');
             } else {
               el.classList.remove('ring-1', 'ring-terminal');
