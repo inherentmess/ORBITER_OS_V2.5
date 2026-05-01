@@ -210,37 +210,56 @@ function toArray(value) {
 }
 
 function normalizeWarframeStatWorldstate(raw = {}) {
-  const cycles = {
-    cetusCycle: raw?.cetusCycle || null,
-    earthCycle: raw?.earthCycle || null,
-    vallisCycle: raw?.vallisCycle || null,
-    cambionCycle: raw?.cambionCycle || null
-  };
+  // Debug: log top-level keys to verify field names from upstream.
+  console.log('TRACKERS RAW: top-level keys =', Object.keys(raw || {}).join(', '));
+  console.log('TRACKERS RAW: fissures length =', Array.isArray(raw?.fissures) ? raw.fissures.length : 'not array');
+  console.log('TRACKERS RAW: events length =', Array.isArray(raw?.events) ? raw.events.length : 'not array');
+  console.log('TRACKERS RAW: invasions length =', Array.isArray(raw?.invasions) ? raw.invasions.length : 'not array');
+  console.log('TRACKERS RAW: sortie =', raw?.sortie ? 'present' : 'missing');
+  console.log('TRACKERS RAW: arbitration =', raw?.arbitration ? 'present' : 'missing');
+  console.log('TRACKERS RAW: nightwave =', raw?.nightwave ? 'present' : 'missing');
+  console.log('TRACKERS RAW: syndicateMissions length =', Array.isArray(raw?.syndicateMissions) ? raw.syndicateMissions.length : 'not array');
+  console.log('TRACKERS RAW: cetusCycle =', raw?.cetusCycle ? 'present' : 'missing');
 
+  // Read all fields directly from the root of the WarframeStat.us response.
+  // app.js mapWarframeStatWorldstateToDashboardCategories expects these exact field names
+  // at the top level of the object — no nesting under .data or .payload.
   const fissures = toArray(raw?.fissures);
-  const normalized = {
-    // Requested mapped fields
-    cetusCycle: cycles.cetusCycle,
-    earthCycle: cycles.earthCycle,
-    vallisCycle: cycles.vallisCycle,
-    cambionCycle: cycles.cambionCycle,
-    cycles,
-    alerts: toArray(raw?.alerts),
-    sortie: raw?.sortie || null,
+
+  return {
+    // Cycle fields — root level
+    cetusCycle:      raw?.cetusCycle   || null,
+    earthCycle:      raw?.earthCycle   || null,
+    vallisCycle:     raw?.vallisCycle  || null,
+    cambionCycle:    raw?.cambionCycle || null,
+
+    // Convenience grouping used by cycle helpers in app.js
+    cycles: {
+      cetusCycle:   raw?.cetusCycle   || null,
+      earthCycle:   raw?.earthCycle   || null,
+      vallisCycle:  raw?.vallisCycle  || null,
+      cambionCycle: raw?.cambionCycle || null
+    },
+
+    // Arrays — root level
+    alerts:            toArray(raw?.alerts),
+    events:            toArray(raw?.events),
     fissures,
-    invasions: toArray(raw?.invasions),
-    events: toArray(raw?.events),
-    voidTrader: raw?.voidTrader || null,
-    steelPath: raw?.steelPath || null,
-    archonHunt: raw?.archonHunt || null,
-    arbitration: raw?.arbitration || null,
-    nightwave: raw?.nightwave || null,
-    dailyDeals: toArray(raw?.dailyDeals),
+    invasions:         toArray(raw?.invasions),
+    dailyDeals:        toArray(raw?.dailyDeals),
     syndicateMissions: toArray(raw?.syndicateMissions),
-    // Legacy compatibility fields consumed by existing tracker mapper
-    worldstateSource: 'WarframeStat.us',
-    fissuresRaw: fissures
+
+    // Single objects — root level
+    sortie:      raw?.sortie      || null,
+    archonHunt:  raw?.archonHunt  || null,
+    arbitration: raw?.arbitration || null,
+    nightwave:   raw?.nightwave   || null,
+    voidTrader:  raw?.voidTrader  || null,
+    steelPath:   raw?.steelPath   || null,
+
+    worldstateSource: 'WarframeStat.us'
   };
+}
 
   // Keep existing tracker UI working by providing the current array-oriented shape.
   normalized.fissures = fissures;
