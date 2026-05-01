@@ -302,12 +302,21 @@ async function handleWorldstate(request) {
   }
 
   const normalized = normalizeWarframeStatWorldstate(parsed);
+
+  // Detect whether normalization produced anything useful.
+  const hasData = Object.values(normalized).some(v =>
+    Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== 'WarframeStat.us'
+  );
+
   return json(request, {
     ok: true,
     source: 'WarframeStat.us',
     upstreamUrl: WARFRAMESTAT_WORLDSTATE_URL,
+    // Diagnostic: always include upstream key list so mismatches are visible without Cloudflare logs.
+    upstreamKeys: rootKeys,
+    upstreamBodyPreview: hasData ? undefined : body.slice(0, 400),
     data: normalized
-  }, 200, { 'cache-control': 'public, max-age=30' });
+  }, 200, { 'cache-control': 'no-store' });
 }
 
 async function handleWikiSearch(request, url) {
