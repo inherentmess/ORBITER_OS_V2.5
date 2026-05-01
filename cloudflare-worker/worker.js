@@ -256,11 +256,17 @@ async function handleWorldstate(request) {
   console.log(`[worldstate-proxy] upstream request: ${WARFRAMESTAT_WORLDSTATE_URL}`);
   const response = await fetch(WARFRAMESTAT_WORLDSTATE_URL, {
     method: 'GET',
-    headers: { Accept: 'application/json' }
+    headers: {
+      'Accept': 'application/json',
+      'Accept-Language': 'en',
+      'User-Agent': 'ORBITER-OS/2.5 (https://github.com/inherentmess/ORBITER_OS_V2.5; worldstate-proxy)',
+    }
   });
   console.log(`[worldstate-proxy] upstream response: ${response.status} ${WARFRAMESTAT_WORLDSTATE_URL}`);
 
   const body = await response.text();
+  console.log(`[worldstate-proxy] upstream body length: ${body.length}, preview: ${body.slice(0, 120)}`);
+
   if (!response.ok) {
     return json(request, {
       ok: false,
@@ -283,6 +289,13 @@ async function handleWorldstate(request) {
       data: {}
     }, 502);
   }
+
+  // Log what the upstream root actually contains so we can verify field names.
+  console.log(`[worldstate-proxy] upstream root keys: ${Object.keys(parsed).slice(0, 30).join(', ')}`);
+  console.log(`[worldstate-proxy] fissures: ${Array.isArray(parsed.fissures) ? parsed.fissures.length : typeof parsed.fissures}`);
+  console.log(`[worldstate-proxy] events: ${Array.isArray(parsed.events) ? parsed.events.length : typeof parsed.events}`);
+  console.log(`[worldstate-proxy] sortie: ${parsed.sortie ? 'present' : 'missing'}`);
+  console.log(`[worldstate-proxy] arbitration: ${parsed.arbitration ? 'present' : 'missing'}`);
 
   const normalized = normalizeWarframeStatWorldstate(parsed);
   return json(request, {
